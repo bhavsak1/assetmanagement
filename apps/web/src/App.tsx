@@ -45,8 +45,10 @@ function Shell() {
           <input className="search" type="search" placeholder={t.topbar.search} aria-label={t.topbar.search} />
           <button className="btn" type="button">{t.topbar.askAssetly}</button>
           <div className="spacer" />
-          <span className="muted">{t.topbar.tenant}</span>
-          <div className="avatar" role="img" aria-label={t.topbar.account} />
+          {/* Tenant name goes here once tenants exist. */}
+          <div className="avatar" role="img" aria-label={t.topbar.account}>
+            {t.topbar.initials}
+          </div>
         </header>
         <main className="content">
           <Outlet />
