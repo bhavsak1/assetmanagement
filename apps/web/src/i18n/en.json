@@ -1,0 +1,47 @@
+{
+  "app": {
+    "name": "Assetly"
+  },
+  "nav": {
+    "label": "Main navigation",
+    "groups": {
+      "operate": "Operate",
+      "manage": "Manage",
+      "intelligence": "Intelligence",
+      "admin": "Admin"
+    },
+    "dashboard": "Dashboard",
+    "assets": "Assets",
+    "maintenance": "Maintenance",
+    "locations": "Locations",
+    "vendors": "Vendors",
+    "coverage": "Coverage",
+    "categories": "Categories",
+    "import": "Import",
+    "insights": "Insights",
+    "security": "Security",
+    "settings": "Settings"
+  },
+  "topbar": {
+    "search": "Search assets, tags, vendors…",
+    "askAssetly": "Ask Assetly · AI",
+    "initials": "KR",
+    "account": "Account"
+  },
+  "pages": {
+    "login": "Sign in",
+    "dashboard": "Dashboard",
+    "assets": "Assets",
+    "assetDetail": "Asset detail",
+    "maintenance": "Maintenance",
+    "locations": "Locations",
+    "vendors": "Vendors",
+    "coverage": "Coverage",
+    "categories": "Categories",
+    "import": "Import review",
+    "insights": "Insights",
+    "security": "Security",
+    "settings": "Settings",
+    "empty": "This screen is not built yet."
+  }
+}
