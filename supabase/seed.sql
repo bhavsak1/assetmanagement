@@ -1,0 +1,1 @@
+-- Local seed. Empty until a story needs local data.
