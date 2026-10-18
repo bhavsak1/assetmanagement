@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  pull_request:
+
+jobs:
+  db:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx supabase db start
+      - name: Fresh database from migrations
+        run: |
+          npx supabase db reset
+          # reset restarts Postgres; wait until it accepts connections
+          timeout 60 bash -c 'until docker exec supabase_db_assetly pg_isready -U postgres; do sleep 1; done'
+      - run: npx supabase test db
+      - name: Fail if committed types are stale
+        run: |
+          npm run db:types
+          # porcelain also catches a types file that was never committed
+          git status --porcelain apps/web/src/types
+          test -z "$(git status --porcelain apps/web/src/types)"
+
+  # Web lint, typecheck and build job is added in story 0.3, when apps/web has a package.json.
