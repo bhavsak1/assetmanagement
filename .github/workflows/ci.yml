@@ -20,6 +20,12 @@ jobs:
           # reset restarts Postgres; wait until it accepts connections
           timeout 60 bash -c 'until docker exec supabase_db_assetly pg_isready -U postgres; do sleep 1; done'
       - run: npx supabase test db
+      - name: List tenant tables without a cross-tenant test
+        # shortcut: warns only, since the 1.1 and 1.2 tables have hand-written tests; make it fail once they use the harness
+        run: |
+          for t in $(docker exec supabase_db_assetly psql -U postgres -Atc "select format('%I.%I', n.nspname, c.relname) from pg_class c join pg_namespace n on n.oid = c.relnamespace join pg_attribute a on a.attrelid = c.oid and a.attname = 'tenant_id' and not a.attisdropped where n.nspname = 'public' and c.relkind in ('r', 'p') order by 1"); do
+            grep -q "tests.cross_tenant('$t'" supabase/tests/*.sql || echo "::warning::$t has no tests.cross_tenant test"
+          done
       - name: Fail if committed types are stale
         run: |
           npm run db:types

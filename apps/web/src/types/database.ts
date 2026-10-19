@@ -63,6 +63,44 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"rls_sample": {
+                  Row: {
+                    "created_at": string,"created_by": string | null,"deleted_at": string | null,"id": string,"name": string,"parent_id": string | null,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"id"?: string,"name": string,"parent_id"?: string | null,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"id"?: string,"name"?: string,"parent_id"?: string | null,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "rls_sample_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "rls_sample_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "rls_sample_tenant_id_parent_id_fkey"
+      columns: ["tenant_id","parent_id"]
+isOneToOne: false
+      referencedRelation: "rls_sample"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "rls_sample_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"security_domain": {
                   Row: {
                     "code": string,"created_at": string,"description": string,"entity": string,"id": string,"is_system": boolean,"kind": string,"updated_at": string
