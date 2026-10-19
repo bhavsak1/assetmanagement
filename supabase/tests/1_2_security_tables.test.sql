@@ -1,6 +1,6 @@
 -- Story 1.2. Uses the seed: tenant A and B; test.user (a1) in A and B, test.user2 (a2) in B only.
 begin;
-select plan(20);
+select plan(22);
 
 -- RLS on for every new table.
 select ok((select relrowsecurity from pg_class where oid = 'public.security_domain'::regclass), 'RLS on security_domain');
@@ -47,11 +47,22 @@ select throws_ok(
   '23503', null, 'policy cannot use another tenant''s group'
 );
 
+-- A disabled member keeps (and may get) assignment rows as history. 1.3 rebuild grants them nothing.
+update public.tenant_membership set status = 'disabled'
+where tenant_id = '00000000-0000-0000-0000-00000000000b' and user_id = '00000000-0000-0000-0000-0000000000a1';
+select lives_ok(
+  $$insert into public.user_group_assignment (tenant_id, user_id, security_group_id) values
+    ('00000000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000006b1')$$,
+  'disabled member can hold assignment rows'
+);
+
 -- a1 in tenant A.
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","tenant_id":"00000000-0000-0000-0000-00000000000a"}';
 
-select is((select count(*)::int from public.security_domain), 20, 'authenticated reads the catalog');
+-- Catalog closed to users until 1.3 adds the users_security.view policy (owner decision).
+select is((select count(*)::int from public.security_domain), 0, 'security_domain closed to users');
+select is((select count(*)::int from public.domain_operation), 0, 'domain_operation closed to users');
 select throws_ok($$insert into public.security_domain (code, entity, kind, description) values ('x', 'x', 'entity', 'x')$$,
   '42501', null, 'authenticated cannot add a domain');
 select throws_ok($$update public.domain_operation set sort_order = 9$$, '42501', null, 'authenticated cannot change an operation');

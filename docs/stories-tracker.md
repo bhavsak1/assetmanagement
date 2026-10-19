@@ -54,7 +54,7 @@
 | 1.0 | Goal 1 data model: tables, columns, keys, joins, tenancy per table (docs only) | OQ-16, OQ-17, OQ-23, OQ-24, OQ-30 | Done |
 | 1.1 | Tenant, user profile, tenant membership, JWT hook carrying `tenant_id`. Hand-seeded `tenant_entitlement` and `tenant.status` | OQ-16, OQ-17, OQ-23, OQ-30 | In review |
 | 1.2 | Security tables: domain, operation, group, policy, assignment. Seed the default domain catalog | OQ-25 | In review |
-| 1.3 | `user_effective_permission` rebuild function and `has_permission()` helpers (includes tenant status write check) | OQ-30 | Todo |
+| 1.3 | `user_effective_permission` rebuild function and `has_permission()` helpers (includes tenant status write check). Adds the RLS policies on the 1.2 security tables: catalog read and group, policy, assignment read with `users_security.view`, writes with `users_security.manage`. Test that a disabled member's assignment rows grant nothing | OQ-30 | Todo |
 | 1.4 | First RLS pattern on a sample table, plus the cross-tenant test harness | | Todo |
 | 1.5 | Audit log and outbox tables with triggers | | Todo |
 | 1.6 | Starter groups (Tenant Admin, Plant Manager, Planner, Technician, Auditor) and the permission test matrix in CI | OQ-22, OQ-25 | Todo |
@@ -187,3 +187,4 @@ Open items: OQ-11, OQ-21.
 | 11 Oct 2026 | File created from the agreed goal-wise breakdown. Added vs the chat version: story 1.7 (RLS performance spike), links to open items, SSO button removed from 0.4, entitlement and tenant status added to 1.1 and 1.3, WhatsApp onboarding note under Goal 3, review points for Goals 9 and 10 |
 | 19 Oct 2026 | Story 0.5 added: the Goal 0 review point ("sign in ... in a real environment") had no story covering deploy |
 | 19 Oct 2026 | Story 1.0 added: the docs named the Goal 1 tables but had no columns or joins, and the schema is costly to reverse. Docs only, output `docs/data-model-goal1.md` |
+| 19 Oct 2026 | Story 1.3 widened: it adds the RLS policies on the 1.2 security tables. Owner decision: the domain catalog is readable by security admins only (`users_security.view`), not by every signed-in user |

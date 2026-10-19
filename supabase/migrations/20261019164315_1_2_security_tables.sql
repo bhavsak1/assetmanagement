@@ -4,7 +4,7 @@
 -- Tenant tables have RLS on and no policies (closed) until has_permission() exists (1.3).
 -- Audit and permission_version bump triggers come in 1.5 and 1.3.
 
--- Platform catalog: no tenant_id, read-only to tenants, written only by migrations.
+-- Platform catalog: no tenant_id, written only by migrations.
 create table public.security_domain (
   id          uuid primary key default gen_random_uuid(),
   code        text not null unique check (code ~ '^[a-z][a-z0-9_]*$'),
@@ -105,9 +105,6 @@ alter table public.security_group        enable row level security;
 alter table public.group_domain_policy   enable row level security;
 alter table public.user_group_assignment enable row level security;
 
--- Catalog: any signed-in user reads it (the policy grid is drawn from it). No user writes.
-create policy security_domain_select_all on public.security_domain
-  for select to authenticated using (true);
-create policy domain_operation_select_all on public.domain_operation
-  for select to authenticated using (true);
+-- Catalog: owner decision 19 Oct 2026, only security admins read it. No policy until 1.3 adds
+-- users_security.view, so closed for now. No user writes, ever.
 revoke insert, update, delete, truncate on public.security_domain, public.domain_operation from anon, authenticated;
