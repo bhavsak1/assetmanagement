@@ -51,6 +51,7 @@
 
 | ID | Story | Open items | Status |
 |---|---|---|---|
+| 1.0 | Goal 1 data model: tables, columns, keys, joins, tenancy per table (docs only) | OQ-16, OQ-17, OQ-23, OQ-24, OQ-30 | In review |
 | 1.1 | Tenant, user profile, tenant membership, JWT hook carrying `tenant_id`. Hand-seeded `tenant_entitlement` and `tenant.status` | OQ-16, OQ-17, OQ-23, OQ-30 | Todo |
 | 1.2 | Security tables: domain, operation, group, policy, assignment. Seed the default domain catalog | OQ-25 | Todo |
 | 1.3 | `user_effective_permission` rebuild function and `has_permission()` helpers (includes tenant status write check) | OQ-30 | Todo |
@@ -185,3 +186,4 @@ Open items: OQ-11, OQ-21.
 |---|---|
 | 11 Oct 2026 | File created from the agreed goal-wise breakdown. Added vs the chat version: story 1.7 (RLS performance spike), links to open items, SSO button removed from 0.4, entitlement and tenant status added to 1.1 and 1.3, WhatsApp onboarding note under Goal 3, review points for Goals 9 and 10 |
 | 19 Oct 2026 | Story 0.5 added: the Goal 0 review point ("sign in ... in a real environment") had no story covering deploy |
+| 19 Oct 2026 | Story 1.0 added: the docs named the Goal 1 tables but had no columns or joins, and the schema is costly to reverse. Docs only, output `docs/data-model-goal1.md` |
