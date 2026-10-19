@@ -1,4 +1,4 @@
-﻿# Asset Management Platform: Goals and Stories Tracker
+# Asset Management Platform: Goals and Stories Tracker
 
 **Purpose:** the working backlog for Phase 1. Each goal ends in something you can open and review. Read together with the Knowledge Base, `technical-architecture.md`, `security-model.md` and `open-items-tracker.md`.
 
