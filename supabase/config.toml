@@ -403,6 +403,33 @@ s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
 
+# Staging overrides. `npx supabase config push --project-ref blhxyfgkkhpqbfuhpnww` merges these over the
+# values above, so local-only URLs never reach staging.
+[remotes.staging]
+project_id = "blhxyfgkkhpqbfuhpnww"
+
+[remotes.staging.auth]
+site_url = "https://assetly-staging.pages.dev"
+additional_redirect_urls = ["https://assetly-staging.pages.dev"]
+enable_signup = false
+
+# Pinned to the current staging values so a push changes only the three keys above.
+[remotes.staging.auth.email]
+enable_confirmations = true
+max_frequency = "1m0s"
+otp_length = 8
+
+[remotes.staging.auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[remotes.staging.db.pooler]
+default_pool_size = 15
+max_client_conn = 200
+
+[remotes.staging.storage.vector]
+enabled = false
+
 # pg-delta is the schema diff engine for db diff / db pull / db remote commit.
 # Set enabled = false to fall back to the legacy migra engine.
 [experimental.pgdelta]

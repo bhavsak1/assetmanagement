@@ -1,4 +1,4 @@
-# Asset Management Platform: Goals and Stories Tracker
+﻿# Asset Management Platform: Goals and Stories Tracker
 
 **Purpose:** the working backlog for Phase 1. Each goal ends in something you can open and review. Read together with the Knowledge Base, `technical-architecture.md`, `security-model.md` and `open-items-tracker.md`.
 
@@ -44,6 +44,7 @@
 | 0.2 | Local Supabase, migration workflow, GitHub Actions running tests | | In review |
 | 0.3 | React, Vite, TS app shell: design tokens from the screens, sidebar, topbar, routing, empty pages for every screen | | In review |
 | 0.4 | Email login and logout with Supabase Auth, protected routes. No SSO button (SSO moved to Phase 2) | OQ-29 | In review |
+| 0.5 | Deploy web app to staging on Cloudflare Pages, staging Auth settings in git, first staging user | | In review |
 
 ### Goal 1: Tenant and security core
 **Review point:** two test tenants exist, and a test report proves tenant A cannot see tenant B and an Auditor cannot update anything.
@@ -183,3 +184,4 @@ Open items: OQ-11, OQ-21.
 | Date | Change |
 |---|---|
 | 11 Oct 2026 | File created from the agreed goal-wise breakdown. Added vs the chat version: story 1.7 (RLS performance spike), links to open items, SSO button removed from 0.4, entitlement and tenant status added to 1.1 and 1.3, WhatsApp onboarding note under Goal 3, review points for Goals 9 and 10 |
+| 19 Oct 2026 | Story 0.5 added: the Goal 0 review point ("sign in ... in a real environment") had no story covering deploy |
