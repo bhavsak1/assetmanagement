@@ -137,6 +137,105 @@ h1 {
   white-space: nowrap;
 }
 
+.btn-primary {
+  width: 100%;
+  height: 42px;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-surface);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Login: brand panel left, form right. Matches the Login screen minus SSO. */
+.login {
+  display: flex;
+  min-height: 100vh;
+}
+
+.login-brand {
+  flex: 1;
+  box-sizing: border-box;
+  padding: 64px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: var(--color-brand-panel);
+  color: var(--color-surface);
+}
+
+.login-brand p {
+  max-width: 380px;
+  color: var(--color-brand-panel-text);
+}
+
+.login-logo {
+  font-size: 20px;
+  font-weight: var(--weight-semibold);
+}
+
+.login-headline {
+  max-width: 420px;
+  font-size: 40px;
+  font-weight: var(--weight-semibold);
+  line-height: 1.15;
+}
+
+.login-footer {
+  font-size: 13px;
+  color: var(--color-brand-panel-muted);
+}
+
+.login-panel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: var(--color-surface);
+}
+
+.login-form {
+  width: 360px;
+  max-width: 100%;
+}
+
+.login-form h1 {
+  margin-bottom: var(--space-2);
+  font-size: 24px;
+}
+
+.login-form > .muted {
+  margin: 0 0 var(--space-8);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+}
+
+.field input {
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  font: inherit;
+}
+
+.login-error {
+  margin: 0 0 var(--space-6);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--tag-error-bg);
+  color: var(--tag-error-text);
+}
+
 .spacer {
   flex: 1;
 }
@@ -192,6 +291,10 @@ h1 {
 
   .sidebar a {
     white-space: nowrap;
+  }
+
+  .login-brand {
+    display: none;
   }
 
   .topbar,

@@ -1,5 +1,8 @@
+import { useEffect, useState, type FormEvent } from 'react'
 import { NavLink, Navigate, Outlet, Route, Routes } from 'react-router'
+import type { Session } from '@supabase/supabase-js'
 import { t } from './i18n'
+import { supabase } from './supabase'
 
 type PageKey = keyof typeof t.pages
 
@@ -49,6 +52,9 @@ function Shell() {
           <div className="avatar" role="img" aria-label={t.topbar.account}>
             {t.topbar.initials}
           </div>
+          <button className="btn" type="button" onClick={() => void supabase.auth.signOut()}>
+            {t.topbar.signOut}
+          </button>
         </header>
         <main className="content">
           <Outlet />
@@ -58,11 +64,75 @@ function Shell() {
   )
 }
 
+function LoginPage() {
+  const [failed, setFailed] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  async function signIn(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const form = new FormData(e.currentTarget)
+    setBusy(true)
+    const { error } = await supabase.auth.signInWithPassword({
+      email: String(form.get('email')),
+      password: String(form.get('password')),
+    })
+    // One message for every failure, so it never reveals whether the email exists (CLAUDE.md §13).
+    setFailed(Boolean(error))
+    setBusy(false)
+  }
+
+  return (
+    <div className="login">
+      <title>{`${t.pages.login} · ${t.app.name}`}</title>
+      <div className="login-brand">
+        <div className="login-logo">{t.app.name}</div>
+        <div>
+          <div className="login-headline">{t.login.headline}</div>
+          <p>{t.login.tagline}</p>
+        </div>
+        <div className="login-footer">{t.login.footer}</div>
+      </div>
+      <div className="login-panel">
+        <form className="login-form" onSubmit={(e) => void signIn(e)}>
+          <h1>{t.pages.login}</h1>
+          <p className="muted">{t.login.welcome}</p>
+          <label className="field">
+            {t.login.email}
+            <input name="email" type="email" autoComplete="username" placeholder={t.login.emailPlaceholder} required />
+          </label>
+          <label className="field">
+            {t.login.password}
+            <input name="password" type="password" autoComplete="current-password" placeholder="••••••••" required />
+          </label>
+          {failed && (
+            <p className="login-error" role="alert">
+              {t.login.error}
+            </p>
+          )}
+          <button className="btn btn-primary" type="submit" disabled={busy}>
+            {t.pages.login}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 export function App() {
+  // undefined until Supabase reports the stored session; it fires INITIAL_SESSION on subscribe.
+  const [session, setSession] = useState<Session | null>()
+
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((_event, s) => setSession(s))
+    return () => data.subscription.unsubscribe()
+  }, [])
+
+  if (session === undefined) return null
+
   return (
     <Routes>
-      <Route path="/login" element={<EmptyPage page="login" />} />
-      <Route element={<Shell />}>
+      <Route path="/login" element={session ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+      <Route element={session ? <Shell /> : <Navigate to="/login" replace />}>
         {navGroups.flatMap(({ items }) =>
           items.map((key) => <Route key={key} path={`/${key}`} element={<EmptyPage page={key} />} />),
         )}
