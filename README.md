@@ -1,4 +1,4 @@
-﻿# Assetly
+# Assetly
 
 AI-native, multi-tenant asset management platform for small and medium industrial and manufacturing companies.
 
