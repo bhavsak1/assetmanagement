@@ -58,6 +58,7 @@
 | 1.4 | First RLS pattern on a sample table, plus the cross-tenant test harness | | In review |
 | 1.5 | Audit log and outbox tables with triggers | | Todo |
 | 1.6 | Starter groups (Tenant Admin, Plant Manager, Planner, Technician, Auditor) and the permission test matrix in CI | OQ-22, OQ-25 | Todo |
+| 1.6b | Push Goal 1 to staging: `supabase db push` (migrations only, no seed or test harness), then `supabase config push` (JWT hook on), then provision two test tenants on staging. Order matters: config before migrations breaks sign-in | | Todo |
 | 1.7 | Spike: RLS and scope-check performance on about 1M generated assets (added from open-items tracker, section E) | | Todo |
 
 ### Goal 2: Configuration (categories, fields, locations)
@@ -188,3 +189,4 @@ Open items: OQ-11, OQ-21.
 | 19 Oct 2026 | Story 0.5 added: the Goal 0 review point ("sign in ... in a real environment") had no story covering deploy |
 | 19 Oct 2026 | Story 1.0 added: the docs named the Goal 1 tables but had no columns or joins, and the schema is costly to reverse. Docs only, output `docs/data-model-goal1.md` |
 | 19 Oct 2026 | Story 1.3 widened: it adds the RLS policies on the 1.2 security tables. Owner decision: the domain catalog is readable by security admins only (`users_security.view`), not by every signed-in user |
+| 20 Oct 2026 | Story 1.6b added: no story pushed the Goal 1 migrations and the JWT hook config to staging. Owner chose one push after 1.6, so earlier migrations can still change until then |
