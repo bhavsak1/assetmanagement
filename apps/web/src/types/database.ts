@@ -5,7 +5,111 @@ export type Database = {
   
   "public": {
           Tables: {
-            "tenant": {
+            "domain_operation": {
+                  Row: {
+                    "code": string,"created_at": string,"id": string,"security_domain_id": string,"sort_order": number,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "code": string,"created_at"?: string,"id"?: string,"security_domain_id": string,"sort_order"?: number,"updated_at"?: string
+                  }
+                  Update: {
+                    "code"?: string,"created_at"?: string,"id"?: string,"security_domain_id"?: string,"sort_order"?: number,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "domain_operation_security_domain_id_fkey"
+      columns: ["security_domain_id"]
+isOneToOne: false
+      referencedRelation: "security_domain"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"group_domain_policy": {
+                  Row: {
+                    "created_at": string,"created_by": string | null,"deleted_at": string | null,"domain_operation_id": string,"id": string,"security_group_id": string,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"domain_operation_id": string,"id"?: string,"security_group_id": string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"domain_operation_id"?: string,"id"?: string,"security_group_id"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "group_domain_policy_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "group_domain_policy_domain_operation_id_fkey"
+      columns: ["domain_operation_id"]
+isOneToOne: false
+      referencedRelation: "domain_operation"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "group_domain_policy_tenant_id_security_group_id_fkey"
+      columns: ["tenant_id","security_group_id"]
+isOneToOne: false
+      referencedRelation: "security_group"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "group_domain_policy_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"security_domain": {
+                  Row: {
+                    "code": string,"created_at": string,"description": string,"entity": string,"id": string,"is_system": boolean,"kind": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "code": string,"created_at"?: string,"description": string,"entity": string,"id"?: string,"is_system"?: boolean,"kind": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "code"?: string,"created_at"?: string,"description"?: string,"entity"?: string,"id"?: string,"is_system"?: boolean,"kind"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"security_group": {
+                  Row: {
+                    "code": string,"created_at": string,"created_by": string | null,"deleted_at": string | null,"description": string | null,"group_type": string,"id": string,"name": string,"template_code": string | null,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "code": string,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"description"?: string | null,"group_type"?: string,"id"?: string,"name": string,"template_code"?: string | null,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "code"?: string,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"description"?: string | null,"group_type"?: string,"id"?: string,"name"?: string,"template_code"?: string | null,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "security_group_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "security_group_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "security_group_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"tenant": {
                   Row: {
                     "created_at": string,"created_by": string | null,"currency_code": string,"date_format": string,"deleted_at": string | null,"id": string,"locale": string,"name": string,"slug": string,"status": string,"time_zone": string,"updated_at": string,"updated_by": string | null
                   }
@@ -95,6 +199,50 @@ isOneToOne: false
       referencedColumns: ["id"]
     },{
       foreignKeyName: "tenant_membership_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"user_group_assignment": {
+                  Row: {
+                    "created_at": string,"created_by": string | null,"deleted_at": string | null,"effective_from": string,"effective_to": string | null,"id": string,"security_group_id": string,"tenant_id": string,"updated_at": string,"updated_by": string | null,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"effective_from"?: string,"effective_to"?: string | null,"id"?: string,"security_group_id": string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null,"user_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"effective_from"?: string,"effective_to"?: string | null,"id"?: string,"security_group_id"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "user_group_assignment_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "user_group_assignment_tenant_id_security_group_id_fkey"
+      columns: ["tenant_id","security_group_id"]
+isOneToOne: false
+      referencedRelation: "security_group"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "user_group_assignment_tenant_id_user_id_fkey"
+      columns: ["tenant_id","user_id"]
+isOneToOne: false
+      referencedRelation: "tenant_membership"
+      referencedColumns: ["tenant_id","user_id"]
+    },{
+      foreignKeyName: "user_group_assignment_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "user_group_assignment_user_id_fkey"
       columns: ["user_id"]
 isOneToOne: false
       referencedRelation: "user_profile"
