@@ -106,7 +106,7 @@ select ok(not private.has_permission('vendor_core', 'view'), 'operation only the
 -- Policies as a1 in A, a security admin.
 select results_eq(
   'select (select count(*)::int from public.security_domain), (select count(*)::int from public.domain_operation)',
-  $$values (20, 47)$$, 'security admin reads the catalog'
+  $$values (21, 51)$$, 'security admin reads the catalog (incl. rls_sample, 1.4)'
 );
 select is((select count(*)::int from public.security_group), 5, 'admin reads only current tenant groups');
 select is((select count(*)::int from public.group_domain_policy where tenant_id <> '00000000-0000-0000-0000-00000000000a'), 0, 'admin reads no other tenant policies');

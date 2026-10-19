@@ -103,7 +103,22 @@ The security model is Workday and Oracle style: domains, groups, policies and sc
 
 ### The RLS pattern
 
-*To be written in story 1.4.* The sample table and its policies become the template to copy for every new table. Until then, do not create business tables.
+Copy `supabase/migrations/*_1_4_rls_sample.sql` and `supabase/tests/1_4_rls_sample.test.sql` for every new tenant table. The template:
+
+1. **Domain** seeded in the migration (skip if it exists): `insert ... on conflict do nothing`.
+2. **Table:** std columns, `unique (tenant_id, id)`, composite FKs `(tenant_id, x_id) references x (tenant_id, id)`, partial uniques `where deleted_at is null`. Triggers `set_updated_at` and `check_soft_delete('<domain>', 'delete')`.
+3. **Policies**, all `to authenticated`, helpers inside `(select ...)`:
+   - select: `tenant_id = (select private.current_tenant_id()) and (select private.has_permission('<domain>', 'view'))`
+   - insert: `with check` tenant, `has_permission('<domain>', 'create')`, `tenant_can_write()`
+   - update: the same in `using` and `with check`, with `'update'`
+   - no delete policy, and `revoke delete, truncate ... from anon, authenticated`. Removal is a soft delete (an update of `deleted_at`), which the trigger also checks against `delete`. Soft-deleted rows stay readable; the app filters them.
+4. **Tests:** one block per permission step (no grant, view, create and update, delete, read_only tenant), then the harness:
+
+```sql
+select * from tests.cross_tenant('public.<table>', '<domain>', '{"name":"ct-row"}');  -- adds 8 tests
+```
+
+The harness (`supabase/test_harness.sql`, loaded as a local seed, never on staging) also gives `tests.act_as(user, tenant)` and `tests.grant(tenant, user, domain, ops)`. `1_4_tenancy_guard.test.sql` fails CI if a table has RLS off or a public `tenant_id` table has no policy. CI warns for each public `tenant_id` table with no `tests.cross_tenant` line.
 
 ## 8. Data rules
 
