@@ -1,12 +1,12 @@
 # Goal 1 data model
 
-**Story:** 1.0 (docs only). **Status:** draft for owner review, 19 Oct 2026.
+**Story:** 1.0 (docs only). **Status:** in review, 19 Oct 2026. Owner answered D1 to D9 on 19 Oct 2026.
 
 **Purpose:** the tables, columns, keys and joins that stories 1.1 to 1.6 build, so each migration is a copy job, not a design job. Read with `CLAUDE.md` §6 to §8 and `security-model.md`.
 
-The model below is written using the **current leans**. Each place an owner decision would change it is marked **[D1]** to **[D9]**. The decisions are in [section 7](#7-owner-decisions).
+The model below follows the **owner decisions**. Each place a decision shaped it is marked **[D1]** to **[D9]**. The decisions are in [section 7](#7-owner-decisions).
 
-Open items applied at their current lean: OQ-16 (sales-led, tenants and first admin created by a provisioning script), OQ-17 (last used tenant plus a header switcher), OQ-23 (short token, version check), OQ-30 (hand-seeded `tenant_entitlement`, `tenant.status`, write-check helper), OQ-24 (only the four scope dimensions). OQ-22 and OQ-25 do not change the schema.
+Open items applied: OQ-16 (sales-led, tenants and first admin created by a provisioning script), OQ-17 (**changed by D3**: the user picks the tenant at login, plus a header switcher), OQ-23 (short token, version check), OQ-30 (hand-seeded `tenant_entitlement`, `tenant.status`, write-check helper), OQ-24 (only the four scope dimensions). OQ-22 and OQ-25 do not change the schema.
 
 ---
 
@@ -21,7 +21,7 @@ Open items applied at their current lean: OQ-16 (sales-led, tenants and first ad
 | Time | `timestamptz`, stored UTC |
 | Lifecycles | Fixed system lifecycles use `text` with a `check` (for example `tenant.status`). No Postgres enums, so adding a value is a one-line migration |
 | Codes | Catalog and group codes are lower `snake_case` text, `check (code ~ '^[a-z][a-z0-9_]*$')` |
-| `auth.users` | Only `user_profile` references `auth.users`. Everything else references `user_profile`. Keeps a later move off Supabase Auth to one table |
+| `auth` schema | Only `user_profile` references `auth.users`, and only `tenant_session` references `auth.sessions`. Everything else references `user_profile`. Keeps a later move off Supabase Auth to two tables |
 | Schemas | Business tables in `public`. Derived and internal tables (`user_effective_permission`, `outbox_event`) in `private`, which the API does not expose |
 | RLS | On for every table, both schemas. A table with no policy means no access |
 
@@ -37,6 +37,7 @@ Open items applied at their current lean: OQ-16 (sales-led, tenants and first ad
 | `user_profile` | 1.1 | public | Global, one per login (no `tenant_id`) | Yes |
 | `tenant_membership` | 1.1 | public | `tenant_id` | Yes |
 | `tenant_entitlement` | 1.1 | public | `tenant_id` | Yes |
+| `tenant_session` | 1.1 | private | `tenant_id`, one row per login session | `selected_at` only |
 | `security_domain` | 1.2 | public | Platform catalog, read-only to tenants | `created_at`, `updated_at` only |
 | `domain_operation` | 1.2 | public | Platform catalog, read-only to tenants | `created_at`, `updated_at` only |
 | `security_group` | 1.2 | public | `tenant_id` | Yes |
@@ -81,7 +82,7 @@ One row per login. Global, because one person can belong to several tenants.
 | `email` | text not null | Copy of the auth email, for display and audit. Kept in sync by the provisioning script (no Auth trigger needed in Phase 1) |
 | std | | |
 
-- No `last_tenant_id` here. The last-used tenant is on the membership. **[D3]**
+- No last-used tenant here. The chosen tenant is per login session, in `tenant_session`. **[D3]**
 - **RLS:** a user reads and updates their own row (`id = (select auth.uid())`). A user also reads profiles of people who share their **current** tenant (to show names in lists and audit). No insert or delete for users.
 
 ### 2.3 `tenant_membership` (1.1)
@@ -95,10 +96,9 @@ Joins a user to a tenant. The token's `tenant_id` must match an active membershi
 | `user_id` | uuid not null | FK `user_profile(id)` |
 | `status` | text not null default `'active'` | `check in ('active','disabled')` |
 | `permission_version` | integer not null default 1 | Goes in the token. **[D4]** |
-| `last_selected_at` | timestamptz null | Set when the user picks this tenant. **[D3]** |
 | std | | |
 
-- `unique (tenant_id, user_id) where deleted_at is null`
+- `unique (tenant_id, user_id)`, **not** partial. `user_group_assignment` uses it as a composite FK target **[D5]**, and a FK needs a full unique constraint. So a person has one membership row per tenant for life: removing them sets `status = 'disabled'` (or `deleted_at`), and adding them back reuses the row.
 - `unique (tenant_id, id)` for composite FKs
 - Index `(user_id) where status = 'active' and deleted_at is null`: the JWT hook path
 - **RLS:** a user reads their own memberships in any tenant (for the switcher). In the current tenant, `has_permission('users_security','view')` reads all, `manage` writes (Goal 6 UI). Provisioning uses the service role.
@@ -120,6 +120,21 @@ What the tenant has paid for. Hand-seeded in Phase 1 (OQ-30). Not enforced excep
 - `unique (tenant_id, feature_code, valid_from) where deleted_at is null`
 - `check (valid_to is null or valid_to > valid_from)`
 - **RLS:** read in the current tenant (the UI hides "Ask Assetly" without `ai_addon`). No user writes. Service role only.
+
+### 2.4a `tenant_session` (1.1), `private` schema
+
+The tenant the user picked for one login session. **[D3]** A new sign-in is a new Supabase session with no row, so the user is asked again. Two devices can be in two different tenants.
+
+| Column | Type | Notes |
+|---|---|---|
+| `session_id` | uuid PK | `references auth.sessions(id) on delete cascade`. Sign-out and session expiry remove the row |
+| `user_id` | uuid not null | |
+| `tenant_id` | uuid not null | FK `(tenant_id, user_id)` to `tenant_membership(tenant_id, user_id)`. So it can only name a tenant the user belongs to |
+| `selected_at` | timestamptz not null default now() | |
+
+- No std columns and no soft delete: the row lives and dies with the auth session. It is not business data.
+- Written only by `select_tenant()` (section 4). Read only by the JWT hook.
+- **RLS:** on, no policies.
 
 ### 2.5 `security_domain` (1.2), platform catalog
 
@@ -190,13 +205,13 @@ Grants one operation of one domain to one group. **One row per operation. [D6]**
 
 ### 2.9 `user_group_assignment` (1.2)
 
-Gives a group to a member, for a time window. **Points to the membership, not the user. [D5]**
+Gives a group to a member, for a time window. **Points to the user plus tenant. [D5]**
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid PK | |
 | `tenant_id` | uuid not null | |
-| `tenant_membership_id` | uuid not null | FK `(tenant_id, tenant_membership_id)` to `tenant_membership(tenant_id, id)` |
+| `user_id` | uuid not null | FK `user_profile(id)`, and FK `(tenant_id, user_id)` to `tenant_membership(tenant_id, user_id)`. The second FK proves the user is a member of this tenant, with no trigger |
 | `security_group_id` | uuid not null | FK `(tenant_id, security_group_id)` to `security_group(tenant_id, id)` |
 | `effective_from` | timestamptz not null default now() | |
 | `effective_to` | timestamptz null | Null means open-ended |
@@ -205,7 +220,8 @@ Gives a group to a member, for a time window. **Points to the membership, not th
 
 - `check (effective_to is null or effective_to > effective_from)`
 - No unique key: the same group may be assigned twice with different scopes or windows. Grants are additive, so overlaps are harmless.
-- Index `(tenant_id, tenant_membership_id)` and `(tenant_id, security_group_id)` for the rebuild.
+- Index `(tenant_id, user_id)` and `(tenant_id, security_group_id)` for the rebuild.
+- A disabled membership keeps its assignment rows (history), but the rebuild skips them, so they grant nothing.
 - **RLS:** as `security_group`. Changes are `security` audit rows and bump the member's `permission_version`.
 
 ### 2.10 `scope_profile` and `scope_profile_rule` (6.1, not Goal 1)
@@ -242,12 +258,12 @@ Defined here so the Goal 1 keys leave room for them. Built in 6.1, after locatio
 
 ### 2.11 `user_effective_permission` (1.3), derived, `private` schema
 
-The flat table every RLS check reads. Never edited by hand. Rebuilt per member by `private.rebuild_effective_permission(tenant_membership_id)`.
+The flat table every RLS check reads. Never edited by hand. Rebuilt per member by `private.rebuild_effective_permission(tenant_id, user_id)`.
 
 | Column | Type | Notes |
 |---|---|---|
 | `tenant_id` | uuid not null | |
-| `user_id` | uuid not null | Copied from the membership, so the check needs no join |
+| `user_id` | uuid not null | From the assignment |
 | `domain_operation_id` | uuid not null | FK `domain_operation(id)` |
 | `effective_from` | timestamptz not null | Copied from the assignment |
 | `effective_to` | timestamptz null | Copied from the assignment |
@@ -315,11 +331,13 @@ erDiagram
     TENANT ||--o{ TENANT_MEMBERSHIP : has
     USER_PROFILE ||--o{ TENANT_MEMBERSHIP : "belongs via"
     TENANT ||--o{ TENANT_ENTITLEMENT : "paid for"
+    AUTH_SESSIONS ||--o| TENANT_SESSION : "picked tenant"
+    TENANT_MEMBERSHIP ||--o{ TENANT_SESSION : "tenant_id, user_id"
     TENANT ||--o{ SECURITY_GROUP : owns
     SECURITY_DOMAIN ||--|{ DOMAIN_OPERATION : "valid ops"
     SECURITY_GROUP ||--o{ GROUP_DOMAIN_POLICY : grants
     DOMAIN_OPERATION ||--o{ GROUP_DOMAIN_POLICY : "granted as"
-    TENANT_MEMBERSHIP ||--o{ USER_GROUP_ASSIGNMENT : "is given"
+    TENANT_MEMBERSHIP ||--o{ USER_GROUP_ASSIGNMENT : "tenant_id, user_id"
     SECURITY_GROUP ||--o{ USER_GROUP_ASSIGNMENT : "assigned in"
     SCOPE_PROFILE ||--o{ USER_GROUP_ASSIGNMENT : "limits (6.1)"
     SCOPE_PROFILE ||--|{ SCOPE_PROFILE_RULE : "made of (6.1)"
@@ -339,10 +357,10 @@ The rebuild, in one statement:
 -- membership m -> assignment a -> group g -> policy p -> operation
 select m.tenant_id, m.user_id, p.domain_operation_id, a.effective_from, a.effective_to
 from tenant_membership m
-join user_group_assignment a on a.tenant_id = m.tenant_id and a.tenant_membership_id = m.id and a.deleted_at is null
+join user_group_assignment a on a.tenant_id = m.tenant_id and a.user_id = m.user_id and a.deleted_at is null
 join security_group g        on g.tenant_id = a.tenant_id and g.id = a.security_group_id and g.deleted_at is null
 join group_domain_policy p   on p.tenant_id = g.tenant_id and p.security_group_id = g.id and p.deleted_at is null
-where m.id = $1 and m.status = 'active' and m.deleted_at is null;
+where m.tenant_id = $1 and m.user_id = $2 and m.status = 'active' and m.deleted_at is null;
 ```
 
 ---
@@ -351,7 +369,7 @@ where m.id = $1 and m.status = 'active' and m.deleted_at is null;
 
 A Supabase custom access token hook, `private.custom_access_token_hook(event jsonb)`, written in SQL and kept in a migration. It runs on sign-in and on every token refresh.
 
-**Reads:** `tenant_membership` for `event->>'user_id'`, active and not deleted, ordered by `last_selected_at desc nulls last, created_at`. Takes the first row. Also checks `tenant.status <> 'suspended'`.
+**Reads:** `tenant_session` for the session in `event->'claims'->>'session_id'`, then that tenant's `tenant_membership` row, which must be active and not deleted, and `tenant.status <> 'suspended'`. **[D3]** It never picks a default tenant.
 
 **Puts in the token** (two claims, nothing else):
 
@@ -360,9 +378,17 @@ A Supabase custom access token hook, `private.custom_access_token_hook(event jso
 | `tenant_id` | The chosen membership's `tenant_id` |
 | `permission_version` | That membership's `permission_version` |
 
-No active membership: no claims are added. Every policy then denies, and the UI shows a "no access" page.
+No `tenant_session` row yet, or its membership is no longer active: no claims are added. Every tenant policy then denies.
 
-**Switching tenant:** a public function `switch_tenant(p_tenant_id uuid)` checks an active membership exists, sets its `last_selected_at = now()`, and returns. The client then calls `supabase.auth.refreshSession()`, the hook runs again and picks that tenant. No custom token store. **[D3]**
+**Login flow [D3]:**
+
+1. Email and password sign-in. The first token has no `tenant_id`.
+2. The app lists the user's active memberships (their own `tenant_membership` rows joined to `tenant` names; both readable without a tenant claim).
+3. Several tenants: the app shows a "Choose company" step. One tenant: the app picks it without asking. None: a "no access" page.
+4. The app calls the public function `select_tenant(p_tenant_id uuid)`. It checks an active membership, then upserts `tenant_session (session_id = auth.jwt()->>'session_id', user_id, tenant_id)`.
+5. The app calls `supabase.auth.refreshSession()`. The hook runs again and puts that `tenant_id` in the token.
+
+The header switcher calls the same `select_tenant()` and refresh. No custom token store, and no default tenant.
 
 **What the version is for:** policies read `user_effective_permission` live, so a revoked grant stops working at once, whatever the token says. The token's `tenant_id` is trusted only because the rebuild deletes a removed member's rows. The `permission_version` lets the UI notice that its cached menus are stale: on page load and before sensitive screens, the client compares the claim with its membership row and refreshes the session on mismatch (OQ-23 lean). **[D4]**
 
@@ -425,9 +451,9 @@ using (tenant_id = (select private.current_tenant_id())
 
 ## 7. Owner decisions
 
-Each item is **DECIDE**. The model above uses the lean. "Cost to reverse" assumes the change happens after the story that builds it has shipped to staging.
+Each item was **DECIDE**. The owner answered all nine on 19 Oct 2026, and the model above follows the answers. "Cost to reverse" assumes the change happens after the story that builds it has shipped to staging.
 
-### D1. `tenant`, `user_profile`, `tenant_membership`, `tenant_entitlement` are missing from the security model (open-items change #4). DECIDE
+### D1. `tenant`, `user_profile`, `tenant_membership`, `tenant_entitlement` are missing from the security model (open-items change #4). DECIDED
 
 | Option | |
 |---|---|
@@ -435,9 +461,10 @@ Each item is **DECIDE**. The model above uses the lean. "Cost to reverse" assume
 | B | Same tables, but copy the full column lists into `security-model.md` |
 
 **Lean: A.** One home for columns, so the two files cannot drift.
+**Owner: accept the four tables as in 2.1 to 2.4.** Docs home taken as A.
 **Cost to reverse:** docs only, none. The table shapes themselves are covered by D2 to D5.
 
-### D2. Tenant settings: columns on `tenant`, or a separate table. DECIDE
+### D2. Tenant settings: columns on `tenant`, or a separate table. DECIDED
 
 | Option | |
 |---|---|
@@ -446,20 +473,23 @@ Each item is **DECIDE**. The model above uses the lean. "Cost to reverse" assume
 | C | A key-value `tenant_setting (tenant_id, key, value jsonb)` table |
 
 **Lean: A.** Four fixed values read on every page. No join, and real types and checks. Mandatory-field rules go with field definitions (2.5), and the AI flag is a `tenant_entitlement` row.
+**Owner: A,** with currency, locale, time zone and date format.
 **Cost to reverse:** low before Goal 3 (move four columns, fix one read). Medium after, when money and date display read them.
 
-### D3. Where the last-used tenant lives (OQ-17). DECIDE
+### D3. Where the last-used tenant lives (OQ-17). DECIDED
 
 | Option | |
 |---|---|
 | A | `tenant_membership.last_selected_at`. Hook picks the newest |
 | B | `user_profile.last_tenant_id` (FK to `tenant`) |
 | C | Browser storage only. Hook always picks the oldest membership |
+| D | No default. The user picks the tenant at every login. The pick is stored per login session |
 
-**Lean: A.** Stays inside the tenant row that already gates access, so a disabled membership can never be picked. B is a global row pointing into a tenant. C cannot reach the hook.
-**Cost to reverse:** low. One column and the hook's `order by`.
+**Lean was A.**
+**Owner: D.** "While login ask user to select tenant first instead of defaulting it." Built as `tenant_session` (2.4a), `select_tenant()` and the login flow in section 4. No last-used column anywhere. A user with only one tenant skips the picker. This changes the OQ-17 lean.
+**Cost to reverse:** low. One small table, one function and the hook's read.
 
-### D4. Permission version: per user, per membership or per tenant, and what bumps it (OQ-23). DECIDE
+### D4. Permission version: per user, per membership or per tenant, and what bumps it (OQ-23). DECIDED
 
 | Option | |
 |---|---|
@@ -468,9 +498,10 @@ Each item is **DECIDE**. The model above uses the lean. "Cost to reverse" assume
 | C | Per user (on `user_profile`). Crosses tenants, so a change in tenant A refreshes tokens for tenant B |
 
 **Lean: A.** The token is per active tenant, so the version should be too. The bumps happen in the same triggers that call the rebuild.
+**Owner: A.**
 **Cost to reverse:** low. One column and the bump triggers. Access itself does not depend on it (section 4).
 
-### D5. Does `user_group_assignment` point to `tenant_membership` or to the user? DECIDE
+### D5. Does `user_group_assignment` point to `tenant_membership` or to the user? DECIDED
 
 | Option | |
 |---|---|
@@ -478,10 +509,11 @@ Each item is **DECIDE**. The model above uses the lean. "Cost to reverse" assume
 | B | `user_id` (to `user_profile`) plus `tenant_id` |
 | C | `user_id` to `auth.users` directly |
 
-**Lean: A.** The composite FK makes a cross-tenant assignment impossible, and disabling a membership cuts every grant in that tenant. B needs a trigger to prove the user is a member. C ties security data to Supabase Auth (portability, CLAUDE.md §3).
+**Lean was A.** C ties security data to Supabase Auth (portability, CLAUDE.md §3).
+**Owner: B.** Not linked to D3: tenant choice at login works the same with A or B. B is made as safe as A by a second composite FK `(tenant_id, user_id)` to `tenant_membership(tenant_id, user_id)`, so an assignment can only name a member of that tenant, with no trigger. The price: that membership unique key cannot be partial (2.3), so a person keeps one membership row per tenant and is re-enabled, not re-added.
 **Cost to reverse:** medium. Repoint one FK, rewrite the rebuild join, migrate rows.
 
-### D6. `group_domain_policy` operations: one row per operation, or an array. DECIDE
+### D6. `group_domain_policy` operations: one row per operation, or an array. DECIDED
 
 | Option | |
 |---|---|
@@ -489,9 +521,10 @@ Each item is **DECIDE**. The model above uses the lean. "Cost to reverse" assume
 | B | One row per (group, domain) with `operations text[]` |
 
 **Lean: A.** The FK proves the operation is valid for the domain without a trigger, the rebuild is a plain join, and the 6.4 change-set diff is row inserts and deletes.
+**Owner: A.**
 **Cost to reverse:** low before 6.3 (the grid UI). The rebuild is the only reader.
 
-### D7. Shape of the scope profile and rules, and how `user_effective_permission` stores scope. DECIDE
+### D7. Shape of the scope profile and rules, and how `user_effective_permission` stores scope. DECIDED
 
 Rules:
 
@@ -509,9 +542,10 @@ Scope in `user_effective_permission`:
 | Y | Explode scope into rows, one per allowed location (descendants included) |
 
 **Lean: A and X.** A keeps real FKs, so deactivation and the merge function (B12) repoint rule values like any other reference. X keeps the derived table small and does not need a rebuild when the location tree changes. The 1.7 spike measures X on 1M assets.
+**Owner: A and X.**
 **Cost to reverse:** rules medium (a data migration of rule rows). `user_effective_permission` low: it is derived, so changing it is a rebuild.
 
-### D8. One `audit_log`, or a separate `security_audit_log`. DECIDE
+### D8. One `audit_log`, or a separate `security_audit_log`. DECIDED
 
 | Option | |
 |---|---|
@@ -519,9 +553,10 @@ Scope in `user_effective_permission`:
 | B | Separate `security_audit_log` (as `security-model.md` §7 names it) |
 
 **Lean: A.** One trigger function, one screen, one retention rule. The category column gives security entries their own read permission.
+**Owner: A.**
 **Cost to reverse:** medium. Copying rows out is easy, but every writer and the screen change.
 
-### D9. Policy status and version (draft or active) now, or wait for 6.4. DECIDE
+### D9. Policy status and version (draft or active) now, or wait for 6.4. DECIDED
 
 | Option | |
 |---|---|
@@ -529,17 +564,19 @@ Scope in `user_effective_permission`:
 | B | Add `status` (default `'active'`) and `version` to `group_domain_policy` now, unused until 6.4 |
 
 **Lean: A.** `stories-tracker.md` puts staged activation in 6.4. Unused columns now would need every Goal 1 query to filter on them.
+**Owner: A.**
 **Cost to reverse:** low. Adding columns with defaults is one migration, and drafts may not need columns on the live table at all.
 
 ---
 
-## 8. Docs to update after the owner decides
+## 8. Docs to update now the owner has decided
 
 | Doc | Change |
 |---|---|
 | `security-model.md` §7 | Add `tenant`, `user_profile`, `tenant_membership`, `tenant_entitlement` rows and a link here (D1). `security_audit_log` becomes `audit_log` with category (D8). Mark `group_domain_policy` status and version as 6.4 (D9) |
 | `security-model.md` §8.6 | Say what bumps the version and that access does not depend on it (D4) |
-| `open-items-tracker.md` | Close or update OQ-17 (D3) and OQ-23 (D4). Mark follow-up change #4 done (D1) |
+| `open-items-tracker.md` | OQ-17: decided, user picks the tenant at login, no default (D3). OQ-23: version per membership (D4). Mark follow-up change #4 done (D1) |
+| `docs/assetly-screens.html` | Add a "Choose company" step after sign-in for users with several tenants (D3) |
 | `technical-architecture.md` line 95 | Point to section 4 of this file for the hook |
 | `asset-management-platform-knowledge-base.md` §5 | "Tenant Settings" are columns on Tenant, the AI entitlement is in Tenant Entitlement (D2) |
 | `CLAUDE.md` §8 | Add the composite same-tenant FK rule from section 1 |
