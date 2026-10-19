@@ -26,7 +26,18 @@
     "search": "Search assets, tags, vendors…",
     "askAssetly": "Ask Assetly · AI",
     "initials": "KR",
-    "account": "Account"
+    "account": "Account",
+    "signOut": "Sign out"
+  },
+  "login": {
+    "headline": "Every asset, contract and service date in one place.",
+    "tagline": "Industry-ready setup. Import from Excel in a day.",
+    "footer": "Multi-tenant · Role-based security · Audit trail",
+    "welcome": "Welcome back. Enter your work details.",
+    "email": "Work email",
+    "emailPlaceholder": "name@company.com",
+    "password": "Password",
+    "error": "Email or password is incorrect."
   },
   "pages": {
     "login": "Sign in",
