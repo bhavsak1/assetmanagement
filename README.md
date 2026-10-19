@@ -36,6 +36,14 @@ npx supabase db push
 
 `link` asks for the database password. It is not stored in git.
 
+## Staging
+
+- Web app: https://assetly-staging.pages.dev (Cloudflare Pages), against Supabase project `blhxyfgkkhpqbfuhpnww`.
+- Deploys: every push to `main` builds and deploys through Cloudflare's Git integration. Pull requests get preview URLs.
+- Pages settings: root `apps/web`, build `npm run build`, output `dist`, env `NODE_VERSION=24`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (publishable key only, never service-role). Values live in the Pages dashboard, not git.
+- Auth settings: `[remotes.staging]` in `supabase/config.toml`. Preview with `npx supabase config diff --project-ref blhxyfgkkhpqbfuhpnww`, apply with `npx supabase config push --project-ref blhxyfgkkhpqbfuhpnww`.
+- Users: no public signup. Add users in the Supabase dashboard (Authentication, Add user, auto-confirm) until the provisioning script exists.
+
 ### CI
 
 `.github/workflows/ci.yml` runs on every pull request: a fresh `db reset`, `supabase test db`, and a check that the committed types match the schema. The web lint, typecheck and build job comes in story 0.3.
