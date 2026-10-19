@@ -51,8 +51,8 @@
 
 | ID | Story | Open items | Status |
 |---|---|---|---|
-| 1.0 | Goal 1 data model: tables, columns, keys, joins, tenancy per table (docs only) | OQ-16, OQ-17, OQ-23, OQ-24, OQ-30 | In review |
-| 1.1 | Tenant, user profile, tenant membership, JWT hook carrying `tenant_id`. Hand-seeded `tenant_entitlement` and `tenant.status` | OQ-16, OQ-17, OQ-23, OQ-30 | Todo |
+| 1.0 | Goal 1 data model: tables, columns, keys, joins, tenancy per table (docs only) | OQ-16, OQ-17, OQ-23, OQ-24, OQ-30 | Done |
+| 1.1 | Tenant, user profile, tenant membership, JWT hook carrying `tenant_id`. Hand-seeded `tenant_entitlement` and `tenant.status` | OQ-16, OQ-17, OQ-23, OQ-30 | In review |
 | 1.2 | Security tables: domain, operation, group, policy, assignment. Seed the default domain catalog | OQ-25 | Todo |
 | 1.3 | `user_effective_permission` rebuild function and `has_permission()` helpers (includes tenant status write check) | OQ-30 | Todo |
 | 1.4 | First RLS pattern on a sample table, plus the cross-tenant test harness | | Todo |
