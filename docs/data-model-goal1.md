@@ -150,7 +150,7 @@ A securable slice of the product. Seeded by migration with `on conflict (code) d
 | `is_system` | boolean not null default true | All Phase 1 domains are system domains |
 | `created_at`, `updated_at` | timestamptz | |
 
-- **RLS:** select for `authenticated`. No writes except migrations.
+- **RLS:** select with `users_security.view` only (owner decision, 19 Oct 2026; policy in 1.3). No writes except migrations.
 
 ### 2.6 `domain_operation` (1.2), platform catalog
 
@@ -165,7 +165,7 @@ The valid operations of each domain. The policy grid is drawn from these rows (o
 | `created_at`, `updated_at` | timestamptz | |
 
 - `unique (security_domain_id, code)`. Seeded with `on conflict do nothing`.
-- **RLS:** select for `authenticated`. No writes except migrations.
+- **RLS:** select with `users_security.view` only (owner decision, 19 Oct 2026; policy in 1.3). No writes except migrations.
 
 ### 2.7 `security_group` (1.2)
 
