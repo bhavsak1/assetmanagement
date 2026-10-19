@@ -26,7 +26,7 @@ Copy `.env.example` to `.env`. Local keys come from `npx supabase status`. Never
 3. `npm run db:reset`, `npm run db:test`, `npm run db:types`.
 4. Never edit a migration that is already on staging. Add a new one.
 
-### Staging (hosted, Mumbai)
+### Staging (hosted, Tokyo)
 
 ```bash
 npx supabase login
