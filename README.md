@@ -44,6 +44,15 @@ npx supabase db push
 - Auth settings: `[remotes.staging]` in `supabase/config.toml`. Preview with `npx supabase config diff --project-ref blhxyfgkkhpqbfuhpnww`, apply with `npx supabase config push --project-ref blhxyfgkkhpqbfuhpnww`.
 - Users: no public signup. Add users in the Supabase dashboard (Authentication, Add user, auto-confirm) until the provisioning script exists.
 
+### RLS performance spike (story 1.7, local only)
+
+Loads about 1M assets into the local database (about 3 min), then times the RLS queries (about 20 min). Never run it on staging or in CI. Results and plans land in `spike.result`; the write-up is `docs/spike-1-7-rls-performance.md`. `npm run db:reset` removes it all.
+
+```bash
+npm run db:reset
+cat scripts/spike-1-7/01_setup.sql scripts/spike-1-7/02_data.sql scripts/spike-1-7/03_bench.sql scripts/spike-1-7/04_fixes.sql | docker exec -i supabase_db_assetly psql -U postgres -v ON_ERROR_STOP=1 -q
+```
+
 ### CI
 
 `.github/workflows/ci.yml` runs on every pull request: a fresh `db reset`, `supabase test db`, and a check that the committed types match the schema. The web lint, typecheck and build job comes in story 0.3.
