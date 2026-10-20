@@ -129,6 +129,8 @@ insert into public.asset_category (tenant_id, name) values
 insert into public.field_definition (tenant_id, entity, key, label, type, security_domain_id)
 select t, 'asset', 'row_key', 'row', 'text', (select id from public.security_domain where code = 'asset_core')
 from unnest(array['00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b']::uuid[]) t;
+insert into public.location (tenant_id, name) values
+  ('00000000-0000-0000-0000-00000000000a', 'a-site'), ('00000000-0000-0000-0000-00000000000b', 'b-site');
 select is(array(select name from tenant_table where pg_temp.count_rows(name, $$tenant_id = '00000000-0000-0000-0000-00000000000b'$$) = 0 order by 1),
           '{}', 'every public tenant_id table holds tenant B rows to hide');
 -- One test per tenant A user, each acting as that user over every table. Plain queries, so RLS decides.
