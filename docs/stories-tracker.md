@@ -58,10 +58,10 @@
 | 1.4 | First RLS pattern on a sample table, plus the cross-tenant test harness | | Done |
 | 1.5 | Audit log and outbox tables with triggers | | Done |
 | 1.6 | Starter groups (Tenant Admin, Plant Manager, Planner, Technician, Auditor) and the permission test matrix in CI | OQ-22, OQ-25 | Done |
-| 1.6b | Push Goal 1 to staging: `supabase db push` (migrations only, no seed or test harness), then `supabase config push` (JWT hook on), then provision two test tenants on staging. Order matters: config before migrations breaks sign-in | | In review |
+| 1.6b | Push Goal 1 to staging: `supabase db push` (migrations only, no seed or test harness), then `supabase config push` (JWT hook on), then provision two test tenants on staging. Order matters: config before migrations breaks sign-in | | Done |
 | 1.7 | Spike: RLS and scope-check performance on about 1M generated assets (added from open-items tracker, section E) | | Done |
-| 1.8 | Login tenant pick (D3): after sign-in list the user's active memberships. One: `select_tenant()` then `refreshSession()`, so the token carries `tenant_id` and `permission_version`. None: a "No access" page | OQ-17 | In review |
-| 1.9 | "Choose company" screen after sign-in for users with several tenants, plus the header company switcher (same `select_tenant()` and refresh). Adds the step to `assetly-screens.html` | OQ-17 | In review |
+| 1.8 | Login tenant pick (D3): after sign-in list the user's active memberships. One: `select_tenant()` then `refreshSession()`, so the token carries `tenant_id` and `permission_version`. None: a "No access" page | OQ-17 | Done |
+| 1.9 | "Choose company" screen after sign-in for users with several tenants, plus the header company switcher (same `select_tenant()` and refresh). Adds the step to `assetly-screens.html` | OQ-17 | Done |
 | 1.10 | Staging demo of "Choose company": let `scripts/provision-staging.sql` add one named test user to a second tenant (today it refuses a second tenant). Run on staging only with the owner's yes | OQ-16 | Todo |
 | 1.11 | Co-tenant profile read: new migration with a `user_profile` select policy for active members of the current tenant (data model §2.2; today own row only), plus RLS and cross-tenant tests. New migration, staging ones are frozen | | Todo |
 
@@ -70,7 +70,7 @@
 
 | ID | Story | Open items | Status |
 |---|---|---|---|
-| 2.1 | Category and field definition tables (hierarchy, type, required flag, security domain) | | Todo |
+| 2.1 | Category and field definition tables (hierarchy, type, required flag, security domain) | | In review |
 | 2.2 | Categories screen: list, add, edit category and fields | | Todo |
 | 2.3 | Location hierarchy with closure table | | In review |
 | 2.4 | Locations screen: tree, add, move | | Todo |

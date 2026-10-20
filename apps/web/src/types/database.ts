@@ -5,7 +5,45 @@ export type Database = {
   
   "public": {
           Tables: {
-            "audit_log": {
+            "asset_category": {
+                  Row: {
+                    "created_at": string,"created_by": string | null,"deleted_at": string | null,"description": string | null,"id": string,"is_active": boolean,"name": string,"parent_id": string | null,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"description"?: string | null,"id"?: string,"is_active"?: boolean,"name": string,"parent_id"?: string | null,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"description"?: string | null,"id"?: string,"is_active"?: boolean,"name"?: string,"parent_id"?: string | null,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "asset_category_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "asset_category_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "asset_category_tenant_id_parent_id_fkey"
+      columns: ["tenant_id","parent_id"]
+isOneToOne: false
+      referencedRelation: "asset_category"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "asset_category_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"audit_log": {
                   Row: {
                     "action": string,"actor_type": string,"actor_user_id": string | null,"category": string,"id": string,"new_data": Json | null,"occurred_at": string,"old_data": Json | null,"reason": string | null,"record_id": string,"table_name": string,"tenant_id": string,"transaction_id": number
                   }
@@ -48,6 +86,50 @@ isOneToOne: false
       columns: ["security_domain_id"]
 isOneToOne: false
       referencedRelation: "security_domain"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"field_definition": {
+                  Row: {
+                    "category_id": string | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"entity": string,"id": string,"is_active": boolean,"is_required": boolean,"key": string,"label": string,"options": NonNullable<Json>,"security_domain_id": string,"sort_order": number,"tenant_id": string,"type": string,"unit": string | null,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "category_id"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"entity": string,"id"?: string,"is_active"?: boolean,"is_required"?: boolean,"key": string,"label": string,"options"?: NonNullable<Json>,"security_domain_id": string,"sort_order"?: number,"tenant_id": string,"type": string,"unit"?: string | null,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "category_id"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"entity"?: string,"id"?: string,"is_active"?: boolean,"is_required"?: boolean,"key"?: string,"label"?: string,"options"?: NonNullable<Json>,"security_domain_id"?: string,"sort_order"?: number,"tenant_id"?: string,"type"?: string,"unit"?: string | null,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "field_definition_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "field_definition_security_domain_id_entity_fkey"
+      columns: ["security_domain_id","entity"]
+isOneToOne: false
+      referencedRelation: "security_domain"
+      referencedColumns: ["id","entity"]
+    },{
+      foreignKeyName: "field_definition_tenant_id_category_id_fkey"
+      columns: ["tenant_id","category_id"]
+isOneToOne: false
+      referencedRelation: "asset_category"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "field_definition_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "field_definition_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
       referencedColumns: ["id"]
     }
                   ]
