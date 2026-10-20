@@ -30,7 +30,9 @@ vi.mock('./supabase', () => ({
     },
     rpc: auth.rpc,
     // tenant_membership query: select().eq().eq().is() resolves to the mocked rows.
-    from: () => {
+    // my_permission: select() resolves to no grants.
+    from: (table: string) => {
+      if (table === 'my_permission') return { select: () => Promise.resolve({ data: [] }) }
       const q = { select: () => q, eq: () => q, is: () => Promise.resolve({ data: auth.memberships }) }
       return q
     },

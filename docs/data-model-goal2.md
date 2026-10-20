@@ -137,6 +137,6 @@ A user without `asset_financials` can still read that a field definition in `ass
 
 ## 4. Not in 2.1
 
-- UI (2.2). Note for 2.2: `security_domain` is readable only with `users_security.view` (1.3 owner decision), so a category admin without it cannot list domains for the picker. 2.2 needs either a small read function for field domains or a policy change. Owner call then.
+- UI (2.2). Note for 2.2: `security_domain` is readable only with `users_security.view` (1.3 owner decision), so a category admin without it cannot list domains for the picker. Owner chose a read function (20 Oct 2026): 2.2 adds `public.field_domains(entity)` (needs `category_config.view`, returns the entity's entity and field domains) and `public.my_permission`, a view of the caller's own grants so the UI can hide actions. Migration `2_2_ui_read_helpers`.
 - Asset table, `custom_values`, the write function and the secure view (3.1, 3.3).
 - Industry templates (Goal 7), depreciation method, field translations, per-category required override, a `money` type.
