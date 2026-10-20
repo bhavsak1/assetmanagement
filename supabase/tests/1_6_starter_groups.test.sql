@@ -124,6 +124,8 @@ select is_empty(
 -- Review point 1: a user of tenant A sees no tenant B row in any public tenant_id table.
 insert into public.rls_sample (tenant_id, name) values
   ('00000000-0000-0000-0000-00000000000a', 'a-row'), ('00000000-0000-0000-0000-00000000000b', 'b-row');
+insert into public.location (tenant_id, name) values
+  ('00000000-0000-0000-0000-00000000000a', 'a-site'), ('00000000-0000-0000-0000-00000000000b', 'b-site');
 select is(array(select name from tenant_table where pg_temp.count_rows(name, $$tenant_id = '00000000-0000-0000-0000-00000000000b'$$) = 0 order by 1),
           '{}', 'every public tenant_id table holds tenant B rows to hide');
 -- One test per tenant A user, each acting as that user over every table. Plain queries, so RLS decides.
