@@ -58,7 +58,8 @@ insert into public.user_group_assignment (tenant_id, user_id, security_group_id)
 select is(
   (select count(*)::int from private.user_effective_permission
    where tenant_id = '00000000-0000-0000-0000-00000000000a' and user_id = '00000000-0000-0000-0000-0000000000a1'),
-  8, 'rebuild writes one row per assignment and operation'
+  -- 7, not 8: asset_core.view comes from two groups with the same window, one row since 1.7 (G2).
+  7, 'rebuild writes one row per distinct grant and window'
 );
 select results_eq(
   $$select distinct d.code || '.' || o.code from private.user_effective_permission u

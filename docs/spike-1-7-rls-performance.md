@@ -2,7 +2,7 @@
 
 Date: 20 Oct 2026. Status: In review. Local only; nothing here touched staging, CI or `seed.sql`.
 
-**Short answer.** The Goal 1 design holds. The helpers (`current_tenant_id()`, `has_permission()`, `tenant_can_write()`) run once per query as InitPlans and cost about 1 to 2 ms in total. They do not slow down with 45 groups. Writes with the audit trigger take about 7 ms. D7 option X (store `scope_profile_id`, check scope through the closure table) works, **but only in set form**. A per-row scope helper is 100 to 1000 times slower. The slow reads came from **index and query shape on the asset table**, not from Goal 1. One Goal 1 change is worth making before staging: the 1.3 row-level rebuild trigger (shortcut already flagged in the code). Saving 20 policy rows on a group with 80 members takes 6.7 s.
+**Short answer.** The Goal 1 design holds. The helpers (`current_tenant_id()`, `has_permission()`, `tenant_can_write()`) run once per query as InitPlans and cost about 1 to 2 ms in total. They do not slow down with 45 groups. Writes with the audit trigger take about 7 ms. D7 option X (store `scope_profile_id`, check scope through the closure table) works, **but only in set form**. A per-row scope helper is 100 to 1000 times slower. The slow reads came from **index and query shape on the asset table**, not from Goal 1. Two Goal 1 rebuild fixes were worth making before staging, and are now made in migration `1_7_rebuild_triggers` (section 6). G1: policy changes now refresh each member once per statement; saving 20 policies on a group with 80 members went from 6.7 s to 0.27 s. G2: the rebuild no longer writes duplicate rows.
 
 ## 1. Setup and data shape
 
@@ -110,16 +110,16 @@ F2 alone fixes the list pages without app changes, so F1 is not needed.
 - **Pass, no change needed:** tenant check, `has_permission()`, `tenant_can_write()`, composite FKs, the soft-delete guard, the audit trigger on writes, lookups, counts in small tenants, single-assignment rebuilds, `seed_starter_groups`, and many groups on the read path.
 - **Pass after asset-table fixes (Goal 3, no Goal 1 change):** list pages and deep pages (F2), name search (F5).
 - **Still marginal:** count in the large tenant with site scope (225 / 260 ms), and list with a very narrow scope (60 / 139 ms).
-- **Fail in Goal 1:** bulk policy saves on a group with many members (F3, 6.7 s), and the rebuild for the many-groups user (90 / 154 ms).
+- **Failed in Goal 1, now fixed (G1, G2):** bulk policy saves on a group with many members (F3: 6.7 s, now 267 ms), and the rebuild for the many-groups user (90 ms, now 7.7 ms).
 
 ## 6. Recommended changes
 
-### Goal 1 (1.1 to 1.6 objects). Needs the owner's yes. Would be a new migration `1_7_<what>` with tests.
+### Goal 1 (1.1 to 1.6 objects). Owner said yes on 20 Oct 2026. Done in migration `1_7_rebuild_triggers`, tests in `1_7_rebuild_triggers.test.sql`
 
-| # | Change | Measured gain | Cost to reverse |
+| # | Change | Measured gain (re-run on a fresh load) | Cost to reverse |
 |---|---|---|---|
-| G1 | `group_domain_policy` triggers become **statement-level with transition tables**: collect the distinct affected groups once, then refresh each member once. This replaces the row-level shortcut that 1.3 flagged in a comment. `user_group_assignment` and `tenant_membership` can stay row-level (one member per row is already cheap) | F3: 20 policies on 80 members goes from 6.7 s to about the cost of one group refresh (about 0.3 s, from row 52). Not yet measured with the new trigger | Low: one trigger function and three trigger definitions. No table or column change. Owner review: it is a permission helper |
-| G2 | Rebuild inserts `select distinct` on `(domain_operation_id, effective_from, effective_to)` (plus `scope_profile_id` from 6.1) | Many-groups user: 2,028 rows down to about 47. Rebuild 90 ms down to roughly single-digit ms (estimate, not measured) | None: function body only. Reads are the same either way |
+| G1 | `group_domain_policy` triggers are now **statement-level with transition tables** (`private.on_policy_change()`). They collect the groups the statement touched, old and new rows, then refresh each affected member once. This replaces the row-level shortcut that 1.3 flagged in a comment. `user_group_assignment`, `tenant_membership` and `security_group` stay row-level (one member or one group per row is already cheap) | F3, 20 policies on 80 members: **6,730 / 9,631 ms down to 267 / 631 ms** (p50 / p95). Row 52, one policy: 281 / 363 down to 159 / 235 ms | Low: one trigger function and three trigger definitions. No table or column change |
+| G2 | The rebuild inserts `select distinct`, so a grant that two groups give with the same window is one row. 6.1 must keep `scope_profile_id` in the distinct | Row 51, the user with 45 groups: **90 / 154 ms down to 7.7 / 9.0 ms**. Rows down from 2,028 to 67 (47 operations; the rest differ by effective window) | None: function body only. Reads are the same either way. A 1.3 test changed from 8 to 7 rows for this reason |
 
 Nothing else in Goal 1 needs to change. `has_permission()` joining to `security_domain` and `domain_operation` by code costs 0.6 ms with 45 groups. Caching the operation id is not worth it.
 
