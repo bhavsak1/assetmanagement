@@ -140,3 +140,125 @@ A user without `asset_financials` can still read that a field definition in `ass
 - UI (2.2). Note for 2.2: `security_domain` is readable only with `users_security.view` (1.3 owner decision), so a category admin without it cannot list domains for the picker. Owner chose a read function (20 Oct 2026): 2.2 adds `public.field_domains(entity)` (needs `category_config.view`, returns the entity's entity and field domains) and `public.my_permission`, a view of the caller's own grants so the UI can hide actions. Migration `2_2_ui_read_helpers`.
 - Asset table, `custom_values`, the write function and the secure view (3.1, 3.3).
 - Industry templates (Goal 7), depreciation method, field translations, per-category required override, a `money` type.
+
+---
+
+## 5. Story 2.5: tenant settings and mandatory-field rules
+
+**Status:** design, 20 Oct 2026. Waiting on owner answers to **S1 to S3** and **M1, M2** before any migration or UI work.
+
+### 5.1 Settings: what exists
+
+1.1 already built the four D2 columns on `tenant` (data-model-goal1.md §2.1):
+
+| Column | Today | 2.5 adds |
+|---|---|---|
+| `currency_code` | `char(3) not null`, no check | Check `^[A-Z]{3}$` |
+| `locale` | `text not null default 'en-IN'` | Check `^[a-z]{2,3}(-[A-Z]{2})?$`. Drop the India default (CLAUDE.md §8) |
+| `time_zone` | `text not null`, no check | Must be a name in `pg_timezone_names` (IANA). Checked in the S1 action function |
+| `date_format` | `text not null`, no check | Check in a fixed list: `dd-MM-yyyy`, `dd/MM/yyyy`, `MM/dd/yyyy`, `yyyy-MM-dd`, `dd MMM yyyy` |
+| `fiscal_year_start_month` | missing | **New** `smallint not null`, check 1 to 12 [S3] |
+
+- Locale also drives number format (open-items section A: "number format at company setup"). No separate column.
+- Seed and staging values (`INR`, `en-IN`, `Asia/Kolkata`, `dd-MM-yyyy` and `USD`, `en-US`, `America/New_York`, `MM/dd/yyyy`) all pass the new checks.
+- Currency is a regex, not an ISO 4217 lookup table. The UI picker lists `Intl.supportedValuesOf('currency')`, so users pick only real codes. A lookup table later is a cheap migration.
+
+**Read:** no change. `tenant_select_member` (1.1) already lets every active member read their tenant row, all columns. Every user needs locale, time zone and date format to show data. The `tenant_settings.view` grant only decides who sees the Settings page.
+
+**Write:** see [S1]. `tenant` keeps **no** update grant for `authenticated`, so `status`, `slug`, `name` and `deleted_at` stay system-only.
+
+**Audit:** `private.audit_row()` reads `tenant_id` from the row. `tenant` has none (its key is `id`) and `audit_log.tenant_id` is not null, so the generic trigger cannot go on `tenant`. The action function writes the audit row and outbox event itself, same transaction, category `'data'`.
+
+### 5.2 Mandatory-field rules
+
+Two kinds of field on the future asset form:
+
+1. **Custom fields** (`field_definition`). `is_required` already exists (2.1) and the 2.2 field form already toggles it. A field on a parent category is inherited by every descendant, `is_required` included (G3). No per-category override (2.1 decision). **Nothing to build for custom fields.**
+2. **System fields** (columns on the Goal 3 `asset` table). These need a rule store, and the table does not exist yet. See [M1].
+
+| System fields | Fields (3.1 fixes the final list) | Rule |
+|---|---|---|
+| Always required | name, category, status | `not null` on the asset table. Not configurable |
+| Optional, tenant can make mandatory | serial_number, manufacturer, model, location, purchase_date, purchase_value, in_service_date | The M1 rule store |
+
+Minimal by default (CLAUDE.md §10.3): every optional system field starts **not** mandatory.
+
+**Enforcement (3.3 builds it, 2.5 fixes the shape):**
+- In the database, at write time. The 3.3 asset write function (and the Goal 4 import commit) reads the M1 rules plus `field_definition.is_required` for the asset's category line, and refuses a missing value with one error that lists the missing fields.
+- The UI marks the same fields required. A hint only.
+- Turning a rule on does not recheck old records. It applies on their next save. [M2] covers fields in a domain the user cannot write.
+
+### 5.3 UI
+
+- **Settings page** at `/settings` (the sidebar already has it). There is no Settings screen in `assetly-screens.html` (open-items section D lists it as missing), so it follows the 2.2 and 2.4 card and form style. Shown with `tenant_settings.view`. Editable with `tenant_settings.manage`, read-only otherwise.
+  - Card "Regional": currency, locale, time zone, date format (with a sample date), fiscal year start month.
+  - Card "Mandatory asset fields": one switch per optional system field (M1 option A).
+- **Category field form:** no change. The 2.2 "Required" switch is the custom-field rule.
+- No screen formats dates or money with these settings yet: nothing in Goals 1 and 2 shows tenant dates. Goal 3 uses them.
+
+### 5.4 Owner decisions
+
+#### S1. How a settings admin writes. DECIDE
+
+| Option | |
+|---|---|
+| A | Action function `public.update_tenant_settings(currency_code, locale, time_zone, date_format, fiscal_year_start_month, required_asset_fields)`. Security definer, fixed `search_path`. Checks `tenant_settings.manage` and `tenant_can_write()`, current tenant only, validates the time zone, writes audit and outbox rows. No update grant on `tenant` |
+| B | Column-level `grant update (...)` plus an update policy, like `field_definition` (2.1). Needs a tenant-specific audit trigger and a time-zone trigger |
+
+**Lean: A.** One place for permission, checks and audit; the generic audit trigger cannot go on `tenant` anyway. CLAUDE.md §7.8: actions are functions. **Cost to reverse:** low, no data shape change.
+
+#### S2. Can a read-only tenant change settings? DECIDE
+
+| Option | |
+|---|---|
+| A | No. `tenant_can_write()` applies, like every other write |
+| B | Yes. Settings are admin config, not business data |
+
+**Lean: A.** One rule everywhere. **Cost to reverse:** low, one line.
+
+#### S3. Fiscal year start month now. DECIDE
+
+| Option | |
+|---|---|
+| A | Add `fiscal_year_start_month` now (data-model-goal1.md §2.1 planned it for 2.5). Existing tenants backfilled to 4 (April), then the default is dropped so provisioning must pass it. The "locks after the first asset" rule is a 3.1 trigger |
+| B | Leave it until a story uses it (depreciation is Phase 2) |
+
+**Lean: A.** Planned for 2.5, set at company setup (open-items section A), and it must exist before the first asset locks it. **Cost to reverse:** low before assets exist.
+
+#### M1. Where system-field mandatory rules live. DECIDE
+
+| Option | |
+|---|---|
+| A | `tenant.required_asset_fields text[] not null default '{}'`, check `<@` the optional list above. Tenant-wide. Written through S1 |
+| B | Table `mandatory_field_rule (tenant_id, entity, field_code, category_id null)`, per category, inherited like G3. Full 1.4 pattern, cross-tenant tests, UI on the category screen |
+| C | Nothing in 2.5. 3.3 decides, with the asset table |
+
+**Lean: A.** Per-category needs are already covered by custom fields on the category. A is one column; B is a table, policies and a screen for a need no pilot has raised. A to B later is a data copy (one row per array item, `category_id` null). 3.1 may change the allowed list with a new migration once the asset columns are final. **Cost to reverse:** low.
+
+#### M2. Mandatory field in a domain the user cannot write. DECIDE
+
+Example: `purchase_value` (domain `asset_financials`) is mandatory, and a Technician without that domain creates an asset.
+
+| Option | |
+|---|---|
+| A | Refuse the save. That user cannot create assets |
+| B | Skip the rule for fields the caller cannot update. The asset saves with the field empty. A later "incomplete records" list can show it |
+| C | Refuse to make a field mandatory unless every group that can create assets can write it |
+
+**Lean: B.** Never blocks work on a field the user cannot even see. A is a support trap; C is complex and breaks when groups change. Same rule for custom fields in `asset_financials`. **Cost to reverse:** low, logic in the 3.3 function only.
+
+### 5.5 Build plan (after answers)
+
+Migrations, one purpose each:
+1. `2_5_tenant_settings_columns`: the checks in §5.1, drop the `locale` default, add `fiscal_year_start_month` (S3) and `required_asset_fields` (M1).
+2. `2_5_update_tenant_settings`: the S1 action function.
+
+pgTAP `2_5_tenant_settings.test.sql`: no grant refused; `view` only refused; `manage` updates; read-only tenant refused (S2); bad currency, locale, time zone, date format, month and field code refused; a direct `update public.tenant` by a manage user is refused (status, name, slug unchanged); the other tenant is untouched; an audit row is written. No new tenant table, so no `tests.cross_tenant` line.
+
+Web: `Settings.tsx` and `Settings.test.tsx` in the 2.4 style, strings in `en.json`, types regenerated.
+
+### 5.6 Not in 2.5
+
+- Asset table, the 3.3 required check, the fiscal-year lock (3.1).
+- Formatting dates and money in the UI with these settings (Goal 3, when there is data to show).
+- Per-category system-field rules, an ISO 4217 table, a curated locale list, editing the tenant name or logo.
