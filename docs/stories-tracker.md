@@ -60,6 +60,8 @@
 | 1.6 | Starter groups (Tenant Admin, Plant Manager, Planner, Technician, Auditor) and the permission test matrix in CI | OQ-22, OQ-25 | Done |
 | 1.6b | Push Goal 1 to staging: `supabase db push` (migrations only, no seed or test harness), then `supabase config push` (JWT hook on), then provision two test tenants on staging. Order matters: config before migrations breaks sign-in | | In review |
 | 1.7 | Spike: RLS and scope-check performance on about 1M generated assets (added from open-items tracker, section E) | | Done |
+| 1.8 | Login tenant pick (D3): after sign-in list the user's active memberships. One: `select_tenant()` then `refreshSession()`, so the token carries `tenant_id` and `permission_version`. None: a "No access" page | OQ-17 | In review |
+| 1.9 | "Choose company" screen after sign-in for users with several tenants, plus the header company switcher (same `select_tenant()` and refresh). Adds the step to `assetly-screens.html` | OQ-17 | In review |
 
 ### Goal 2: Configuration (categories, fields, locations)
 **Review point:** you create a category with custom fields and a location tree in the UI.
@@ -191,3 +193,4 @@ Open items: OQ-11, OQ-21.
 | 19 Oct 2026 | Story 1.3 widened: it adds the RLS policies on the 1.2 security tables. Owner decision: the domain catalog is readable by security admins only (`users_security.view`), not by every signed-in user |
 | 20 Oct 2026 | Story 1.6b added: no story pushed the Goal 1 migrations and the JWT hook config to staging. Owner chose one push after 1.6, so earlier migrations can still change until then |
 | 20 Oct 2026 | Story 1.7 moved before 1.6b: owner wants the spike to prove the Goal 1 table structure before the staging push |
+| 20 Oct 2026 | Stories 1.8 and 1.9 added: no story built the D3 login flow, so staging users got tokens without `tenant_id`. Owner asked for both in one session |

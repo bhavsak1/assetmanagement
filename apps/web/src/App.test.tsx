@@ -12,6 +12,9 @@ const auth = vi.hoisted(() => ({
   listener: undefined as AuthCallback | undefined,
   signInWithPassword: vi.fn(),
   signOut: vi.fn(),
+  refreshSession: vi.fn(),
+  rpc: vi.fn(),
+  memberships: [] as { tenant_id: string; tenant: { name: string; status: string; deleted_at: null } }[],
 }))
 
 vi.mock('./supabase', () => ({
@@ -23,6 +26,13 @@ vi.mock('./supabase', () => ({
       },
       signInWithPassword: auth.signInWithPassword,
       signOut: auth.signOut,
+      refreshSession: auth.refreshSession,
+    },
+    rpc: auth.rpc,
+    // tenant_membership query: select().eq().eq().is() resolves to the mocked rows.
+    from: () => {
+      const q = { select: () => q, eq: () => q, is: () => Promise.resolve({ data: auth.memberships }) }
+      return q
     },
   },
 }))
@@ -43,7 +53,20 @@ afterEach(() => {
   container.remove()
 })
 
-function render(path: string, session: unknown) {
+const membership = (tenant_id: string, name: string) => ({ tenant_id, tenant: { name, status: 'active', deleted_at: null } })
+// A session whose access token carries the given claims (unsigned; the app only decodes it).
+const session = (claims: object = {}) => ({
+  user: { id: 'u1' },
+  access_token: `h.${btoa(JSON.stringify(claims)).replace(/=+$/, '')}.s`,
+})
+
+beforeEach(() => {
+  auth.memberships = []
+  auth.rpc.mockResolvedValue({ error: null })
+  auth.refreshSession.mockResolvedValue({ error: null })
+})
+
+async function render(path: string, session: unknown) {
   act(() =>
     root.render(
       <MemoryRouter initialEntries={[path]}>
@@ -51,29 +74,73 @@ function render(path: string, session: unknown) {
       </MemoryRouter>,
     ),
   )
-  act(() => auth.listener?.('INITIAL_SESSION', session))
+  // async act lets the membership query settle.
+  await act(async () => auth.listener?.('INITIAL_SESSION', session))
 }
 
 const heading = () => container.querySelector('h1')?.textContent
 
-test('signed out: a protected route shows the login screen', () => {
-  render('/assets', null)
+test('signed out: a protected route shows the login screen', async () => {
+  await render('/assets', null)
   expect(heading()).toBe(t.pages.login)
   expect(container.textContent).not.toMatch(/SSO|forgot/i)
 })
 
-test('signed in: protected route renders, and sign out returns to login', () => {
-  render('/assets', { user: {} })
+test('signed in with a tenant: protected route renders, and sign out returns to login', async () => {
+  auth.memberships = [membership('ta', 'Tenant A')]
+  await render('/assets', session({ tenant_id: 'ta' }))
   expect(heading()).toBe(t.pages.assets)
+  expect(container.textContent).toContain('Tenant A')
   act(() => auth.listener?.('SIGNED_OUT', null))
   expect(heading()).toBe(t.pages.login)
 })
 
 test('failed sign in shows one generic message', async () => {
   auth.signInWithPassword.mockResolvedValue({ error: { message: 'Invalid login credentials' } })
-  render('/login', null)
+  await render('/login', null)
   container.querySelector<HTMLInputElement>('[name="email"]')!.value = 'someone@example.com'
   container.querySelector<HTMLInputElement>('[name="password"]')!.value = 'wrong'
   await act(async () => container.querySelector('form')!.requestSubmit())
   expect(container.querySelector('[role="alert"]')?.textContent).toBe(t.login.error)
+})
+
+test('no active membership: no access page, no tenant picked', async () => {
+  await render('/dashboard', session())
+  expect(heading()).toBe(t.company.noAccessTitle)
+  expect(auth.rpc).not.toHaveBeenCalled()
+})
+
+test('one membership: picks it without asking, then refreshes the token', async () => {
+  auth.memberships = [membership('ta', 'Tenant A')]
+  await render('/dashboard', session())
+  expect(auth.rpc).toHaveBeenCalledWith('select_tenant', { p_tenant_id: 'ta' })
+  expect(auth.refreshSession).toHaveBeenCalled()
+  await act(async () => auth.listener?.('TOKEN_REFRESHED', session({ tenant_id: 'ta' })))
+  expect(heading()).toBe(t.pages.dashboard)
+})
+
+test('several memberships: Choose company, then the header switcher', async () => {
+  auth.memberships = [membership('tb', 'Tenant B'), membership('ta', 'Tenant A')]
+  await render('/dashboard', session())
+  expect(heading()).toBe(t.company.chooseTitle)
+  expect(auth.rpc).not.toHaveBeenCalled()
+  const buttons = [...container.querySelectorAll('.company-list button')]
+  expect(buttons.map((b) => b.textContent)).toEqual(['Tenant A', 'Tenant B'])
+  await act(async () => (buttons[1] as HTMLButtonElement).click())
+  expect(auth.rpc).toHaveBeenCalledWith('select_tenant', { p_tenant_id: 'tb' })
+
+  await act(async () => auth.listener?.('TOKEN_REFRESHED', session({ tenant_id: 'tb' })))
+  const select = container.querySelector<HTMLSelectElement>('select.company-switch')!
+  expect(select.value).toBe('tb')
+  select.value = 'ta'
+  await act(async () => select.dispatchEvent(new Event('change', { bubbles: true })))
+  expect(auth.rpc).toHaveBeenLastCalledWith('select_tenant', { p_tenant_id: 'ta' })
+})
+
+test('select_tenant refused: Choose company shows an error', async () => {
+  auth.memberships = [membership('ta', 'Tenant A')]
+  auth.rpc.mockResolvedValue({ error: { message: 'no access to tenant' } })
+  await render('/dashboard', session())
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(t.company.error)
+  expect(auth.refreshSession).not.toHaveBeenCalled()
 })
