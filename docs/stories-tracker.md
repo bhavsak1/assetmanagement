@@ -58,8 +58,8 @@
 | 1.4 | First RLS pattern on a sample table, plus the cross-tenant test harness | | Done |
 | 1.5 | Audit log and outbox tables with triggers | | Done |
 | 1.6 | Starter groups (Tenant Admin, Plant Manager, Planner, Technician, Auditor) and the permission test matrix in CI | OQ-22, OQ-25 | Done |
-| 1.6b | Push Goal 1 to staging: `supabase db push` (migrations only, no seed or test harness), then `supabase config push` (JWT hook on), then provision two test tenants on staging. Order matters: config before migrations breaks sign-in | | Todo |
-| 1.7 | Spike: RLS and scope-check performance on about 1M generated assets (added from open-items tracker, section E) | | In review |
+| 1.6b | Push Goal 1 to staging: `supabase db push` (migrations only, no seed or test harness), then `supabase config push` (JWT hook on), then provision two test tenants on staging. Order matters: config before migrations breaks sign-in | | In review |
+| 1.7 | Spike: RLS and scope-check performance on about 1M generated assets (added from open-items tracker, section E) | | Done |
 
 ### Goal 2: Configuration (categories, fields, locations)
 **Review point:** you create a category with custom fields and a location tree in the UI.
