@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { t } from './i18n'
 import { supabase } from './supabase'
+import { buildTree, lineage } from './tree'
 import type { Json, Tables } from './types/database'
 
 type Category = Pick<Tables<'asset_category'>, 'id' | 'parent_id' | 'name' | 'is_active'>
@@ -11,32 +12,6 @@ type FieldType = keyof typeof t.categories.types
 
 export const fieldTypes = Object.keys(t.categories.types) as FieldType[]
 const keyPattern = /^[a-z][a-z0-9_]*$/
-
-// Flat rows to display order: each parent, then its children, by name. A row whose parent is
-// not in the list (deleted, or not visible) shows at the top level.
-export function buildTree(rows: Category[]): { row: Category; depth: number }[] {
-  const ids = new Set(rows.map((r) => r.id))
-  const sorted = [...rows].sort((a, b) => a.name.localeCompare(b.name))
-  const out: { row: Category; depth: number }[] = []
-  const walk = (parent: string | null, depth: number) => {
-    for (const row of sorted) {
-      const p = row.parent_id && ids.has(row.parent_id) ? row.parent_id : null
-      if (p !== parent) continue
-      out.push({ row, depth })
-      walk(row.id, depth + 1)
-    }
-  }
-  walk(null, 0)
-  return out
-}
-
-// The category and every ancestor, nearest first. Stops on a cycle the database already refuses.
-function lineage(rows: Category[], id: string): string[] {
-  const byId = new Map(rows.map((r) => [r.id, r]))
-  const out: string[] = []
-  for (let c = byId.get(id); c && !out.includes(c.id); c = c.parent_id ? byId.get(c.parent_id) : undefined) out.push(c.id)
-  return out
-}
 
 // One option per line, 'code = Label'. Options dropped from the text stay stored as inactive,
 // because values keep the code (data-model-goal2.md §1.2).

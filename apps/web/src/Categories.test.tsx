@@ -2,8 +2,9 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { buildTree, CategoriesPage, parseOptions, validateField } from './Categories'
+import { CategoriesPage, parseOptions, validateField } from './Categories'
 import { t } from './i18n'
+import { buildTree } from './tree'
 
 const db = vi.hoisted(() => ({
   results: {} as Record<string, unknown>,

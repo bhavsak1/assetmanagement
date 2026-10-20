@@ -114,6 +114,42 @@
       "domain": "Pick a security domain."
     }
   },
+  "locations": {
+    "subtitle": "Hierarchy and asset status",
+    "addLocation": "Add location",
+    "addChild": "Add child location",
+    "editLocation": "Edit location",
+    "move": "Move",
+    "moveTitle": "Move {name}",
+    "moveHint": "Its child locations move with it.",
+    "none": "No locations yet.",
+    "inactive": "Inactive",
+    "expand": "Expand {name}",
+    "collapse": "Collapse {name}",
+    "name": "Name",
+    "code": "Code",
+    "type": "Type",
+    "typeHint": "For example Plant, Building, Line. Pick a type already used or type a new one.",
+    "parent": "Parent location",
+    "newParent": "New parent location",
+    "topLevel": "None (top level)",
+    "status": "Status",
+    "active": "Active",
+    "noValue": "—",
+    "save": "Save",
+    "cancel": "Cancel",
+    "errors": {
+      "load": "Could not load locations. Refresh to try again.",
+      "noPermission": "You do not have permission to make this change.",
+      "duplicateName": "A location with this name already exists under the same parent.",
+      "duplicateCode": "A location with this code already exists.",
+      "cycle": "A location cannot move under itself or its own child locations.",
+      "parentInactive": "The parent location is inactive. Make it active first.",
+      "childrenActive": "Deactivate the child locations first.",
+      "invalid": "This change is not allowed.",
+      "generic": "Could not save. Try again."
+    }
+  },
   "pages": {
     "login": "Sign in",
     "dashboard": "Dashboard",
