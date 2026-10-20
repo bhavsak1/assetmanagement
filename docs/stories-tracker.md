@@ -57,9 +57,9 @@
 | 1.3 | `user_effective_permission` rebuild function and `has_permission()` helpers (includes tenant status write check). Adds the RLS policies on the 1.2 security tables: catalog read and group, policy, assignment read with `users_security.view`, writes with `users_security.manage`. Test that a disabled member's assignment rows grant nothing | OQ-30 | Done |
 | 1.4 | First RLS pattern on a sample table, plus the cross-tenant test harness | | Done |
 | 1.5 | Audit log and outbox tables with triggers | | Done |
-| 1.6 | Starter groups (Tenant Admin, Plant Manager, Planner, Technician, Auditor) and the permission test matrix in CI | OQ-22, OQ-25 | In review |
+| 1.6 | Starter groups (Tenant Admin, Plant Manager, Planner, Technician, Auditor) and the permission test matrix in CI | OQ-22, OQ-25 | Done |
 | 1.6b | Push Goal 1 to staging: `supabase db push` (migrations only, no seed or test harness), then `supabase config push` (JWT hook on), then provision two test tenants on staging. Order matters: config before migrations breaks sign-in | | Todo |
-| 1.7 | Spike: RLS and scope-check performance on about 1M generated assets (added from open-items tracker, section E) | | Todo |
+| 1.7 | Spike: RLS and scope-check performance on about 1M generated assets (added from open-items tracker, section E) | | In review |
 
 ### Goal 2: Configuration (categories, fields, locations)
 **Review point:** you create a category with custom fields and a location tree in the UI.
@@ -190,3 +190,4 @@ Open items: OQ-11, OQ-21.
 | 19 Oct 2026 | Story 1.0 added: the docs named the Goal 1 tables but had no columns or joins, and the schema is costly to reverse. Docs only, output `docs/data-model-goal1.md` |
 | 19 Oct 2026 | Story 1.3 widened: it adds the RLS policies on the 1.2 security tables. Owner decision: the domain catalog is readable by security admins only (`users_security.view`), not by every signed-in user |
 | 20 Oct 2026 | Story 1.6b added: no story pushed the Goal 1 migrations and the JWT hook config to staging. Owner chose one push after 1.6, so earlier migrations can still change until then |
+| 20 Oct 2026 | Story 1.7 moved before 1.6b: owner wants the spike to prove the Goal 1 table structure before the staging push |

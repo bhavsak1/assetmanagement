@@ -305,7 +305,7 @@ The flat table every RLS check reads. Never edited by hand. Rebuilt per member b
 
 - No `id`, no std columns, no soft delete: rows are deleted and reinserted on rebuild. This is the one table that breaks the std-column rule, on purpose.
 - Primary key: none. Index `(tenant_id, user_id, domain_operation_id)`: the `has_permission()` path.
-- Rows exist only for **active** memberships, groups and policies that are not soft-deleted. One row per (assignment, operation), so overlaps produce duplicates, which `exists` ignores.
+- Rows exist only for **active** memberships, groups and policies that are not soft-deleted. One row per distinct (operation, effective window): a grant that several groups give with the same window is one row (1.7, G2). Policy changes rebuild each affected member once per statement (1.7, G1).
 - Effective dates are checked at read time, so an assignment starting next Monday works without a job.
 - **Rebuild triggers** (same transaction as the change): insert, update or soft delete on `group_domain_policy` (rebuild every member of that group), `user_group_assignment` (that member), `tenant_membership` status (that member), `security_group` soft delete (every member).
 - **RLS:** on, no policies. Read only through `security definer` helpers.
