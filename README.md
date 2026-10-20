@@ -42,7 +42,25 @@ npx supabase db push
 - Deploys: every push to `main` builds and deploys through Cloudflare's Git integration. Pull requests get preview URLs.
 - Pages settings: root `apps/web`, build `npm run build`, output `dist`, env `NODE_VERSION=24`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (publishable key only, never service-role). Values live in the Pages dashboard, not git.
 - Auth settings: `[remotes.staging]` in `supabase/config.toml`. Preview with `npx supabase config diff --project-ref blhxyfgkkhpqbfuhpnww`, apply with `npx supabase config push --project-ref blhxyfgkkhpqbfuhpnww`.
-- Users: no public signup. Add users in the Supabase dashboard (Authentication, Add user, auto-confirm) until the provisioning script exists.
+- Users: no public signup. Add the auth user in the Supabase dashboard (Authentication, Add user, auto-confirm), then give it a tenant and a starter group with the provisioning script.
+
+### Staging provisioning (story 1.6b)
+
+Push in this order. The JWT hook reads Goal 1 tables, so config before migrations breaks every sign-in.
+
+1. `npx supabase db push --dry-run`, then `npx supabase db push`. Migrations only: no seed, test harness or spike script. A pushed migration is frozen; fix it with a new one.
+2. Add any new auth users in the dashboard. Edit the user list in `scripts/provision-staging.sql`, then run it as postgres (Supabase MCP `execute_sql`, or psql). It creates the tenants, calls `private.seed_starter_groups`, and adds memberships and group assignments. Re-running it changes nothing. It stops if a user is missing or already in another tenant.
+3. `npx supabase config diff --project-ref blhxyfgkkhpqbfuhpnww`, then `npx supabase config push --project-ref blhxyfgkkhpqbfuhpnww`.
+
+Staging test users (one tenant each, until the "Choose company" screen exists):
+
+| User | Tenant | Group |
+|---|---|---|
+| krunal.bhavsar@assetly.com | STAGING Tenant A | Tenant Admin |
+| auditor.a@assetly.com | STAGING Tenant A | Auditor |
+| hiya.bhavsar@assetly.com | STAGING Tenant B | Tenant Admin |
+
+The web app does not call `select_tenant()` yet, so a fresh token has no `tenant_id` and tenant data stays hidden until that call and a session refresh.
 
 ### RLS performance spike (story 1.7, local only)
 
