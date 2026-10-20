@@ -1,17 +1,25 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { NavLink, Navigate, Outlet, Route, Routes } from 'react-router'
 import type { Session } from '@supabase/supabase-js'
+import { CategoriesPage } from './Categories'
 import { t } from './i18n'
 import { supabase } from './supabase'
 
 type PageKey = keyof typeof t.pages
-type Company = { id: string; name: string }
+type Company = { id: string; name: string; status: string }
 
-// tenant_id is added by the JWT hook once select_tenant() ran for this login session [D3].
-// Read here only to route; RLS checks the signed token itself.
-function tokenTenantId(session: Session): string | undefined {
+// tenant_id and permission_version are added by the JWT hook once select_tenant() ran for this
+// login session [D3]. Read here only to route and to know when to reload grants; RLS checks the signed token itself.
+function tokenClaims(session: Session): { tenant_id?: string; permission_version?: number } {
   const payload = (session.access_token.split('.')[1] ?? '').replace(/-/g, '+').replace(/_/g, '/')
-  return (JSON.parse(atob(payload)) as { tenant_id?: string }).tenant_id
+  return JSON.parse(atob(payload)) as { tenant_id?: string; permission_version?: number }
+}
+
+// The user's own grants in the active tenant, as 'domain.operation'. Only hides or disables actions;
+// the database enforces them (CLAUDE.md §7.2).
+async function loadPermissions(): Promise<Set<string>> {
+  const { data } = await supabase.from('my_permission').select('domain, operation')
+  return new Set((data ?? []).map((p) => `${p.domain}.${p.operation}`))
 }
 
 // The user's own active memberships in tenants they can open. The user_id filter matters:
@@ -25,7 +33,9 @@ async function loadCompanies(userId: string): Promise<Company[]> {
     .is('deleted_at', null)
   return (data ?? [])
     .flatMap(({ tenant_id, tenant }) =>
-      tenant && tenant.status !== 'suspended' && !tenant.deleted_at ? [{ id: tenant_id, name: tenant.name }] : [],
+      tenant && tenant.status !== 'suspended' && !tenant.deleted_at
+        ? [{ id: tenant_id, name: tenant.name, status: tenant.status }]
+        : [],
     )
     .sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -221,8 +231,24 @@ export function App() {
   const [loaded, setLoaded] = useState<{ userId: string; companies: Company[] }>()
   const [pickFailed, setPickFailed] = useState(false)
   const userId = session?.user.id
-  const tenantId = session ? tokenTenantId(session) : undefined
+  const claims = session ? tokenClaims(session) : {}
+  const tenantId = claims.tenant_id
   const companies = userId && loaded?.userId === userId ? loaded.companies : undefined
+
+  // Reloaded on login, company switch, and when the token's permission_version moves [D4].
+  const permKey = tenantId ? `${userId}:${tenantId}:${claims.permission_version}` : undefined
+  const [perms, setPerms] = useState<{ key: string; set: Set<string> }>()
+  useEffect(() => {
+    if (!permKey) return
+    let live = true
+    void loadPermissions().then((set) => live && setPerms({ key: permKey, set }))
+    return () => {
+      live = false
+    }
+  }, [permKey])
+  const writable = companies?.find((c) => c.id === tenantId)?.status === 'active'
+  const can = (domain: string, operation: string) =>
+    perms?.key === permKey && !!perms?.set.has(`${domain}.${operation}`) && (operation === 'view' || writable)
 
   useEffect(() => {
     if (!userId) return
@@ -258,8 +284,11 @@ export function App() {
       <Route path="/login" element={session ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
       <Route element={session ? signedIn : <Navigate to="/login" replace />}>
         {navGroups.flatMap(({ items }) =>
-          items.map((key) => <Route key={key} path={`/${key}`} element={<EmptyPage page={key} />} />),
+          items
+            .filter((key) => key !== 'categories')
+            .map((key) => <Route key={key} path={`/${key}`} element={<EmptyPage page={key} />} />),
         )}
+        <Route path="/categories" element={<CategoriesPage tenantId={tenantId ?? ''} canManage={can('category_config', 'manage')} />} />
         <Route path="/assets/:assetId" element={<EmptyPage page="assetDetail" />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

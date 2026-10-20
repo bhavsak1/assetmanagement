@@ -1,0 +1,503 @@
+import { useEffect, useState, type FormEvent } from 'react'
+import { t } from './i18n'
+import { supabase } from './supabase'
+import type { Json, Tables } from './types/database'
+
+type Category = Pick<Tables<'asset_category'>, 'id' | 'parent_id' | 'name' | 'is_active'>
+type Field = Tables<'field_definition'>
+type Domain = { id: string; code: string }
+type Option = { code: string; label: string; is_active: boolean }
+type FieldType = keyof typeof t.categories.types
+
+export const fieldTypes = Object.keys(t.categories.types) as FieldType[]
+const keyPattern = /^[a-z][a-z0-9_]*$/
+
+// Flat rows to display order: each parent, then its children, by name. A row whose parent is
+// not in the list (deleted, or not visible) shows at the top level.
+export function buildTree(rows: Category[]): { row: Category; depth: number }[] {
+  const ids = new Set(rows.map((r) => r.id))
+  const sorted = [...rows].sort((a, b) => a.name.localeCompare(b.name))
+  const out: { row: Category; depth: number }[] = []
+  const walk = (parent: string | null, depth: number) => {
+    for (const row of sorted) {
+      const p = row.parent_id && ids.has(row.parent_id) ? row.parent_id : null
+      if (p !== parent) continue
+      out.push({ row, depth })
+      walk(row.id, depth + 1)
+    }
+  }
+  walk(null, 0)
+  return out
+}
+
+// The category and every ancestor, nearest first. Stops on a cycle the database already refuses.
+function lineage(rows: Category[], id: string): string[] {
+  const byId = new Map(rows.map((r) => [r.id, r]))
+  const out: string[] = []
+  for (let c = byId.get(id); c && !out.includes(c.id); c = c.parent_id ? byId.get(c.parent_id) : undefined) out.push(c.id)
+  return out
+}
+
+// One option per line, 'code = Label'. Options dropped from the text stay stored as inactive,
+// because values keep the code (data-model-goal2.md §1.2).
+export function parseOptions(text: string, existing: Option[]): Option[] {
+  const active = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => {
+      const [code = '', ...rest] = l.split('=')
+      return { code: code.trim(), label: rest.join('=').trim() || code.trim(), is_active: true }
+    })
+  return [...active, ...existing.filter((o) => !active.some((a) => a.code === o.code)).map((o) => ({ ...o, is_active: false }))]
+}
+
+export type FieldInput = { key: string; label: string; type: string; options: Option[]; domainId: string }
+
+// Deterministic checks before the write. The table's own checks still run.
+export function validateField(f: FieldInput): string | undefined {
+  const e = t.categories.errors
+  if (!keyPattern.test(f.key) || f.key.length > 63) return e.key
+  if (!f.label.trim()) return e.label
+  if (!fieldTypes.includes(f.type as FieldType)) return e.type
+  const active = f.options.filter((o) => o.is_active)
+  if (f.type === 'list' && active.length === 0) return e.optionsRequired
+  if (f.type === 'list' && active.some((o) => !keyPattern.test(o.code))) return e.optionCode
+  if (new Set(f.options.map((o) => o.code)).size !== f.options.length) return e.optionDuplicate
+  if (!f.domainId) return e.domain
+  return undefined
+}
+
+// Postgres and PostgREST errors to one clear message each.
+function errorMessage(error: { code?: string } | null, duplicate: string): string {
+  const e = t.categories.errors
+  if (error?.code === '42501') return e.noPermission
+  if (error?.code === '23505') return duplicate
+  if (error?.code === '23514') return e.invalid
+  return e.generic
+}
+
+const asOptions = (j: Json): Option[] => (Array.isArray(j) ? (j as Option[]) : [])
+
+type Editing =
+  | { kind: 'category'; row?: Category }
+  | { kind: 'field'; row?: Field }
+
+export function CategoriesPage({ tenantId, canManage }: { tenantId: string; canManage: boolean }) {
+  const [categories, setCategories] = useState<Category[]>([])
+  const [fields, setFields] = useState<Field[]>([])
+  const [domains, setDomains] = useState<Domain[]>([])
+  const [selected, setSelected] = useState<string>()
+  const [editing, setEditing] = useState<Editing>()
+  const [error, setError] = useState<string>()
+  const [reload, setReload] = useState(0)
+
+  useEffect(() => {
+    let live = true
+    void Promise.all([
+      supabase.from('asset_category').select('id, parent_id, name, is_active').is('deleted_at', null),
+      supabase.from('field_definition').select('*').eq('entity', 'asset').is('deleted_at', null).order('sort_order'),
+      supabase.rpc('field_domains', { p_entity: 'asset' }),
+    ]).then(([c, f, d]) => {
+      if (!live) return
+      setCategories(c.data ?? [])
+      setFields(f.data ?? [])
+      setDomains(d.data ?? [])
+      if (c.error || f.error) setError(t.categories.errors.load)
+    })
+    return () => {
+      live = false
+    }
+  }, [reload])
+
+  const tree = buildTree(categories)
+  const current = categories.find((c) => c.id === selected) ?? tree[0]?.row
+  const line = current ? lineage(categories, current.id) : []
+  const own = fields.filter((f) => f.category_id === current?.id)
+  // Inherited (G3): every-asset fields first, then furthest ancestor first, each by sort_order.
+  const inherited = fields
+    .filter((f) => f.category_id === null || (f.category_id !== current?.id && line.includes(f.category_id)))
+    .sort((a, b) => rank(b) - rank(a) || a.sort_order - b.sort_order)
+  function rank(f: Field) {
+    return f.category_id === null ? line.length : line.indexOf(f.category_id)
+  }
+  const nameOf = (id: string | null) => (id ? categories.find((c) => c.id === id)?.name : t.categories.allAssets)
+  const domainLabel = (id: string) => {
+    const code = domains.find((d) => d.id === id)?.code ?? ''
+    return (t.categories.domains as Record<string, string>)[code] ?? code
+  }
+
+  async function run(write: PromiseLike<{ data: unknown[] | null; error: { code?: string } | null }>, duplicate: string) {
+    setError(undefined)
+    const { data, error } = await write
+    // An update RLS filters out returns no rows and no error.
+    if (error || !data?.length) {
+      setError(errorMessage(error ?? { code: '42501' }, duplicate))
+      return false
+    }
+    setEditing(undefined)
+    setReload((n) => n + 1)
+    return true
+  }
+
+  async function move(index: number, by: -1 | 1) {
+    const order = [...own]
+    const [f] = order.splice(index, 1)
+    if (!f) return
+    order.splice(index + by, 0, f)
+    for (const [i, row] of order.entries()) {
+      if (row.sort_order === i) continue
+      const ok = await run(supabase.from('field_definition').update({ sort_order: i }).eq('id', row.id).select('id'), t.categories.errors.generic)
+      if (!ok) return
+    }
+  }
+
+  return (
+    <>
+      <title>{`${t.pages.categories} · ${t.app.name}`}</title>
+      <div className="page-head">
+        <div>
+          <h1>{t.pages.categories}</h1>
+          <span className="muted">{t.categories.subtitle}</span>
+        </div>
+        <div className="spacer" />
+        {canManage && (
+          <button className="btn btn-main" type="button" onClick={() => setEditing({ kind: 'category' })}>
+            {t.categories.addCategory}
+          </button>
+        )}
+      </div>
+      {error && (
+        <p className="login-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="split">
+        <div className="card tree" role="list" aria-label={t.pages.categories}>
+          {tree.length === 0 && <p className="muted">{t.categories.none}</p>}
+          {tree.map(({ row, depth }) => (
+            <button
+              key={row.id}
+              type="button"
+              role="listitem"
+              className={`li${row.id === current?.id ? ' on' : ''}`}
+              style={{ paddingLeft: 12 + depth * 20 }}
+              aria-current={row.id === current?.id}
+              onClick={() => {
+                setSelected(row.id)
+                setEditing(undefined)
+              }}
+            >
+              {row.name}
+              {!row.is_active && <span className="tag">{t.categories.inactive}</span>}
+            </button>
+          ))}
+        </div>
+        <div className="stack">
+          {editing?.kind === 'category' && (
+            <CategoryForm
+              row={editing.row}
+              categories={categories}
+              onCancel={() => setEditing(undefined)}
+              onSave={(v) =>
+                run(
+                  editing.row
+                    ? supabase.from('asset_category').update(v).eq('id', editing.row.id).select('id')
+                    : supabase.from('asset_category').insert({ ...v, tenant_id: tenantId }).select('id'),
+                  t.categories.errors.duplicateName,
+                )
+              }
+            />
+          )}
+          {editing?.kind === 'field' && current && (
+            <FieldForm
+              row={editing.row}
+              domains={domains}
+              onCancel={() => setEditing(undefined)}
+              onError={setError}
+              onSave={(v) =>
+                run(
+                  editing.row
+                    ? supabase.from('field_definition').update(v).eq('id', editing.row.id).select('id')
+                    : supabase
+                        .from('field_definition')
+                        .insert({ ...v, key: v.key ?? '', type: v.type ?? 'text', tenant_id: tenantId, entity: 'asset', category_id: current.id, sort_order: own.length })
+                        .select('id'),
+                  t.categories.errors.duplicateKey,
+                )
+              }
+            />
+          )}
+          {current && (
+            <div className="card">
+              <div className="page-head">
+                <h2>{t.categories.fieldsOf.replace('{name}', current.name)}</h2>
+                <div className="spacer" />
+                {canManage && (
+                  <>
+                    <button className="btn" type="button" onClick={() => setEditing({ kind: 'category', row: current })}>
+                      {t.categories.editCategory}
+                    </button>
+                    <button className="btn" type="button" onClick={() => setEditing({ kind: 'field' })}>
+                      {t.categories.addField}
+                    </button>
+                  </>
+                )}
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{t.categories.col.field}</th>
+                      <th>{t.categories.col.type}</th>
+                      <th>{t.categories.col.required}</th>
+                      <th>{t.categories.col.domain}</th>
+                      {canManage && <th aria-label={t.categories.col.actions} />}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inherited.map((f) => (
+                      <tr key={f.id} className="muted">
+                        <td>
+                          {f.label}
+                          <span className="tag">{t.categories.inheritedFrom.replace('{name}', nameOf(f.category_id) ?? '')}</span>
+                          {!f.is_active && <span className="tag">{t.categories.inactive}</span>}
+                        </td>
+                        <td>{typeLabel(f)}</td>
+                        <td>
+                          <Switch on={f.is_required} />
+                        </td>
+                        <td>{domainLabel(f.security_domain_id)}</td>
+                        {canManage && <td />}
+                      </tr>
+                    ))}
+                    {own.map((f, i) => (
+                      <tr key={f.id}>
+                        <td>
+                          {f.label} <code className="muted">{f.key}</code>
+                          {!f.is_active && <span className="tag">{t.categories.inactive}</span>}
+                        </td>
+                        <td>{typeLabel(f)}</td>
+                        <td>
+                          <Switch on={f.is_required} />
+                        </td>
+                        <td>{domainLabel(f.security_domain_id)}</td>
+                        {canManage && (
+                          <td className="actions">
+                            <button className="btn" type="button" disabled={i === 0} onClick={() => void move(i, -1)} aria-label={t.categories.moveUp}>
+                              ↑
+                            </button>
+                            <button className="btn" type="button" disabled={i === own.length - 1} onClick={() => void move(i, 1)} aria-label={t.categories.moveDown}>
+                              ↓
+                            </button>
+                            <button className="btn" type="button" onClick={() => setEditing({ kind: 'field', row: f })}>
+                              {t.categories.edit}
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                    {inherited.length + own.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="muted">
+                          {t.categories.noFields}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
+function typeLabel(f: Field) {
+  const label = t.categories.types[f.type as FieldType] ?? f.type
+  return f.unit ? `${label} · ${f.unit}` : label
+}
+
+function Switch({ on }: { on: boolean }) {
+  return <span className={`sw${on ? '' : ' off'}`} role="img" aria-label={on ? t.categories.yes : t.categories.no} />
+}
+
+function CategoryForm({
+  row,
+  categories,
+  onSave,
+  onCancel,
+}: {
+  row?: Category
+  categories: Category[]
+  onSave: (v: { name: string; parent_id: string | null; is_active: boolean }) => Promise<boolean>
+  onCancel: () => void
+}) {
+  // A category cannot sit under itself or its own children. The database also refuses a cycle.
+  const blocked = new Set(row ? categories.filter((c) => lineage(categories, c.id).includes(row.id)).map((c) => c.id) : [])
+
+  function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const form = new FormData(e.currentTarget)
+    void onSave({
+      name: String(form.get('name')).trim(),
+      parent_id: String(form.get('parent')) || null,
+      is_active: form.get('active') === 'on',
+    })
+  }
+
+  return (
+    <form className="card" onSubmit={submit}>
+      <h2>{row ? t.categories.editCategory : t.categories.addCategory}</h2>
+      <label className="field">
+        {t.categories.name}
+        <input name="name" defaultValue={row?.name} required maxLength={200} />
+      </label>
+      <label className="field">
+        {t.categories.parent}
+        <select name="parent" defaultValue={row?.parent_id ?? ''}>
+          <option value="">{t.categories.noParent}</option>
+          {buildTree(categories)
+            .filter(({ row: c }) => !blocked.has(c.id))
+            .map(({ row: c, depth }) => (
+              <option key={c.id} value={c.id}>
+                {`${'— '.repeat(depth)}${c.name}`}
+              </option>
+            ))}
+        </select>
+      </label>
+      <label className="check">
+        <input name="active" type="checkbox" defaultChecked={row?.is_active ?? true} />
+        {t.categories.active}
+      </label>
+      <FormButtons onCancel={onCancel} />
+    </form>
+  )
+}
+
+type FieldValues = Partial<Pick<Field, 'key' | 'type'>> &
+  Pick<Field, 'label' | 'options' | 'unit' | 'is_required' | 'security_domain_id' | 'is_active'>
+
+function FieldForm({
+  row,
+  domains,
+  onSave,
+  onCancel,
+  onError,
+}: {
+  row?: Field
+  domains: Domain[]
+  onSave: (v: FieldValues) => Promise<boolean>
+  onCancel: () => void
+  onError: (message: string) => void
+}) {
+  const [type, setType] = useState(row?.type ?? 'text')
+  const existing = asOptions(row?.options ?? [])
+
+  function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const form = new FormData(e.currentTarget)
+    const options = type === 'list' ? parseOptions(String(form.get('options')), existing) : []
+    const input = {
+      key: row?.key ?? String(form.get('key')).trim(),
+      label: String(form.get('label')).trim(),
+      type,
+      options,
+      domainId: String(form.get('domain') ?? ''),
+    }
+    const invalid = validateField(input)
+    if (invalid) return onError(invalid)
+    const values: FieldValues = {
+      label: input.label,
+      options,
+      unit: type === 'number' ? String(form.get('unit')).trim() || null : null,
+      is_required: form.get('required') === 'on',
+      security_domain_id: input.domainId,
+      is_active: form.get('active') === 'on',
+    }
+    // key and type cannot change after insert (2.1 column grants), so only a new field sends them.
+    void onSave(row ? values : { ...values, key: input.key, type })
+  }
+
+  return (
+    <form className="card" onSubmit={submit} noValidate>
+      <h2>{row ? t.categories.editField : t.categories.addField}</h2>
+      <label className="field">
+        {t.categories.key}
+        <input name="key" defaultValue={row?.key} disabled={!!row} maxLength={63} aria-describedby="key-hint" />
+        <span id="key-hint" className="muted hint">
+          {row ? t.categories.keyLocked : t.categories.keyHint}
+        </span>
+      </label>
+      <label className="field">
+        {t.categories.label}
+        <input name="label" defaultValue={row?.label} />
+      </label>
+      <label className="field">
+        {t.categories.type}
+        <select name="type" value={type} disabled={!!row} onChange={(e) => setType(e.target.value)}>
+          {fieldTypes.map((ft) => (
+            <option key={ft} value={ft}>
+              {t.categories.types[ft]}
+            </option>
+          ))}
+        </select>
+      </label>
+      {type === 'number' && (
+        <label className="field">
+          {t.categories.unit}
+          <input name="unit" defaultValue={row?.unit ?? ''} />
+        </label>
+      )}
+      {type === 'list' && (
+        <label className="field">
+          {t.categories.options}
+          <textarea
+            name="options"
+            rows={4}
+            defaultValue={existing
+              .filter((o) => o.is_active)
+              .map((o) => `${o.code} = ${o.label}`)
+              .join('\n')}
+          />
+          <span className="muted hint">{t.categories.optionsHint}</span>
+        </label>
+      )}
+      <label className="field">
+        {t.categories.domain}
+        <select name="domain" defaultValue={row?.security_domain_id ?? domains[0]?.id}>
+          {domains.map((d) => (
+            <option key={d.id} value={d.id}>
+              {(t.categories.domains as Record<string, string>)[d.code] ?? d.code}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="check">
+        <input name="required" type="checkbox" defaultChecked={row?.is_required} />
+        {t.categories.required}
+      </label>
+      <label className="check">
+        <input name="active" type="checkbox" defaultChecked={row?.is_active ?? true} />
+        {t.categories.active}
+      </label>
+      <FormButtons onCancel={onCancel} />
+    </form>
+  )
+}
+
+function FormButtons({ onCancel }: { onCancel: () => void }) {
+  return (
+    <div className="page-head">
+      <div className="spacer" />
+      <button className="btn" type="button" onClick={onCancel}>
+        {t.categories.cancel}
+      </button>
+      <button className="btn btn-main" type="submit">
+        {t.categories.save}
+      </button>
+    </div>
+  )
+}

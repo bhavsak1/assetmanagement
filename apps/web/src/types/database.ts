@@ -462,10 +462,23 @@ isOneToOne: false
                 }
           }
           Views: {
-            [_ in never]: never
+            "my_permission": {
+                  Row: {
+                    "domain": string | null,"operation": string | null
+                  }
+                  ComputedFields: never
+                  Relationships: [
+                    
+                  ]
+                }
           }
           Functions: {
-            "select_tenant":
+            "field_domains":
+{ Args: { "p_entity": string }; Returns: {
+              "code": string,"id": string
+            }[]
+                           },
+"select_tenant":
 { Args: { "p_tenant_id": string }; Returns: undefined
                            }
           }

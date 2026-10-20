@@ -261,6 +261,156 @@ h1 {
   gap: var(--space-2);
 }
 
+/* Pages: header row, cards, list-and-detail split. Matches the Categories screen. */
+h2 {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+  align-items: center;
+}
+
+.btn-main {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-surface);
+}
+
+.card {
+  box-sizing: border-box;
+  padding: 18px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+}
+
+.split {
+  display: flex;
+  gap: var(--space-6);
+  align-items: flex-start;
+  margin-top: var(--space-6);
+}
+
+.stack {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.tree {
+  width: 260px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: none;
+  font: inherit;
+  color: var(--color-text-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.li.on {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-dark);
+  font-weight: var(--weight-medium);
+}
+
+.tag {
+  margin-left: var(--space-3);
+  padding: 1px var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--tag-neutral-bg);
+  color: var(--tag-neutral-text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-regular);
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-muted);
+}
+
+td {
+  padding: 11px var(--space-5);
+  border-bottom: 1px solid var(--color-divider);
+}
+
+td.actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.sw {
+  display: inline-block;
+  width: 30px;
+  height: 17px;
+  border-radius: 9px;
+  background: var(--color-primary);
+}
+
+.sw.off {
+  background: var(--color-track);
+}
+
+.card .field {
+  margin: var(--space-6) 0 0;
+}
+
+.field select,
+.field textarea {
+  box-sizing: border-box;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  font: inherit;
+}
+
+.field select {
+  height: 40px;
+}
+
+.hint {
+  font-size: var(--text-sm);
+}
+
+.check {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  margin: var(--space-6) 0;
+}
+
 /* Phone width: sidebar becomes a scrolling row above the page. */
 @media (max-width: 767px) {
   .app {
@@ -295,6 +445,15 @@ h1 {
 
   .login-brand {
     display: none;
+  }
+
+  .split {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tree {
+    width: auto;
   }
 
   .topbar,
