@@ -106,7 +106,7 @@ The security model is Workday and Oracle style: domains, groups, policies and sc
 Copy `supabase/migrations/*_1_4_rls_sample.sql` and `supabase/tests/1_4_rls_sample.test.sql` for every new tenant table. The template:
 
 1. **Domain** seeded in the migration (skip if it exists): `insert ... on conflict do nothing`.
-2. **Table:** std columns, `unique (tenant_id, id)`, composite FKs `(tenant_id, x_id) references x (tenant_id, id)`, partial uniques `where deleted_at is null`. Triggers `set_updated_at` and `check_soft_delete('<domain>', 'delete')`.
+2. **Table:** std columns, `unique (tenant_id, id)`, composite FKs `(tenant_id, x_id) references x (tenant_id, id)`, partial uniques `where deleted_at is null`. Triggers `set_updated_at`, `check_soft_delete('<domain>', 'delete')` and `audit` (`private.audit_row('data')`, after insert, update or delete; writes the audit row and outbox event).
 3. **Policies**, all `to authenticated`, helpers inside `(select ...)`:
    - select: `tenant_id = (select private.current_tenant_id()) and (select private.has_permission('<domain>', 'view'))`
    - insert: `with check` tenant, `has_permission('<domain>', 'create')`, `tenant_can_write()`
