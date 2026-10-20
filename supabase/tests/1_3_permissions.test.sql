@@ -108,10 +108,11 @@ select results_eq(
   'select (select count(*)::int from public.security_domain), (select count(*)::int from public.domain_operation)',
   $$values (21, 51)$$, 'security admin reads the catalog (incl. rls_sample, 1.4)'
 );
-select is((select count(*)::int from public.security_group), 5, 'admin reads only current tenant groups');
+-- code filter: the seed also gives each tenant the five 1.6 starter groups.
+select is((select count(*)::int from public.security_group where code like 'test\_%'), 5, 'admin reads only current tenant groups');
 select is((select count(*)::int from public.group_domain_policy where tenant_id <> '00000000-0000-0000-0000-00000000000a'), 0, 'admin reads no other tenant policies');
 select is((select count(*)::int from public.user_group_assignment where tenant_id <> '00000000-0000-0000-0000-00000000000a'), 0, 'admin reads no other tenant assignments');
-select is((select count(*)::int from public.tenant_membership where tenant_id = '00000000-0000-0000-0000-00000000000a'), 1, 'admin reads current tenant members');
+select is((select count(*)::int from public.tenant_membership where tenant_id = '00000000-0000-0000-0000-00000000000a'), 6, 'admin reads current tenant members');  -- a1 and the five 1.6 role users
 select lives_ok(
   $$insert into public.security_group (tenant_id, code, name) values ('00000000-0000-0000-0000-00000000000a', 'test_new', 'Test new')$$,
   'admin creates a group'
@@ -157,7 +158,7 @@ select is((select count(*)::int from public.tenant_entitlement), 2, 'entitlement
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","tenant_id":"00000000-0000-0000-0000-00000000000b"}';
 select ok(not private.tenant_can_write(), 'read_only tenant cannot write');
 select ok(not private.has_permission('asset_core', 'view'), 'grant in tenant A is false in tenant B');
-select is((select count(*)::int from public.security_group), 1, 'read_only tenant still reads');
+select is((select count(*)::int from public.security_group where code like 'test\_%'), 1, 'read_only tenant still reads');
 select throws_ok(
   $$insert into public.security_group (tenant_id, code, name) values ('00000000-0000-0000-0000-00000000000b', 'test_x', 'x')$$,
   '42501', null, 'read_only tenant cannot create a group'

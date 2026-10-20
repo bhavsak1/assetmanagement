@@ -1,0 +1,69 @@
+/Krunal/github_EAM/assetmanagement/supabase/tests/0_2_private_schema.test.sql ... ok
+/Krunal/github_EAM/assetmanagement/supabase/tests/1_1_tenant_core.test.sql ...... ok
+/Krunal/github_EAM/assetmanagement/supabase/tests/1_2_security_tables.test.sql .. ok
+/Krunal/github_EAM/assetmanagement/supabase/tests/1_3_permissions.test.sql ...... ok
+/Krunal/github_EAM/assetmanagement/supabase/tests/1_4_rls_sample.test.sql ....... ok
+/Krunal/github_EAM/assetmanagement/supabase/tests/1_4_tenancy_guard.test.sql .... ok
+/Krunal/github_EAM/assetmanagement/supabase/tests/1_5_audit_outbox.test.sql ..... ok
+/Krunal/github_EAM/assetmanagement/supabase/tests/1_6_starter_groups.test.sql ... ok
+All tests successful.
+Files=8, Tests=214,  3 wallclock secs ( 0.14 usr  0.19 sys +  0.17 cusr  0.21 csys =  0.71 CPU)
+Result: PASS
+1..47
+ok 1 - users cannot run the starter group seed
+ok 2 - both test tenants have the five starter groups
+
+
+ok 3 - running the seed again adds no groups
+ok 4 - running the seed again adds no policies
+
+ok 5 - a new tenant gets the same starter groups and grants
+ok 6 - tenant A tenant_admin: has_permission matches the matrix
+ok 7 - tenant A plant_manager: has_permission matches the matrix
+ok 8 - tenant A planner: has_permission matches the matrix
+ok 9 - tenant A technician: has_permission matches the matrix
+ok 10 - tenant A auditor: has_permission matches the matrix
+ok 11 - tenant B tenant_admin: has_permission matches the matrix
+ok 12 - tenant B plant_manager: has_permission matches the matrix
+ok 13 - tenant B planner: has_permission matches the matrix
+ok 14 - tenant B technician: has_permission matches the matrix
+ok 15 - tenant B auditor: has_permission matches the matrix
+ok 16 - Auditor holds view operations only
+ok 17 - every public tenant_id table holds tenant B rows to hide
+
+ok 18 - tenant A tenant_admin sees no tenant B row in any public tenant_id table
+
+ok 19 - tenant A plant_manager sees no tenant B row in any public tenant_id table
+
+ok 20 - tenant A planner sees no tenant B row in any public tenant_id table
+
+ok 21 - tenant A technician sees no tenant B row in any public tenant_id table
+
+ok 22 - tenant A auditor sees no tenant B row in any public tenant_id table
+
+
+ok 23 - Auditor reads public.rls_sample
+ok 24 - Auditor cannot update public.rls_sample
+ok 25 - Auditor cannot soft delete public.rls_sample
+ok 26 - Auditor cannot hard delete public.rls_sample
+ok 27 - Auditor reads public.security_group
+ok 28 - Auditor cannot update public.security_group
+ok 29 - Auditor cannot soft delete public.security_group
+ok 30 - Auditor cannot hard delete public.security_group
+ok 31 - Auditor reads public.group_domain_policy
+ok 32 - Auditor cannot update public.group_domain_policy
+ok 33 - Auditor cannot soft delete public.group_domain_policy
+ok 34 - Auditor cannot hard delete public.group_domain_policy
+ok 35 - Auditor reads public.user_group_assignment
+ok 36 - Auditor cannot update public.user_group_assignment
+ok 37 - Auditor cannot soft delete public.user_group_assignment
+ok 38 - Auditor cannot hard delete public.user_group_assignment
+ok 39 - Auditor reads public.tenant_membership
+ok 40 - Auditor cannot update public.tenant_membership
+ok 41 - Auditor cannot soft delete public.tenant_membership
+ok 42 - Auditor cannot hard delete public.tenant_membership
+ok 43 - Auditor cannot insert into public.rls_sample
+ok 44 - Auditor cannot insert into public.security_group
+ok 45 - Auditor cannot insert into public.group_domain_policy
+ok 46 - Auditor cannot insert into public.user_group_assignment
+ok 47 - Auditor cannot insert into public.tenant_membership

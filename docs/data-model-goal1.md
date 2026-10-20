@@ -186,6 +186,39 @@ A role. Starter groups are seeded per tenant in 1.6.
 - `unique (tenant_id, id)`
 - **RLS:** read with `users_security.view`. Write with `users_security.manage` and `tenant_can_write()`, and never on `group_type = 'system'`.
 
+### 2.7a Starter groups (1.6)
+
+Five `role` groups every new tenant gets. Provisioning (run as `postgres`, OQ-16) calls `private.seed_starter_groups(tenant_id)`. Each group is an ordinary tenant row with `template_code = 'starter.<code>'`, so the tenant can edit it. Re-running skips a template the tenant already has (even if edited or soft-deleted), so it adds no duplicates and never undoes a tenant's change.
+
+Open items: **OQ-25** lean used (draft catalog and starter groups in M1). **OQ-22** lean used (single approver): Tenant Admin alone holds `users_security.manage`; there is no separate security approver group.
+
+Grant matrix. The migration `1_6_starter_groups` and the test `1_6_starter_groups.test.sql` hold the same grid, and CI fails if `has_permission` disagrees with it for any catalog operation. `rls_sample` (the 1.4 template) is in no group. A dash means no grant.
+
+| Domain | Tenant Admin | Plant Manager | Planner | Technician | Auditor |
+|---|---|---|---|---|---|
+| `asset_core` | view, create, update, delete | view, create, update, delete | view, update | view | view |
+| `asset_financials` | view, update | view | – | – | view |
+| `asset_lifecycle` | execute | execute | – | – | – |
+| `vendor_core` | view, create, update, delete | view, create, update | view | view | view |
+| `vendor_tax_ids` | view, update | view | – | – | view |
+| `coverage_contract` | view, create, update, delete | view, create, update | view, create, update | view | view |
+| `coverage_values` | view, update | view | – | – | view |
+| `obligation` | view, create, update, complete | view, create, update, complete | view, create, update, complete | view, complete | view |
+| `service_record` | view, create, update, complete | view, create, update, complete | view, create, update, complete | view, create, update, complete | view |
+| `location_hierarchy` | view, manage | view, manage | view | view | view |
+| `category_config` | view, manage | view | view | view | view |
+| `excel_import` | run, review, commit | run, review, commit | run, review | – | – |
+| `import_undo` | undo | undo | – | – | – |
+| `users_security` | view, manage | – | – | – | view |
+| `api_keys` | view, manage | – | – | – | view |
+| `audit_log` | view | view | – | – | view |
+| `tenant_settings` | view, manage | view | – | – | view |
+| `ai_usage` | view, manage | view | – | – | view |
+| `insights_query` | ask | ask | ask | – | – |
+| `insights_widget` | save, share | save, share | save | – | – |
+
+Tenant Admin holds every operation in the catalog. Auditor holds every `view` and nothing else.
+
 ### 2.8 `group_domain_policy` (1.2)
 
 Grants one operation of one domain to one group. **One row per operation. [D6]**

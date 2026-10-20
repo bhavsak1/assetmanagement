@@ -6,7 +6,8 @@
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
     "db:test": "supabase test db",
-    "db:types": "supabase gen types typescript --local --schema public > apps/web/src/types/database.ts"
+    "db:types": "supabase gen types typescript --local --schema public > apps/web/src/types/database.ts",
+    "db:report": "supabase test db > docs/goal1-test-report.txt && docker exec -i supabase_db_assetly psql -U postgres -qAt -c \"create extension if not exists pgtap with schema extensions\" -f - -c \"drop extension pgtap\" < supabase/tests/1_6_starter_groups.test.sql >> docs/goal1-test-report.txt"
   },
   "devDependencies": {
     "supabase": "2.121.0"
