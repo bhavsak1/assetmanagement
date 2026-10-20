@@ -64,3 +64,45 @@ insert into public.tenant_entitlement (tenant_id, feature_code, limit_value) val
   ('00000000-0000-0000-0000-00000000000a', 'asset_limit', 500),
   ('00000000-0000-0000-0000-00000000000a', 'ai_addon', null),
   ('00000000-0000-0000-0000-00000000000b', 'asset_limit', 100);
+
+-- STARTER GROUPS AND ROLE TEST USERS (story 1.6). Test values, not real accounts.
+-- Both test tenants get the starter groups, as provisioning will do. One user per starter group per tenant:
+--   email:    <role>.<a|b>@example.com, role in admin, plant, planner, tech, auditor
+--   password: assetly-local-test
+--   id:       00000000-0000-0000-0000-0000000<a|b>000<1..5>, in the role order above
+-- test.user and test.user2 keep no groups: the 1.3 and 1.4 tests start them from nothing.
+select private.seed_starter_groups(id) from public.tenant where slug in ('test-tenant-a', 'test-tenant-b');
+
+do $$
+declare
+  r record;
+begin
+  for r in
+    select t.id as tenant_id, g.code,
+           g.login || '.' || t.suffix || '@example.com' as email,
+           ('00000000-0000-0000-0000-0000000' || t.suffix || '000' || g.n)::uuid as user_id
+    from (values ('00000000-0000-0000-0000-00000000000a'::uuid, 'a'),
+                 ('00000000-0000-0000-0000-00000000000b'::uuid, 'b')) t (id, suffix)
+    cross join (values (1, 'tenant_admin', 'admin'), (2, 'plant_manager', 'plant'), (3, 'planner', 'planner'),
+                       (4, 'technician', 'tech'), (5, 'auditor', 'auditor')) g (n, code, login)
+  loop
+    insert into auth.users (
+      instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+      raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+      confirmation_token, recovery_token, email_change, email_change_token_new
+    ) values (
+      '00000000-0000-0000-0000-000000000000', r.user_id, 'authenticated', 'authenticated', r.email,
+      extensions.crypt('assetly-local-test', extensions.gen_salt('bf')), now(),
+      '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', ''
+    );
+    insert into auth.identities (provider_id, user_id, identity_data, provider, created_at, updated_at)
+    values (r.user_id, r.user_id,
+            json_build_object('sub', r.user_id, 'email', r.email, 'email_verified', true), 'email', now(), now());
+    insert into public.user_profile (id, display_name, email) values (r.user_id, 'TEST ' || r.email, r.email);
+    insert into public.tenant_membership (tenant_id, user_id) values (r.tenant_id, r.user_id);
+    insert into public.user_group_assignment (tenant_id, user_id, security_group_id)
+    select r.tenant_id, r.user_id, g.id from public.security_group g
+    where g.tenant_id = r.tenant_id and g.template_code = 'starter.' || r.code;
+  end loop;
+end;
+$$;

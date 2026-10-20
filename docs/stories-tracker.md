@@ -56,8 +56,8 @@
 | 1.2 | Security tables: domain, operation, group, policy, assignment. Seed the default domain catalog | OQ-25 | Done |
 | 1.3 | `user_effective_permission` rebuild function and `has_permission()` helpers (includes tenant status write check). Adds the RLS policies on the 1.2 security tables: catalog read and group, policy, assignment read with `users_security.view`, writes with `users_security.manage`. Test that a disabled member's assignment rows grant nothing | OQ-30 | Done |
 | 1.4 | First RLS pattern on a sample table, plus the cross-tenant test harness | | Done |
-| 1.5 | Audit log and outbox tables with triggers | | In review |
-| 1.6 | Starter groups (Tenant Admin, Plant Manager, Planner, Technician, Auditor) and the permission test matrix in CI | OQ-22, OQ-25 | Todo |
+| 1.5 | Audit log and outbox tables with triggers | | Done |
+| 1.6 | Starter groups (Tenant Admin, Plant Manager, Planner, Technician, Auditor) and the permission test matrix in CI | OQ-22, OQ-25 | In review |
 | 1.6b | Push Goal 1 to staging: `supabase db push` (migrations only, no seed or test harness), then `supabase config push` (JWT hook on), then provision two test tenants on staging. Order matters: config before migrations breaks sign-in | | Todo |
 | 1.7 | Spike: RLS and scope-check performance on about 1M generated assets (added from open-items tracker, section E) | | Todo |
 
