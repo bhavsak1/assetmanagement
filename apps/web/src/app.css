@@ -331,6 +331,42 @@ h2 {
   font-weight: var(--weight-medium);
 }
 
+.node {
+  display: flex;
+  align-items: center;
+}
+
+.node .li {
+  flex: 1;
+  min-width: 0;
+}
+
+.toggle {
+  width: 24px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-4) var(--space-6);
+  margin: var(--space-6) 0 0;
+}
+
+.facts dt {
+  color: var(--color-text-muted);
+}
+
+.facts dd {
+  margin: 0;
+}
+
 .tag {
   margin-left: var(--space-3);
   padding: 1px var(--space-3);

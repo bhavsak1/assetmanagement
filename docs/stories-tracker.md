@@ -71,9 +71,9 @@
 | ID | Story | Open items | Status |
 |---|---|---|---|
 | 2.1 | Category and field definition tables (hierarchy, type, required flag, security domain) | | Done |
-| 2.2 | Categories screen: list, add, edit category and fields | | In review |
+| 2.2 | Categories screen: list, add, edit category and fields | | Done |
 | 2.3 | Location hierarchy with closure table | | Done |
-| 2.4 | Locations screen: tree, add, move | | Todo |
+| 2.4 | Locations screen: tree, add, move | | In review |
 | 2.5 | Tenant settings (locale, currency, time zone) and mandatory-field rules | | Todo |
 
 ### Goal 3: Working asset register

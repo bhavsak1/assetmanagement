@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { NavLink, Navigate, Outlet, Route, Routes } from 'react-router'
 import type { Session } from '@supabase/supabase-js'
 import { CategoriesPage } from './Categories'
+import { LocationsPage } from './Locations'
 import { t } from './i18n'
 import { supabase } from './supabase'
 
@@ -285,10 +286,11 @@ export function App() {
       <Route element={session ? signedIn : <Navigate to="/login" replace />}>
         {navGroups.flatMap(({ items }) =>
           items
-            .filter((key) => key !== 'categories')
+            .filter((key) => key !== 'categories' && key !== 'locations')
             .map((key) => <Route key={key} path={`/${key}`} element={<EmptyPage page={key} />} />),
         )}
         <Route path="/categories" element={<CategoriesPage tenantId={tenantId ?? ''} canManage={can('category_config', 'manage')} />} />
+        <Route path="/locations" element={<LocationsPage tenantId={tenantId ?? ''} canManage={can('location_hierarchy', 'manage')} />} />
         <Route path="/assets/:assetId" element={<EmptyPage page="assetDetail" />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
