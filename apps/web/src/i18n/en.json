@@ -39,6 +39,14 @@
     "password": "Password",
     "error": "Email or password is incorrect."
   },
+  "company": {
+    "chooseTitle": "Choose company",
+    "chooseIntro": "Your account has access to more than one company. Pick one to continue.",
+    "switch": "Company",
+    "error": "Could not open this company. Try again.",
+    "noAccessTitle": "No access",
+    "noAccess": "Your account is not linked to an active company. Ask your administrator for access."
+  },
   "pages": {
     "login": "Sign in",
     "dashboard": "Dashboard",
