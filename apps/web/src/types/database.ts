@@ -5,7 +5,33 @@ export type Database = {
   
   "public": {
           Tables: {
-            "domain_operation": {
+            "audit_log": {
+                  Row: {
+                    "action": string,"actor_type": string,"actor_user_id": string | null,"category": string,"id": string,"new_data": Json | null,"occurred_at": string,"old_data": Json | null,"reason": string | null,"record_id": string,"table_name": string,"tenant_id": string,"transaction_id": number
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "action": string,"actor_type": string,"actor_user_id"?: string | null,"category": string,"id"?: string,"new_data"?: Json | null,"occurred_at"?: string,"old_data"?: Json | null,"reason"?: string | null,"record_id": string,"table_name": string,"tenant_id": string,"transaction_id"?: number
+                  }
+                  Update: {
+                    "action"?: string,"actor_type"?: string,"actor_user_id"?: string | null,"category"?: string,"id"?: string,"new_data"?: Json | null,"occurred_at"?: string,"old_data"?: Json | null,"reason"?: string | null,"record_id"?: string,"table_name"?: string,"tenant_id"?: string,"transaction_id"?: number
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "audit_log_actor_user_id_fkey"
+      columns: ["actor_user_id"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "audit_log_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"domain_operation": {
                   Row: {
                     "code": string,"created_at": string,"id": string,"security_domain_id": string,"sort_order": number,"updated_at": string
                   }

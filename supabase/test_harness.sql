@@ -67,6 +67,12 @@ declare
   v_own   uuid;
   v_other uuid;
   v_n     int;
+  v_before jsonb;
+  v_after  jsonb;
+  -- Append-only tables (audit_log) have no deleted_at; any column proves the same thing.
+  v_set   text := case when exists (select 1 from pg_attribute where attrelid = p_table
+                                    and attname = 'deleted_at' and not attisdropped)
+                       then 'deleted_at = now()' else 'id = id' end;
 begin
   reset role;
   perform tests.grant(a, a1, p_domain);
@@ -74,6 +80,7 @@ begin
   perform tests.grant(b, a2, p_domain);
   v_own   := tests.insert_row(p_table, p_row || jsonb_build_object('tenant_id', a));
   v_other := tests.insert_row(p_table, p_row || jsonb_build_object('tenant_id', b));
+  execute format('select to_jsonb(t) from %s t where id = $1', p_table) into v_before using v_other;
 
   -- a1 is a member of both tenants, working in A.
   perform tests.act_as(a1, a);
@@ -88,7 +95,7 @@ begin
 
   -- Writes on another tenant's row: no row touched, or refused outright (column grants).
   begin
-    execute format('update %s set deleted_at = now() where id = $1', p_table) using v_other;
+    execute format('update %s set %s where id = $1', p_table, v_set) using v_other;
     get diagnostics v_n = row_count;
   exception when insufficient_privilege then v_n := 0;
   end;
@@ -111,8 +118,7 @@ begin
   return next is(v_n, 0, p_table || ': forged tenant claim sees no rows');
 
   reset role;
-  execute format('select count(*) from %s where id = $1 and tenant_id = $2 and deleted_at is null', p_table)
-    into v_n using v_other, b;
-  return next is(v_n, 1, p_table || ': other tenant row is unchanged');
+  execute format('select to_jsonb(t) from %s t where id = $1', p_table) into v_after using v_other;
+  return next is(v_after, v_before, p_table || ': other tenant row is unchanged');
 end;
 $$;
