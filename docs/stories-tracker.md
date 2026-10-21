@@ -73,8 +73,8 @@
 | 2.1 | Category and field definition tables (hierarchy, type, required flag, security domain) | | Done |
 | 2.2 | Categories screen: list, add, edit category and fields | | Done |
 | 2.3 | Location hierarchy with closure table | | Done |
-| 2.4 | Locations screen: tree, add, move | | In review |
-| 2.5 | Tenant settings (locale, currency, time zone) and mandatory-field rules | | Todo |
+| 2.4 | Locations screen: tree, add, move | | Done |
+| 2.5 | Tenant settings (locale, currency, time zone) and mandatory-field rules | | In review |
 
 ### Goal 3: Working asset register
 **Review point:** you add real assets and see them on the Assets list and detail screens. First "feels like a product" demo.

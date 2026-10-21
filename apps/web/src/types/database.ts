@@ -295,14 +295,14 @@ isOneToOne: false
                   ]
                 },"tenant": {
                   Row: {
-                    "created_at": string,"created_by": string | null,"currency_code": string,"date_format": string,"deleted_at": string | null,"id": string,"locale": string,"name": string,"slug": string,"status": string,"time_zone": string,"updated_at": string,"updated_by": string | null
+                    "created_at": string,"created_by": string | null,"currency_code": string,"date_format": string,"deleted_at": string | null,"fiscal_year_start_month": number,"id": string,"locale": string,"name": string,"required_asset_fields": (string)[],"slug": string,"status": string,"time_zone": string,"updated_at": string,"updated_by": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"created_by"?: string | null,"currency_code": string,"date_format": string,"deleted_at"?: string | null,"id"?: string,"locale"?: string,"name": string,"slug": string,"status"?: string,"time_zone": string,"updated_at"?: string,"updated_by"?: string | null
+                    "created_at"?: string,"created_by"?: string | null,"currency_code": string,"date_format": string,"deleted_at"?: string | null,"fiscal_year_start_month": number,"id"?: string,"locale": string,"name": string,"required_asset_fields"?: (string)[],"slug": string,"status"?: string,"time_zone": string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Update: {
-                    "created_at"?: string,"created_by"?: string | null,"currency_code"?: string,"date_format"?: string,"deleted_at"?: string | null,"id"?: string,"locale"?: string,"name"?: string,"slug"?: string,"status"?: string,"time_zone"?: string,"updated_at"?: string,"updated_by"?: string | null
+                    "created_at"?: string,"created_by"?: string | null,"currency_code"?: string,"date_format"?: string,"deleted_at"?: string | null,"fiscal_year_start_month"?: number,"id"?: string,"locale"?: string,"name"?: string,"required_asset_fields"?: (string)[],"slug"?: string,"status"?: string,"time_zone"?: string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Relationships: [
                     {
@@ -480,6 +480,9 @@ isOneToOne: false
                            },
 "select_tenant":
 { Args: { "p_tenant_id": string }; Returns: undefined
+                           },
+"update_tenant_settings":
+{ Args: { "p_currency_code": string,"p_date_format": string,"p_fiscal_year_start_month": number,"p_locale": string,"p_required_asset_fields": (string)[],"p_time_zone": string }; Returns: undefined
                            }
           }
           Enums: {

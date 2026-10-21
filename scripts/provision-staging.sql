@@ -10,9 +10,9 @@ declare
   v_tid uuid;
   v_gid uuid;
 begin
-  insert into public.tenant (name, slug, currency_code, locale, time_zone, date_format) values
-    ('STAGING Tenant A', 'staging-tenant-a', 'INR', 'en-IN', 'Asia/Kolkata',     'dd-MM-yyyy'),
-    ('STAGING Tenant B', 'staging-tenant-b', 'USD', 'en-US', 'America/New_York', 'MM/dd/yyyy')
+  insert into public.tenant (name, slug, currency_code, locale, time_zone, date_format, fiscal_year_start_month) values
+    ('STAGING Tenant A', 'staging-tenant-a', 'INR', 'en-IN', 'Asia/Kolkata',     'dd-MM-yyyy', 4),
+    ('STAGING Tenant B', 'staging-tenant-b', 'USD', 'en-US', 'America/New_York', 'MM/dd/yyyy', 1)
   on conflict (slug) do nothing;
 
   perform private.seed_starter_groups(id) from public.tenant where slug in ('staging-tenant-a', 'staging-tenant-b');

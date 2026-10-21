@@ -3,8 +3,8 @@
 
 truncate spike.result;
 -- A tenant with no groups yet, for timing seed_starter_groups.
-insert into public.tenant (id, name, slug, currency_code, time_zone, date_format)
-values ('00000000-0000-0000-0001-999999999999', 'SPIKE spare', 'spike-spare', 'INR', 'Asia/Kolkata', 'dd-MM-yyyy')
+insert into public.tenant (id, name, slug, currency_code, locale, time_zone, date_format, fiscal_year_start_month)
+values ('00000000-0000-0000-0001-999999999999', 'SPIKE spare', 'spike-spare', 'INR', 'en-IN', 'Asia/Kolkata', 'dd-MM-yyyy', 4)
 on conflict do nothing;
 
 do $$

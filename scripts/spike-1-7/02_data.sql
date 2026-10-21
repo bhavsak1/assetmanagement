@@ -15,8 +15,8 @@ update spike.tenant_plan set
   n_buildings = least(10, greatest(2, n_assets / 2000)),
   n_areas     = least(20, greatest(3, n_assets / 1000));
 
-insert into public.tenant (id, name, slug, currency_code, time_zone, date_format)
-select tenant_id, 'SPIKE Tenant ' || n, 'spike-' || lpad(n::text, 3, '0'), 'INR', 'Asia/Kolkata', 'dd-MM-yyyy'
+insert into public.tenant (id, name, slug, currency_code, locale, time_zone, date_format, fiscal_year_start_month)
+select tenant_id, 'SPIKE Tenant ' || n, 'spike-' || lpad(n::text, 3, '0'), 'INR', 'en-IN', 'Asia/Kolkata', 'dd-MM-yyyy', 4
 from spike.tenant_plan;
 select private.seed_starter_groups(tenant_id) from spike.tenant_plan;
 
