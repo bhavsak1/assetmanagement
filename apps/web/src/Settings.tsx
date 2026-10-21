@@ -37,7 +37,9 @@ const withValue = (list: string[], value: string) => (list.includes(value) ? lis
 export function SettingsPage({ tenantId, canView, canManage }: { tenantId: string; canView: boolean; canManage: boolean }) {
   const [settings, setSettings] = useState<Settings>()
   const [error, setError] = useState<string>()
+  const [saveError, setSaveError] = useState<string>()
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!canView) return
@@ -58,7 +60,7 @@ export function SettingsPage({ tenantId, canView, canManage }: { tenantId: strin
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setError(undefined)
+    setSaveError(undefined)
     setSaved(false)
     const form = new FormData(e.currentTarget)
     const values: Settings = {
@@ -69,6 +71,7 @@ export function SettingsPage({ tenantId, canView, canManage }: { tenantId: strin
       fiscal_year_start_month: Number(form.get('fiscalMonth')),
       required_asset_fields: optionalAssetFields.filter((f) => form.get(f) === 'on'),
     }
+    setSaving(true)
     const { error } = await supabase.rpc('update_tenant_settings', {
       p_currency_code: values.currency_code,
       p_locale: values.locale,
@@ -77,7 +80,8 @@ export function SettingsPage({ tenantId, canView, canManage }: { tenantId: strin
       p_fiscal_year_start_month: values.fiscal_year_start_month,
       p_required_asset_fields: values.required_asset_fields,
     })
-    if (error) return setError(errorMessage(error))
+    setSaving(false)
+    if (error) return setSaveError(errorMessage(error))
     setSettings(values)
     setSaved(true)
   }
@@ -103,14 +107,10 @@ export function SettingsPage({ tenantId, canView, canManage }: { tenantId: strin
           {error}
         </p>
       )}
-      {saved && (
-        <p className="muted" role="status">
-          {t.settings.saved}
-        </p>
-      )}
       {s && (
         // key: remount the uncontrolled inputs when the saved values come back.
-        <form key={JSON.stringify(s)} className="stack" onSubmit={submit}>
+        // onChange: an edit after saving makes the "saved" message stale.
+        <form key={JSON.stringify(s)} className="stack" onSubmit={submit} onChange={() => setSaved(false)}>
           <fieldset className="card" disabled={!canManage}>
             <h2>{t.settings.regional}</h2>
             <label className="field">
@@ -170,8 +170,19 @@ export function SettingsPage({ tenantId, canView, canManage }: { tenantId: strin
           {canManage && (
             <div className="page-head">
               <div className="spacer" />
-              <button className="btn btn-main" type="submit">
-                {t.settings.save}
+              {/* Next to the button, where the user is looking when they save. */}
+              {saved && (
+                <span className="save-ok" role="status">
+                  ✓ {t.settings.saved}
+                </span>
+              )}
+              {saveError && (
+                <span className="login-error save-error" role="alert">
+                  {saveError}
+                </span>
+              )}
+              <button className="btn btn-main" type="submit" disabled={saving}>
+                {saving ? t.settings.saving : t.settings.save}
               </button>
             </div>
           )}

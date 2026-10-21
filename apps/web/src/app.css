@@ -236,6 +236,17 @@ h1 {
   color: var(--tag-error-text);
 }
 
+.save-ok {
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--tag-ok-bg);
+  color: var(--tag-ok-text);
+}
+
+.login-error.save-error {
+  margin: 0;
+}
+
 .spacer {
   flex: 1;
 }

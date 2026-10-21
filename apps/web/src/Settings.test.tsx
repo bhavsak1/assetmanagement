@@ -89,7 +89,10 @@ test('manage: save sends every setting to update_tenant_settings', async () => {
     p_fiscal_year_start_month: 4,
     p_required_asset_fields: ['serial_number', 'model'],
   })
-  expect(container.querySelector('[role="status"]')?.textContent).toBe(t.settings.saved)
+  // Shown in the button row, and gone once the user edits again.
+  expect(container.querySelector('button[type="submit"]')!.parentElement!.querySelector('[role="status"]')?.textContent).toContain(t.settings.saved)
+  await act(async () => field<HTMLSelectElement>('currency').dispatchEvent(new Event('change', { bubbles: true })))
+  expect(container.querySelector('[role="status"]')).toBeNull()
 })
 
 test('a refused save shows the permission message', async () => {
