@@ -150,6 +150,37 @@
       "generic": "Could not save. Try again."
     }
   },
+  "settings": {
+    "subtitle": "Regional settings and mandatory asset fields",
+    "noAccess": "You do not have access to tenant settings.",
+    "regional": "Regional",
+    "currency": "Currency",
+    "locale": "Locale",
+    "localeHint": "Language and region code, for example en-IN or en-US. Sets number and month name format.",
+    "timeZone": "Time zone",
+    "dateFormat": "Date format",
+    "fiscalMonth": "Fiscal year starts in",
+    "mandatory": "Mandatory asset fields",
+    "mandatoryHint": "Name, category and status are always required. Turn on the other fields your company must fill in. Custom fields are set on the Categories screen.",
+    "assetFields": {
+      "serial_number": "Serial number",
+      "manufacturer": "Manufacturer",
+      "model": "Model",
+      "location": "Location",
+      "purchase_date": "Purchase date",
+      "purchase_value": "Purchase value",
+      "in_service_date": "In-service date"
+    },
+    "save": "Save settings",
+    "saved": "Settings saved.",
+    "errors": {
+      "load": "Could not load settings. Refresh to try again.",
+      "noPermission": "You do not have permission to change settings.",
+      "timeZone": "Unknown time zone. Pick one from the list.",
+      "invalid": "One of the values is not allowed.",
+      "generic": "Could not save. Try again."
+    }
+  },
   "pages": {
     "login": "Sign in",
     "dashboard": "Dashboard",

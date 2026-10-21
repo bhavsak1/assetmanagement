@@ -50,9 +50,9 @@ insert into public.user_profile (id, display_name, email) values
   ('00000000-0000-0000-0000-0000000000a1', 'Test User', 'test.user@example.com'),
   ('00000000-0000-0000-0000-0000000000a2', 'Test User Two', 'test.user2@example.com');
 
-insert into public.tenant (id, name, slug, status, currency_code, locale, time_zone, date_format) values
-  ('00000000-0000-0000-0000-00000000000a', 'TEST Tenant A', 'test-tenant-a', 'active', 'INR', 'en-IN', 'Asia/Kolkata', 'dd-MM-yyyy'),
-  ('00000000-0000-0000-0000-00000000000b', 'TEST Tenant B', 'test-tenant-b', 'read_only', 'USD', 'en-US', 'America/New_York', 'MM/dd/yyyy');
+insert into public.tenant (id, name, slug, status, currency_code, locale, time_zone, date_format, fiscal_year_start_month) values
+  ('00000000-0000-0000-0000-00000000000a', 'TEST Tenant A', 'test-tenant-a', 'active', 'INR', 'en-IN', 'Asia/Kolkata', 'dd-MM-yyyy', 4),
+  ('00000000-0000-0000-0000-00000000000b', 'TEST Tenant B', 'test-tenant-b', 'read_only', 'USD', 'en-US', 'America/New_York', 'MM/dd/yyyy', 1);
 
 -- test.user is in both tenants (sees the picker). test.user2 is in tenant B only.
 insert into public.tenant_membership (tenant_id, user_id) values

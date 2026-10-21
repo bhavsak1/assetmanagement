@@ -69,7 +69,7 @@ One row per customer company. Created by the provisioning script (OQ-16), never 
 
 - No India defaults in the schema except the `locale` example. Provisioning passes all four values.
 - Fiscal year start (settled in section A of the open-items tracker) is added in 2.5 as `fiscal_year_start_month smallint`. Adding a column is cheap.
-- **RLS:** select where the user has an active membership in that tenant (so the header switcher can list names). Update by `has_permission('tenant_settings','manage')` for the current tenant only (2.5). No insert or delete for users.
+- **RLS:** select where the user has an active membership in that tenant (so the header switcher can list names). No write grants for users. Settings change only through `update_tenant_settings()` (2.5, data-model-goal2.md §5, S1).
 
 ### 2.2 `user_profile` (1.1)
 

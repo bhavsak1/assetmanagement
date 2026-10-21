@@ -95,8 +95,8 @@ select private.seed_starter_groups('00000000-0000-0000-0000-00000000000a');
 select is((select count(*) from public.security_group), (select groups from before_rerun), 'running the seed again adds no groups');
 select is((select count(*) from public.group_domain_policy), (select policies from before_rerun), 'running the seed again adds no policies');
 
-insert into public.tenant (id, name, slug, currency_code, locale, time_zone, date_format) values
-  ('00000000-0000-0000-0000-00000000000c', 'TEST Tenant C', 'test-tenant-c', 'EUR', 'en-GB', 'Europe/London', 'dd/MM/yyyy');
+insert into public.tenant (id, name, slug, currency_code, locale, time_zone, date_format, fiscal_year_start_month) values
+  ('00000000-0000-0000-0000-00000000000c', 'TEST Tenant C', 'test-tenant-c', 'EUR', 'en-GB', 'Europe/London', 'dd/MM/yyyy', 1);
 select private.seed_starter_groups('00000000-0000-0000-0000-00000000000c');
 select results_eq(
   $$select g.code, count(*) from public.security_group g join public.group_domain_policy p on p.security_group_id = g.id

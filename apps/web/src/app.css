@@ -281,6 +281,11 @@ h2 {
   color: var(--color-surface);
 }
 
+fieldset.card {
+  margin: 0;
+  min-width: 0;
+}
+
 .card {
   box-sizing: border-box;
   padding: 18px;

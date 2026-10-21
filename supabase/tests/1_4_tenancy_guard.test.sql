@@ -29,8 +29,8 @@ select is(
 
 -- a2 is in tenant B only. a1 shares tenant B with a2.
 select tests.act_as('00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-00000000000b');
-select is_empty($$update public.tenant set name = 'x' returning 1$$, 'user cannot update any tenant');
-select is_empty($$delete from public.tenant returning 1$$, 'user cannot delete any tenant');
+select throws_ok($$update public.tenant set name = 'x'$$, '42501', null, 'user cannot update any tenant (no grant, 2.5)');
+select throws_ok($$delete from public.tenant$$, '42501', null, 'user cannot delete any tenant (no grant, 2.5)');
 select is((select count(*)::int from public.user_profile where id = '00000000-0000-0000-0000-0000000000a1'), 0, 'user cannot read another user profile');
 select is_empty(
   $$update public.user_profile set display_name = 'x' where id = '00000000-0000-0000-0000-0000000000a1' returning 1$$,

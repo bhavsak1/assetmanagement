@@ -145,7 +145,7 @@ A user without `asset_financials` can still read that a field definition in `ass
 
 ## 5. Story 2.5: tenant settings and mandatory-field rules
 
-**Status:** design, 20 Oct 2026. Waiting on owner answers to **S1 to S3** and **M1, M2** before any migration or UI work.
+**Status:** in review, 21 Oct 2026. Owner accepted every lean (S1 A, S2 A, S3 A, M1 A, M2 B) on 21 Oct 2026. Built in migrations `2_5_tenant_settings_columns` and `2_5_update_tenant_settings`.
 
 ### 5.1 Settings: what exists
 
@@ -198,34 +198,34 @@ Minimal by default (CLAUDE.md §10.3): every optional system field starts **not*
 
 ### 5.4 Owner decisions
 
-#### S1. How a settings admin writes. DECIDE
+#### S1. How a settings admin writes. DECIDED
 
 | Option | |
 |---|---|
 | A | Action function `public.update_tenant_settings(currency_code, locale, time_zone, date_format, fiscal_year_start_month, required_asset_fields)`. Security definer, fixed `search_path`. Checks `tenant_settings.manage` and `tenant_can_write()`, current tenant only, validates the time zone, writes audit and outbox rows. No update grant on `tenant` |
 | B | Column-level `grant update (...)` plus an update policy, like `field_definition` (2.1). Needs a tenant-specific audit trigger and a time-zone trigger |
 
-**Lean: A.** One place for permission, checks and audit; the generic audit trigger cannot go on `tenant` anyway. CLAUDE.md §7.8: actions are functions. **Cost to reverse:** low, no data shape change.
+**Lean: A. Owner: A.** One place for permission, checks and audit; the generic audit trigger cannot go on `tenant` anyway. CLAUDE.md §7.8: actions are functions. **Cost to reverse:** low, no data shape change.
 
-#### S2. Can a read-only tenant change settings? DECIDE
+#### S2. Can a read-only tenant change settings? DECIDED
 
 | Option | |
 |---|---|
 | A | No. `tenant_can_write()` applies, like every other write |
 | B | Yes. Settings are admin config, not business data |
 
-**Lean: A.** One rule everywhere. **Cost to reverse:** low, one line.
+**Lean: A. Owner: A.** One rule everywhere. **Cost to reverse:** low, one line.
 
-#### S3. Fiscal year start month now. DECIDE
+#### S3. Fiscal year start month now. DECIDED
 
 | Option | |
 |---|---|
 | A | Add `fiscal_year_start_month` now (data-model-goal1.md §2.1 planned it for 2.5). Existing tenants backfilled to 4 (April), then the default is dropped so provisioning must pass it. The "locks after the first asset" rule is a 3.1 trigger |
 | B | Leave it until a story uses it (depreciation is Phase 2) |
 
-**Lean: A.** Planned for 2.5, set at company setup (open-items section A), and it must exist before the first asset locks it. **Cost to reverse:** low before assets exist.
+**Lean: A. Owner: A.** Planned for 2.5, set at company setup (open-items section A), and it must exist before the first asset locks it. **Cost to reverse:** low before assets exist.
 
-#### M1. Where system-field mandatory rules live. DECIDE
+#### M1. Where system-field mandatory rules live. DECIDED
 
 | Option | |
 |---|---|
@@ -233,9 +233,9 @@ Minimal by default (CLAUDE.md §10.3): every optional system field starts **not*
 | B | Table `mandatory_field_rule (tenant_id, entity, field_code, category_id null)`, per category, inherited like G3. Full 1.4 pattern, cross-tenant tests, UI on the category screen |
 | C | Nothing in 2.5. 3.3 decides, with the asset table |
 
-**Lean: A.** Per-category needs are already covered by custom fields on the category. A is one column; B is a table, policies and a screen for a need no pilot has raised. A to B later is a data copy (one row per array item, `category_id` null). 3.1 may change the allowed list with a new migration once the asset columns are final. **Cost to reverse:** low.
+**Lean: A. Owner: A.** Per-category needs are already covered by custom fields on the category. A is one column; B is a table, policies and a screen for a need no pilot has raised. A to B later is a data copy (one row per array item, `category_id` null). 3.1 may change the allowed list with a new migration once the asset columns are final. **Cost to reverse:** low.
 
-#### M2. Mandatory field in a domain the user cannot write. DECIDE
+#### M2. Mandatory field in a domain the user cannot write. DECIDED
 
 Example: `purchase_value` (domain `asset_financials`) is mandatory, and a Technician without that domain creates an asset.
 
@@ -245,13 +245,13 @@ Example: `purchase_value` (domain `asset_financials`) is mandatory, and a Techni
 | B | Skip the rule for fields the caller cannot update. The asset saves with the field empty. A later "incomplete records" list can show it |
 | C | Refuse to make a field mandatory unless every group that can create assets can write it |
 
-**Lean: B.** Never blocks work on a field the user cannot even see. A is a support trap; C is complex and breaks when groups change. Same rule for custom fields in `asset_financials`. **Cost to reverse:** low, logic in the 3.3 function only.
+**Lean: B. Owner: B.** Never blocks work on a field the user cannot even see. A is a support trap; C is complex and breaks when groups change. Same rule for custom fields in `asset_financials`. **Cost to reverse:** low, logic in the 3.3 function only.
 
 ### 5.5 Build plan (after answers)
 
 Migrations, one purpose each:
 1. `2_5_tenant_settings_columns`: the checks in §5.1, drop the `locale` default, add `fiscal_year_start_month` (S3) and `required_asset_fields` (M1).
-2. `2_5_update_tenant_settings`: the S1 action function.
+2. `2_5_update_tenant_settings`: the S1 action function. Also revokes the Supabase default insert, update, delete and truncate grants on `tenant` that 1.1 left (RLS already refused every row, silently). 1.4 tenancy guard now expects 42501 for a direct tenant write instead of zero rows.
 
 pgTAP `2_5_tenant_settings.test.sql`: no grant refused; `view` only refused; `manage` updates; read-only tenant refused (S2); bad currency, locale, time zone, date format, month and field code refused; a direct `update public.tenant` by a manage user is refused (status, name, slug unchanged); the other tenant is untouched; an audit row is written. No new tenant table, so no `tests.cross_tenant` line.
 
