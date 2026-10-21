@@ -173,6 +173,7 @@
     },
     "save": "Save settings",
     "saved": "Settings saved.",
+    "saving": "Saving…",
     "errors": {
       "load": "Could not load settings. Refresh to try again.",
       "noPermission": "You do not have permission to change settings.",
