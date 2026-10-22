@@ -248,7 +248,7 @@ filters: {"q": text, "status": text, "category_id": uuid, "location_id": uuid}
 
 ## 14. Story 3.3: Add and edit asset form
 
-**Status:** in review, 22 Oct 2026. No DECIDE item: 3.1 already fixed the write path and the hidden-value rules. 3.3 closes two gaps in them (14.2) and builds the form. Built in migration `3_3_asset_write_rules`.
+**Status:** done, 22 Oct 2026 (owner accepted). No DECIDE item: 3.1 already fixed the write path and the hidden-value rules. 3.3 closes two gaps in them (14.2) and builds the form. Built in migration `3_3_asset_write_rules`.
 
 **Screen:** `assetly-screens.html` has no Add or Edit asset screen. The form follows the 2.2 and 2.5 card style and the field order of the Asset detail Details card (tag, category, location, make and model, serial, purchase, criticality).
 
