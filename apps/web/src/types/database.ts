@@ -61,6 +61,50 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"asset_attachment": {
+                  Row: {
+                    "asset_id": string,"created_at": string,"created_by": string | null,"deleted_at": string | null,"file_name": string,"id": string,"mime_type": string,"object_path": string | null,"size_bytes": number,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "asset_id": string,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"file_name": string,"id"?: string,"mime_type": string,"object_path"?: never,"size_bytes": number,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "asset_id"?: string,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"file_name"?: string,"id"?: string,"mime_type"?: string,"object_path"?: never,"size_bytes"?: number,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "asset_attachment_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "asset_attachment_tenant_id_asset_id_fkey"
+      columns: ["tenant_id","asset_id"]
+isOneToOne: false
+      referencedRelation: "asset"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "asset_attachment_tenant_id_asset_id_fkey"
+      columns: ["tenant_id","asset_id"]
+isOneToOne: false
+      referencedRelation: "asset_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "asset_attachment_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "asset_attachment_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"asset_category": {
                   Row: {
                     "code": string | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"description": string | null,"id": string,"is_active": boolean,"name": string,"parent_id": string | null,"tenant_id": string,"updated_at": string,"updated_by": string | null
@@ -629,7 +673,12 @@ isOneToOne: false
                 }
           }
           Functions: {
-            "asset_history":
+            "asset_attachments":
+{ Args: { "p_asset_id": string }; Returns: {
+              "created_at": string,"file_name": string,"id": string,"mime_type": string,"size_bytes": number,"uploaded_by": string
+            }[]
+                           },
+"asset_history":
 { Args: { "p_asset_id": string,"p_before"?: string,"p_before_id"?: string,"p_limit"?: number }; Returns: {
               "action": string,"actor_name": string,"actor_type": string,"hidden_fields": (string)[],"id": string,"new_data": Json,"occurred_at": string,"old_data": Json
             }[]

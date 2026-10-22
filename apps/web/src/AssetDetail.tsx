@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
+import { AttachmentsTab } from './Attachments'
 import { lineFields } from './AssetForm'
 import { statusTone } from './Assets'
 import { t } from './i18n'
@@ -100,7 +101,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
   const [fields, setFields] = useState<Field[]>([])
   const [domains, setDomains] = useState<Record<string, string>>({})
   const [timeZone, setTimeZone] = useState<string>()
-  const [tab, setTab] = useState<'overview' | 'audit'>('overview')
+  const [tab, setTab] = useState<'overview' | 'attachments' | 'audit'>('overview')
   const [dialog, setDialog] = useState<'transfer' | 'retire' | 'status'>()
   // Bumped after an action: reloads the asset and the Audit tab.
   const [version, setVersion] = useState(0)
@@ -191,7 +192,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
           </h1>
         </div>
         <div className="spacer" />
-        {/* QR label arrives with 3.6. */}
+        {/* QR label arrives with 3.6b. */}
         {live && can('asset_lifecycle', 'execute') && (
           <>
             <button className="btn" type="button" onClick={() => setDialog('transfer')}>
@@ -215,7 +216,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
       </div>
       <div className="tabs" role="tablist">
         {tabs.map((k) =>
-          k === 'overview' || k === 'audit' ? (
+          k === 'overview' || k === 'audit' || (k === 'attachments' && can('asset_attachment', 'view')) ? (
             <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
               {d.tabs[k]}
             </button>
@@ -282,6 +283,8 @@ export function AssetDetailPage({ can }: { can: Can }) {
             </section>
           )}
         </div>
+      ) : tab === 'attachments' ? (
+        <AttachmentsTab tenantId={asset.tenant_id ?? ''} assetId={id} can={can} timeZone={timeZone} />
       ) : (
         <AuditTab key={`${asset.id}-${version}`} assetId={asset.id ?? assetId} timeZone={timeZone} label={label} show={show} onTags={(m) => setTags((x) => ({ ...x, ...m }))} known={tags} />
       )}

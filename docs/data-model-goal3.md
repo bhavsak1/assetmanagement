@@ -372,3 +372,84 @@ pgTAP `3_5_transfer.test.sql`: transfer allowed; refused for no `execute`, read-
 ### 16.5 Open items used (lean)
 
 OQ-01 (no partial transfer), OQ-04 (Disposed terminal, admin reopen with a reason), OQ-07 (T3).
+
+---
+
+## 17. Story 3.6: Attachments and QR label
+
+**Status:** in review, 22 Oct 2026. Owner accepted every lean (Z1 to Z9) on 22 Oct 2026. 3.6 builds attachments in migrations `3_6_attachment_domain`, `3_6_asset_attachment`, `3_6_attachment_storage`; QR is story 3.6b.
+
+**As built (differences from the design below):**
+- Domain `asset_attachment` has `entity = 'attachment'`, not `'asset'`, so it is not offered as a custom-field domain (`field_domains('asset')`).
+- Upload is allowed on any live (not soft-deleted) asset, Disposed included: a disposal certificate belongs on the disposed asset.
+- The row insert trigger also checks the uploader: a user can only claim a file whose storage `owner_id` is them (system writes skip this).
+- The tab reads `public.asset_attachments(p_asset_id)` (invoker, RLS decides) with the uploader's name from `private.member_name()`, the H1 a rule (active member of the current tenant, name only).
+- Upload uses XHR to the Storage endpoint for progress (supabase-js has no progress events), same path and headers.
+- Users have no storage update or delete policy; Storage also blocks direct SQL deletes on its own.
+
+**Owner review (CLAUDE.md §9):** file access. Storage policies, signed URLs, the attachment RLS and the scan route.
+
+**Screen:** `Asset detail` has an Attachments tab and a QR label button. The screens file has no layout for either, so both follow the 2.2 card style.
+
+### 17.1 Size check [Z1]
+
+The row is two features: attachments (bucket, storage policies, table, tab) and QR (scan route, login return, label, a new library). Both touch owner-review areas. CLAUDE.md §5.4 says one feature per session. **Lean: split.** 3.6 = attachments (this session). 3.6b = QR label and scan-to-open (next session, design below so the owner answers once). Tracker change-log line if accepted.
+
+### 17.2 Storage
+
+| | |
+|---|---|
+| Bucket | One **private** bucket `attachments` (`public = false`). Created by a migration (`insert into storage.buckets ... on conflict (id) do update`), so local and staging get it from `db push`, with no dashboard step and no second copy in `config.toml` [Z5] |
+| Limits on the bucket | `file_size_limit` 10 MB [Z4]. `allowed_mime_types`: `image/jpeg`, `image/png`, `image/webp`, `image/heic`, `application/pdf`, Word, Excel, PowerPoint (`.doc/.docx/.xls/.xlsx/.ppt/.pptx`), `text/plain`, `text/csv`. No `image/svg+xml`, no `text/html` (both can carry script). Storage enforces these on upload; the app checks the same list first for a fast message |
+| Object path | `<tenant_id>/asset/<asset_id>/<attachment_id>`. The last part is the `asset_attachment.id` (a uuid the app makes). **No file name in the path**: names are untrusted and stay in the row only |
+| `storage.objects` policies (`to authenticated`, `bucket_id = 'attachments'`) | **insert:** first path part = `current_tenant_id()`, second = `asset`, third is a live asset in the tenant, fourth is a uuid, `has_permission('asset_attachment', 'create')`, `tenant_can_write()`. **select (download, signed URL):** a **live** `asset_attachment` row in the current tenant has this `object_path`, and `has_permission('asset_attachment', 'view')`. **No update, no delete policy**: objects are never overwritten or removed by users |
+| Path parsing | `split_part(name, '/', n)`, plain Postgres, not `storage.foldername()` (portability). Compare as text, never cast a user path to uuid inside a policy (a bad path would raise instead of deny) |
+| Signed URL | Made on click, **60 seconds** [Z3]. Non-images: `download: <file name>` so Storage sends `Content-Disposition: attachment`. Images (jpeg, png, webp): open in a new tab inline. Nothing is ever rendered as HTML in the app |
+
+Why select checks the row and not only the path: a soft-deleted attachment, or an object whose row never got written, cannot be read, even by someone who knows the path.
+
+### 17.3 `asset_attachment` (1.4 pattern)
+
+| Column | Type | Notes |
+|---|---|---|
+| id, tenant_id, std | | Standard. `id` is also the object name |
+| asset_id | uuid not null | Composite FK `(tenant_id, asset_id) → asset` |
+| file_name | text not null | As uploaded, trimmed, 1 to 255 chars, no `/` or `\` or control chars (check). Shown as text only |
+| mime_type | text not null | **Copied from `storage.objects.metadata`** by a before-insert trigger, not taken from the client |
+| size_bytes | bigint not null | Same, from the object metadata. Ready for a per-tenant quota (`sum(size_bytes)`, hook only) |
+| object_path | text not null, generated | `tenant_id || '/asset/' || asset_id || '/' || id`, `unique` |
+
+- Domain **`asset_attachment`** (new, as data) [Z2] with operations `view`, `create`, `delete`. Policies: select `view`; insert `create` plus `tenant_can_write()`; update only for the soft delete (`delete` plus `tenant_can_write()`; column grant `deleted_at`, `updated_by`). No delete policy, delete and truncate revoked. Triggers `set_updated_at`, `check_soft_delete('asset_attachment', 'delete')`, `audit_row('data')`. Index `(tenant_id, asset_id, created_at desc) where deleted_at is null`.
+- **Insert trigger** (`security definer`, fixed `search_path`): the object at `object_path` must exist in the `attachments` bucket, else refused; it fills `mime_type` and `size_bytes` from it. This is the only Supabase-specific piece, kept in one private function.
+- **Order and orphans [Z6]:** upload the object first, then insert the row. If the row insert fails, the object is an orphan, but no one can read it (select needs the row). A cleanup job for orphans (objects with no row after 1 day) and for purging soft-deleted files is a later hook, not built.
+- Starter grid: Tenant Admin and Plant Manager `view, create, delete`; Planner and Technician `view, create` (photos from the floor); Auditor `view`. New `seed_starter_groups` plus backfill, as 3.1 did. 1.6 test grid gets the cells.
+- 6.1: one set-form scope clause on the asset (same as `asset_view`) in the select policy and the storage insert policy.
+
+### 17.4 3.6b QR (design only, built next session)
+
+- **What the QR holds [Z7]:** `https://<app>/q/<asset_id>`. The asset id is already an opaque random uuid: not the tag, not the tenant (OQ-02 lean). No token column, no resolve function: `/q/:id` redirects to `/assets/:id`, which reads `asset_view`, so tenant, `asset_core.view` and the 6.1 scope are checked by the same path as the detail page. Another tenant's id gives the existing "not found". A separate token only matters if the QR were the key, and here the login is the key.
+- **Login:** the scan needs a signed-in user. Today the login guard drops the target page. 3.6b keeps it (`/login?next=/q/...`, only same-app paths starting with `/`, so no open redirect) and returns there after sign-in.
+- **Label [Z8]:** QR label button opens a print view: QR, tag (large), name. Print CSS sized to one 50 × 25 mm label; browser print. Bulk labels from the list: hook only.
+- **Library [Z9]:** `uqr` (unjs): zero dependencies, TypeScript, about 10 kB. Its `encode()` returns the module grid, rendered as SVG `<rect>`s in React (no `innerHTML`). `qrcode` pulls more dependencies; `qrcode-generator` is fine but untyped.
+
+### 17.5 DECIDE
+
+| # | Question | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| Z1 | Split | **a)** 3.6 attachments now, 3.6b QR next. **b)** Both in one PR | a | None |
+| Z2 | Permission | **a)** New domain `asset_attachment` (view, create, delete), grid as 17.3. **b)** Reuse `asset_core`: view to download, update to upload and delete | a. Lets a Technician add photos without asset edit rights | Low (policy and grid change) |
+| Z3 | Signed URL life | **a)** 60 s, made on click. **b)** 1 hour, made with the list | a | Low |
+| Z4 | Max size | **a)** 10 MB. **b)** 25 MB. **c)** 50 MB (the local default) | a. Phone photos and PDFs fit; free plan storage is small | Low (bucket row) |
+| Z5 | Bucket declared in | **a)** Migration only. **b)** `config.toml` `[storage.buckets]` (local) plus a manual step on staging | a. One source, in git, reaches staging with `db push` | Low |
+| Z6 | Orphans | **a)** Object first, then row; orphans unreadable; cleanup job later. **b)** Row first with an `uploaded` flag, then object, then flag set | a. Fewer moving parts | Low |
+| Z7 | QR content | **a)** `/q/<asset_id>`, no token. **b)** Random `asset.qr_token` (unique, survives transfer, can be regenerated) plus a `security definer` resolve function | a. Login and RLS are the gate; a token adds a column, a function and tests for no extra safety. b later keeps `/q/<id>` working | Low before labels are printed; after, both forms must keep working |
+| Z8 | Label size | **a)** 50 × 25 mm, one label. **b)** A4 sheet of labels | a. Bulk later | Low (CSS) |
+| Z9 | QR library | **a)** `uqr`. **b)** `qrcode`. **c)** `qrcode-generator` | a | Low |
+
+### 17.6 Tests planned
+
+pgTAP `3_6_attachments.test.sql`: storage insert refused for another tenant's path, a bad path, a soft-deleted or other-tenant asset, no `create`, read-only tenant; select refused for another tenant, no `view`, a soft-deleted row, an object with no row; no user update or delete of objects; row insert refused when the object is missing; mime and size come from the object; soft delete needs `delete`; `tests.cross_tenant('public.asset_attachment', ...)`. Web: type and size checks before upload, buttons hidden without the operations, list and soft delete.
+
+### 17.7 Open items used (lean)
+
+OQ-02 (login required, opaque id, scope via the detail read path) for 3.6b.
