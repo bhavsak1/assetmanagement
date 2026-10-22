@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { t } from './i18n'
+import { loadStatuses, statusName, type Status } from './Assets'
 import { supabase } from './supabase'
 import { buildTree, lineage } from './tree'
 import type { Json, Tables, TablesInsert } from './types/database'
@@ -104,6 +105,7 @@ export function fieldErrors(error: { code?: string; message?: string }): Errors 
   if (m.includes('inside itself')) return { parent: e.parentCycle }
   if (m.includes('5 levels')) return { parent: e.parentDepth }
   if (m.includes('quantity')) return { quantity: e.quantity }
+  if (m.includes('status set')) return { status_id: e.statusNotInSet }
   if (m.includes('category')) return { category_id: e.categoryInactive }
   if (m.includes('location')) return { location_id: e.locationInactive }
   if (m.includes('parent_asset_id')) return { parent: e.parentNotFound }
@@ -124,6 +126,9 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
   const [tenant, setTenant] = useState<{ currency_code: string; required_asset_fields: string[] }>()
   const [values, setValues] = useState<Record<string, string>>()
   const [errors, setErrors] = useState<Errors>({})
+  const [statuses, setStatuses] = useState<Status[]>([])
+  // Create only: the statuses a new asset of the chosen category may start in (3.7).
+  const [startIds, setStartIds] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -135,7 +140,8 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
       supabase.from('field_definition').select('*').eq('entity', 'asset').is('deleted_at', null),
       supabase.rpc('field_domains', { p_entity: 'asset' }),
       assetId ? supabase.from('asset_view').select('*').eq('id', assetId) : Promise.resolve({ data: [], error: null }),
-    ]).then(async ([tn, c, l, f, d, a]) => {
+      loadStatuses(),
+    ]).then(async ([tn, c, l, f, d, a, st]) => {
       const row = a.data?.[0]
       const parent = row?.parent_asset_id ? (await supabase.from('asset_view').select('tag').eq('id', row.parent_asset_id)).data?.[0]?.tag : undefined
       if (!live) return
@@ -146,6 +152,7 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
       setPlaces(l.data ?? [])
       setFields(f.data ?? [])
       setDomains(Object.fromEntries((d.data ?? []).map((x) => [x.id, x.code])))
+      setStatuses(st.data ?? [])
       setAsset(row)
       setParentTag(parent ?? '')
       const stored = (row?.custom_values ?? {}) as Record<string, Json>
@@ -154,7 +161,7 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
         tag: row?.tag ?? '',
         category_id: row?.category_id ?? '',
         location_id: row?.location_id ?? '',
-        status: row?.status ?? 'active',
+        status_id: row?.status_id ?? '',
         quantity: String(row?.quantity ?? 1),
         parent: parent ?? '',
         criticality: row?.criticality ?? '',
@@ -172,6 +179,24 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
       live = false
     }
   }, [tenantId, assetId])
+
+  // The category's status set (inherited), narrowed to the insert statuses (data-model-goal3 §3, §18.2).
+  // The first Active one is preselected; a choice the new category does not offer is replaced.
+  const categoryId = values?.category_id
+  useEffect(() => {
+    if (editing || categoryId === undefined || !statuses.length) return
+    let live = true
+    void supabase.rpc('category_statuses', categoryId ? { p_category_id: categoryId } : {}).then(({ data }) => {
+      if (!live) return
+      const start = (data ?? []).filter((id) => ['in_stock', 'active'].includes(statuses.find((s) => s.id === id)?.system_status ?? ''))
+      setStartIds(start)
+      const first = start.find((id) => statuses.find((s) => s.id === id)?.system_status === 'active') ?? start[0] ?? ''
+      setValues((v) => (v && !start.includes(v.status_id ?? '') ? { ...v, status_id: first } : v))
+    })
+    return () => {
+      live = false
+    }
+  }, [editing, categoryId, statuses])
 
   const canSave = can('asset_core', editing ? 'update' : 'create')
   const canTag = can('asset_core', 'set_tag')
@@ -229,7 +254,7 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
           id: crypto.randomUUID(),
           tenant_id: tenantId,
           location_id: text('location_id'),
-          status: values.status ?? 'active',
+          status_id: values.status_id ?? '',
           // tag may be left out: the assign_asset_tag trigger fills it (A1).
         } as TablesInsert<'asset'>)
     setSaving(false)
@@ -294,12 +319,11 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
               {input('tag', t.assetForm.tag, { disabled: !canTag, hint: canTag ? t.assetForm.tagHint : editing ? undefined : t.assetForm.tagGenerated })}
               {treeSelect('category_id', t.assetForm.category, categories.map((c) => ({ ...c, on: c.is_active })), false)}
               {treeSelect('location_id', t.assetForm.location, places.map((p) => ({ ...p, on: p.active })), editing, editing ? t.assetForm.locationHint : undefined)}
-              <Labeled name="status" text={label('status', t.assetForm.status)} hint={editing ? t.assetForm.statusHint : undefined}>
-                <select name="status" value={values.status} disabled={editing} onChange={(ev) => set('status', ev.target.value)}>
-                  {/* A new asset starts as Active or In Stock (data-model-goal3 §3). */}
-                  {(editing ? [values.status ?? 'active'] : ['active', 'in_stock']).map((s) => (
+              <Labeled name="status_id" text={label('status_id', t.assetForm.status)} hint={editing ? t.assetForm.statusHint : undefined} error={err('status_id')}>
+                <select name="status_id" value={values.status_id} disabled={editing} aria-invalid={!!errors.status_id} onChange={(ev) => set('status_id', ev.target.value)}>
+                  {(editing ? [values.status_id ?? ''] : startIds).map((s) => (
                     <option key={s} value={s}>
-                      {(t.assets.statuses as Record<string, string>)[s] ?? s}
+                      {statusName(statuses, s, asset?.status)}
                     </option>
                   ))}
                 </select>

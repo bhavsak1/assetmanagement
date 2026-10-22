@@ -88,7 +88,8 @@
 | 3.5 | Transfer between locations with history, and Retire with reason | OQ-01, OQ-04, OQ-07 | Done |
 | 3.6 | Attachments (per-tenant storage): private bucket, storage policies, Attachments tab | | Done |
 | 3.6b | QR label with scan-to-open (login return, print view) | OQ-02 | Done |
-| 3.7 | Tenant asset statuses: each maps to one of the 5 system statuses, ordered status sets attached to categories (inherited from the nearest parent), any later step or back within B11. Adds `asset.status_id` | OQ-04 | In progress |
+| 3.7 | Tenant asset statuses: each maps to one of the 5 system statuses, ordered status sets attached to categories (inherited from the nearest parent), any later step or back within B11. Adds `asset.status_id` | OQ-04 | In review |
+| 3.7b | Statuses settings card on the Categories page (add, rename, tone, deactivate) and a status set picker on the category form (inherit, or pick and order) | | Todo |
 | 3.8 | Settings: asset tag pattern field with a live sample tag (`set_asset_tag_pattern()`), and a Code field on the category form (for `{CAT}`) | | Done |
 
 Note: start WhatsApp provider onboarding around this goal because of lead time (OQ-14).
@@ -202,3 +203,4 @@ Open items: OQ-11, OQ-21.
 | 20 Oct 2026 | Stories 1.10 and 1.11 added to the backlog from the 1.8/1.9 follow-ups: staging two-tenant demo user, and co-tenant `user_profile` read |
 | 22 Oct 2026 | Stories 3.7 and 3.8 added from the 3.1 design (owner decisions A1, A2): tenant statuses mapped to system statuses per category, and the UI for the tag pattern and category code. 3.1 builds only the database part |
 | 22 Oct 2026 | Story 3.6 split: 3.6 attachments, 3.6b QR label and scan-to-open. Two owner-review features; CLAUDE.md §5.4 one feature per session. Owner chose Z1 a |
+| 22 Oct 2026 | Story 3.7 split: 3.7 database, seed, backfill and the asset screens that read statuses; 3.7b the management screens. Owner chose R0 a |

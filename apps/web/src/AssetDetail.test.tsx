@@ -56,13 +56,16 @@ test('changes: changed fields old → new, custom keys, masked fields; bookkeepi
     { field: 'purchase_value', hidden: true },
     { field: 'custom.cost_rate', hidden: true },
   ])
+  // 3.7: the tenant status line replaces the system status line of the same row.
+  const st = row(2, { old_data: { status: 'active', status_id: 's1' }, new_data: { status: 'inactive', status_id: 's2' } })
+  expect(changes(st, label, show).map((c) => c.field)).toEqual(['status_id'])
 })
 
 test('changes: a create lists only the values that were set', () => {
   const r = row(1, { action: 'insert', old_data: null, new_data: { id: 'a', name: 'A', model: null, custom_values: {} } })
   expect(changes(r, label, show)).toEqual([{ field: 'name', from: '—', to: 'A' }])
   expect(historyTitle(r)).toBe(t.assetDetail.history.created)
-  expect(historyTitle(row(2, { new_data: { status: 'inactive' } }))).toBe(t.assetDetail.history.statusChanged)
+  expect(historyTitle(row(2, { new_data: { status: 'inactive', status_changed_at: 'x' } }))).toBe(t.assetDetail.history.statusChanged)
   expect(historyTitle(row(3))).toBe(t.assetDetail.history.updated)
   expect(historyTitle(row(4, { new_data: { location_id: 'l2', location_reason: 'Moved' } }))).toBe(t.assetDetail.history.transferred)
 })
@@ -193,22 +196,25 @@ test('QR label: shown with asset_core.view, links to the print view', async () =
   expect(qr()?.getAttribute('href')).toBe('/assets/a1/label')
 })
 
-test('actions: hidden without asset_lifecycle; Disposed shows only Change status, and only with reopen', async () => {
+test('actions: Transfer and Retire need asset_lifecycle; Change status shows when the database offers a move', async () => {
   await render(['asset_core.view', 'asset_core.update'])
   expect(buttons()).not.toContain(a.transfer)
   expect(buttons()).not.toContain(a.retire)
   expect(buttons()).not.toContain(a.changeStatus)
   act(() => root.unmount())
   root = createRoot(container)
+  db.results.allowed_asset_statuses = { data: ['s2'], error: null }
   await render(['asset_core.view', 'asset_lifecycle.execute'])
   expect(buttons()).toEqual([a.transfer, a.retire, a.changeStatus])
   act(() => root.unmount())
   root = createRoot(container)
   disposed()
+  db.results.allowed_asset_statuses = { data: [], error: null }
   await render(['asset_core.view', 'asset_lifecycle.execute'])
   expect(buttons()).toEqual([])
   act(() => root.unmount())
   root = createRoot(container)
+  db.results.allowed_asset_statuses = { data: ['s2'], error: null }
   await render(['asset_core.view', 'asset_lifecycle.reopen'])
   expect(buttons()).toEqual([a.changeStatus])
 })
@@ -246,14 +252,29 @@ test('retire: sends disposed with the reason, closes and reloads on success; a m
   expect(db.rpc.filter((c) => c.fn === 'change_asset_status').at(-1)?.args).toEqual({ p_asset_id: 'a1', p_status: 'disposed', p_reason: 'Scrapped' })
   expect(container.querySelector('.dialog')).toBeNull()
   // Reloaded: the page fetched its data again after the action.
-  expect(db.rpc.at(-1)?.fn).toBe('field_domains')
+  expect(db.rpc.at(-1)?.fn).toBe('allowed_asset_statuses')
 })
 
-test('change status: offers the B11 next steps for the current status', async () => {
+test('change status: offers the tenant statuses the database allows, in its order, and sends the id', async () => {
+  db.results.asset_status = {
+    data: [
+      { id: 's1', code: 'running', label: 'Running', system_status: 'active', tone: 'ok', is_active: true, deleted_at: null },
+      { id: 's2', code: 'standby', label: 'Standby', system_status: 'active', tone: 'neutral', is_active: true, deleted_at: null },
+      { id: 's3', code: 'breakdown', label: 'Breakdown', system_status: 'under_maintenance', tone: 'warn', is_active: true, deleted_at: null },
+    ],
+    error: null,
+  }
+  const r = db.results.asset_view as { data: Record<string, unknown>[] }
+  r.data[0]!.status_id = 's1'
+  db.results.allowed_asset_statuses = { data: ['s3', 's2'], error: null }
   await render(['asset_core.view', 'asset_lifecycle.execute'])
+  expect(container.querySelector('h1 .tag.status.ok')?.textContent).toBe('Running')
   await act(async () => button(a.changeStatus).click())
-  const values = [...container.querySelectorAll<HTMLOptionElement>('[name="choice"] option')].map((o) => o.value).filter(Boolean)
-  expect(values).toEqual(['under_maintenance', 'inactive'])
+  const options = [...container.querySelectorAll<HTMLOptionElement>('[name="choice"] option')].filter((o) => o.value)
+  expect(options.map((o) => [o.value, o.textContent])).toEqual([['s3', 'Breakdown'], ['s2', 'Standby']])
+  await set('choice', 's2')
+  await submit()
+  expect(db.rpc.filter((c) => c.fn === 'change_asset_status').at(-1)?.args).toEqual({ p_asset_id: 'a1', p_status_id: 's2', p_reason: '' })
 })
 
 test('actionError: codes from the action functions to messages', () => {

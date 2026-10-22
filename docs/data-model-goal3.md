@@ -458,7 +458,16 @@ OQ-02 (login required, opaque id, scope via the detail read path) for 3.6b.
 
 ## 18. Story 3.7: Tenant asset statuses
 
-**Status:** design, 22 Oct 2026. Waiting for the owner on R0 to R8 (18.9). No migration until then.
+**Status:** in review, 22 Oct 2026. Owner accepted every lean (R0 to R8) on 22 Oct 2026. Built in migrations `3_7_asset_status`, `3_7_category_statuses`, `3_7_asset_status_id`, `3_7_change_asset_status`; management screens are story 3.7b.
+
+**As built (differences from the design below):**
+- Insert with `status_id`: `status` is set from it (any `status` sent with it is overwritten, not refused).
+- `category_statuses(p_category_id)` defaults to null: no category gives the "no set anywhere" list.
+- The backfill keeps `updated_at` (the `set_updated_at` trigger is off for that one update), so the "last updated" sort does not move.
+- `check_asset_values` adds `status_id` to its skip list (the status action is not a data save).
+- The Change status button shows when `allowed_asset_statuses` returns at least one target; the reason box shows always, as in 3.5.
+- An Audit tab row is titled "Status changed" when it has `status_changed_at` (set only by the action); a category change that remaps the status reads "Updated".
+- The 3.2 bulk-insert test fixture gives its rows a `status_id` (it skips triggers).
 
 **Goal (A2):** a tenant adds its own statuses, each mapped to one of the 5 system statuses (§3). Ordered sets per category, inherited from the nearest parent. A move is any step in the set that B11 allows between the mapped system statuses. `asset.status` (system) stays; `asset.status_id` is added.
 
