@@ -4,7 +4,7 @@ import { supabase } from './supabase'
 import { buildTree, lineage } from './tree'
 import type { Json, Tables } from './types/database'
 
-type Category = Pick<Tables<'asset_category'>, 'id' | 'parent_id' | 'name' | 'is_active'>
+type Category = Pick<Tables<'asset_category'>, 'id' | 'parent_id' | 'name' | 'code' | 'is_active'>
 type Field = Tables<'field_definition'>
 type Domain = { id: string; code: string }
 type Option = { code: string; label: string; is_active: boolean }
@@ -12,6 +12,8 @@ type FieldType = keyof typeof t.categories.types
 
 export const fieldTypes = Object.keys(t.categories.types) as FieldType[]
 const keyPattern = /^[a-z][a-z0-9_]*$/
+// Same as the asset_category.code check (migration 3_1_category_code).
+export const codePattern = /^[A-Za-z0-9._-]{1,20}$/
 
 // One option per line, 'code = Label'. Options dropped from the text stay stored as inactive,
 // because values keep the code (data-model-goal2.md §1.2).
@@ -44,10 +46,10 @@ export function validateField(f: FieldInput): string | undefined {
 }
 
 // Postgres and PostgREST errors to one clear message each.
-function errorMessage(error: { code?: string } | null, duplicate: string): string {
+function errorMessage(error: { code?: string; message?: string } | null, duplicate: string): string {
   const e = t.categories.errors
   if (error?.code === '42501') return e.noPermission
-  if (error?.code === '23505') return duplicate
+  if (error?.code === '23505') return error.message?.includes('asset_category_code_uq') ? e.duplicateCode : duplicate
   if (error?.code === '23514') return e.invalid
   return e.generic
 }
@@ -70,7 +72,7 @@ export function CategoriesPage({ tenantId, canManage }: { tenantId: string; canM
   useEffect(() => {
     let live = true
     void Promise.all([
-      supabase.from('asset_category').select('id, parent_id, name, is_active').is('deleted_at', null),
+      supabase.from('asset_category').select('id, parent_id, name, code, is_active').is('deleted_at', null),
       supabase.from('field_definition').select('*').eq('entity', 'asset').is('deleted_at', null).order('sort_order'),
       supabase.rpc('field_domains', { p_entity: 'asset' }),
     ]).then(([c, f, d]) => {
@@ -102,7 +104,7 @@ export function CategoriesPage({ tenantId, canManage }: { tenantId: string; canM
     return (t.categories.domains as Record<string, string>)[code] ?? code
   }
 
-  async function run(write: PromiseLike<{ data: unknown[] | null; error: { code?: string } | null }>, duplicate: string) {
+  async function run(write: PromiseLike<{ data: unknown[] | null; error: { code?: string; message?: string } | null }>, duplicate: string) {
     setError(undefined)
     const { data, error } = await write
     // An update RLS filters out returns no rows and no error.
@@ -174,6 +176,7 @@ export function CategoriesPage({ tenantId, canManage }: { tenantId: string; canM
               row={editing.row}
               categories={categories}
               onCancel={() => setEditing(undefined)}
+              onError={setError}
               onSave={(v) =>
                 run(
                   editing.row
@@ -304,21 +307,29 @@ function CategoryForm({
   categories,
   onSave,
   onCancel,
+  onError,
 }: {
   row?: Category
   categories: Category[]
-  onSave: (v: { name: string; parent_id: string | null; is_active: boolean }) => Promise<boolean>
+  onSave: (v: { name: string; parent_id: string | null; code: string | null; is_active: boolean }) => Promise<boolean>
   onCancel: () => void
+  onError: (message: string) => void
 }) {
   // A category cannot sit under itself or its own children. The database also refuses a cycle.
   const blocked = new Set(row ? categories.filter((c) => lineage(categories, c.id).includes(row.id)).map((c) => c.id) : [])
+  const [parentId, setParentId] = useState(row?.parent_id ?? '')
+  const [code, setCode] = useState(row?.code ?? '')
+  const inherited = inheritedCode(categories, parentId)
 
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const form = new FormData(e.currentTarget)
+    const value = code.trim()
+    if (value && !codePattern.test(value)) return onError(t.categories.errors.code)
     void onSave({
       name: String(form.get('name')).trim(),
-      parent_id: String(form.get('parent')) || null,
+      parent_id: parentId || null,
+      code: value || null,
       is_active: form.get('active') === 'on',
     })
   }
@@ -332,7 +343,7 @@ function CategoryForm({
       </label>
       <label className="field">
         {t.categories.parent}
-        <select name="parent" defaultValue={row?.parent_id ?? ''}>
+        <select name="parent" value={parentId} onChange={(e) => setParentId(e.target.value)}>
           <option value="">{t.categories.noParent}</option>
           {buildTree(categories)
             .filter(({ row: c }) => !blocked.has(c.id))
@@ -343,6 +354,14 @@ function CategoryForm({
             ))}
         </select>
       </label>
+      <label className="field">
+        {t.categories.code}
+        <input name="code" value={code} onChange={(e) => setCode(e.target.value)} maxLength={20} spellCheck={false} aria-describedby="code-hint" />
+        <span id="code-hint" className="muted hint">
+          {t.categories.codeHint}
+          {!code.trim() && inherited && ` ${t.categories.codeInherited.replace('{code}', inherited.code ?? '').replace('{name}', inherited.name)}`}
+        </span>
+      </label>
       <label className="check">
         <input name="active" type="checkbox" defaultChecked={row?.is_active ?? true} />
         {t.categories.active}
@@ -350,6 +369,14 @@ function CategoryForm({
       <FormButtons onCancel={onCancel} />
     </form>
   )
+}
+
+// What {CAT} uses for a category with no code: the nearest ancestor's code (as private.asset_tag_prefix does).
+export function inheritedCode(categories: Category[], parentId: string) {
+  if (!parentId) return undefined
+  return lineage(categories, parentId)
+    .map((id) => categories.find((c) => c.id === id))
+    .find((c) => c?.code)
 }
 
 type FieldValues = Partial<Pick<Field, 'key' | 'type'>> &

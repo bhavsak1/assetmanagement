@@ -729,6 +729,9 @@ isOneToOne: false
         isOneToOne: false
         isSetofReturn: true
       } },
+"preview_asset_tag":
+{ Args: { "p_category_id"?: string,"p_location_id"?: string,"p_pattern": string }; Returns: string
+                           },
 "select_tenant":
 { Args: { "p_tenant_id": string }; Returns: undefined
                            },
