@@ -7,14 +7,14 @@ export type Database = {
           Tables: {
             "asset": {
                   Row: {
-                    "category_id": string,"created_at": string,"created_by": string | null,"criticality": string | null,"custom_values": NonNullable<Json>,"deleted_at": string | null,"id": string,"in_service_date": string | null,"location_changed_at": string | null,"location_id": string | null,"location_reason": string | null,"manufacturer": string | null,"model": string | null,"name": string,"parent_asset_id": string | null,"purchase_currency": string | null,"purchase_date": string | null,"purchase_value": number | null,"quantity": number,"serial_number": string | null,"status": string,"status_changed_at": string | null,"status_reason": string | null,"tag": string,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                    "category_id": string,"created_at": string,"created_by": string | null,"criticality": string | null,"custom_values": NonNullable<Json>,"deleted_at": string | null,"id": string,"in_service_date": string | null,"location_changed_at": string | null,"location_id": string | null,"location_reason": string | null,"manufacturer": string | null,"model": string | null,"name": string,"parent_asset_id": string | null,"purchase_currency": string | null,"purchase_date": string | null,"purchase_value": number | null,"quantity": number,"serial_number": string | null,"status": string,"status_changed_at": string | null,"status_id": string,"status_reason": string | null,"tag": string,"tenant_id": string,"updated_at": string,"updated_by": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "category_id": string,"created_at"?: string,"created_by"?: string | null,"criticality"?: string | null,"custom_values"?: NonNullable<Json>,"deleted_at"?: string | null,"id"?: string,"in_service_date"?: string | null,"location_changed_at"?: string | null,"location_id"?: string | null,"location_reason"?: string | null,"manufacturer"?: string | null,"model"?: string | null,"name": string,"parent_asset_id"?: string | null,"purchase_currency"?: string | null,"purchase_date"?: string | null,"purchase_value"?: number | null,"quantity"?: number,"serial_number"?: string | null,"status"?: string,"status_changed_at"?: string | null,"status_reason"?: string | null,"tag": string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                    "category_id": string,"created_at"?: string,"created_by"?: string | null,"criticality"?: string | null,"custom_values"?: NonNullable<Json>,"deleted_at"?: string | null,"id"?: string,"in_service_date"?: string | null,"location_changed_at"?: string | null,"location_id"?: string | null,"location_reason"?: string | null,"manufacturer"?: string | null,"model"?: string | null,"name": string,"parent_asset_id"?: string | null,"purchase_currency"?: string | null,"purchase_date"?: string | null,"purchase_value"?: number | null,"quantity"?: number,"serial_number"?: string | null,"status"?: string,"status_changed_at"?: string | null,"status_id": string,"status_reason"?: string | null,"tag": string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Update: {
-                    "category_id"?: string,"created_at"?: string,"created_by"?: string | null,"criticality"?: string | null,"custom_values"?: NonNullable<Json>,"deleted_at"?: string | null,"id"?: string,"in_service_date"?: string | null,"location_changed_at"?: string | null,"location_id"?: string | null,"location_reason"?: string | null,"manufacturer"?: string | null,"model"?: string | null,"name"?: string,"parent_asset_id"?: string | null,"purchase_currency"?: string | null,"purchase_date"?: string | null,"purchase_value"?: number | null,"quantity"?: number,"serial_number"?: string | null,"status"?: string,"status_changed_at"?: string | null,"status_reason"?: string | null,"tag"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                    "category_id"?: string,"created_at"?: string,"created_by"?: string | null,"criticality"?: string | null,"custom_values"?: NonNullable<Json>,"deleted_at"?: string | null,"id"?: string,"in_service_date"?: string | null,"location_changed_at"?: string | null,"location_id"?: string | null,"location_reason"?: string | null,"manufacturer"?: string | null,"model"?: string | null,"name"?: string,"parent_asset_id"?: string | null,"purchase_currency"?: string | null,"purchase_date"?: string | null,"purchase_value"?: number | null,"quantity"?: number,"serial_number"?: string | null,"status"?: string,"status_changed_at"?: string | null,"status_id"?: string,"status_reason"?: string | null,"tag"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Relationships: [
                     {
@@ -23,6 +23,12 @@ export type Database = {
 isOneToOne: false
       referencedRelation: "user_profile"
       referencedColumns: ["id"]
+    },{
+      foreignKeyName: "asset_status_fk"
+      columns: ["tenant_id","status_id","status"]
+isOneToOne: false
+      referencedRelation: "asset_status"
+      referencedColumns: ["tenant_id","id","system_status"]
     },{
       foreignKeyName: "asset_tenant_id_category_id_fkey"
       columns: ["tenant_id","category_id"]
@@ -107,14 +113,14 @@ isOneToOne: false
                   ]
                 },"asset_category": {
                   Row: {
-                    "code": string | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"description": string | null,"id": string,"is_active": boolean,"name": string,"parent_id": string | null,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                    "code": string | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"description": string | null,"id": string,"is_active": boolean,"name": string,"parent_id": string | null,"status_ids": (string)[] | null,"tenant_id": string,"updated_at": string,"updated_by": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "code"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"description"?: string | null,"id"?: string,"is_active"?: boolean,"name": string,"parent_id"?: string | null,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                    "code"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"description"?: string | null,"id"?: string,"is_active"?: boolean,"name": string,"parent_id"?: string | null,"status_ids"?: (string)[] | null,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Update: {
-                    "code"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"description"?: string | null,"id"?: string,"is_active"?: boolean,"name"?: string,"parent_id"?: string | null,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                    "code"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"description"?: string | null,"id"?: string,"is_active"?: boolean,"name"?: string,"parent_id"?: string | null,"status_ids"?: (string)[] | null,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Relationships: [
                     {
@@ -137,6 +143,38 @@ isOneToOne: false
       referencedColumns: ["tenant_id","id"]
     },{
       foreignKeyName: "asset_category_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"asset_status": {
+                  Row: {
+                    "code": string,"created_at": string,"created_by": string | null,"deleted_at": string | null,"id": string,"is_active": boolean,"label": string,"system_status": string,"tenant_id": string,"tone": string,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "code": string,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"id"?: string,"is_active"?: boolean,"label": string,"system_status": string,"tenant_id": string,"tone"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "code"?: string,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"id"?: string,"is_active"?: boolean,"label"?: string,"system_status"?: string,"tenant_id"?: string,"tone"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "asset_status_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "asset_status_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "asset_status_updated_by_fkey"
       columns: ["updated_by"]
 isOneToOne: false
       referencedRelation: "user_profile"
@@ -608,14 +646,14 @@ isOneToOne: false
           Views: {
             "asset_view": {
                   Row: {
-                    "category_id": string | null,"created_at": string | null,"created_by": string | null,"criticality": string | null,"custom_values": Json | null,"id": string | null,"in_service_date": string | null,"location_changed_at": string | null,"location_id": string | null,"location_reason": string | null,"manufacturer": string | null,"model": string | null,"name": string | null,"parent_asset_id": string | null,"purchase_currency": string | null,"purchase_date": string | null,"purchase_value": number | null,"quantity": number | null,"serial_number": string | null,"status": string | null,"status_changed_at": string | null,"status_reason": string | null,"tag": string | null,"tenant_id": string | null,"updated_at": string | null,"updated_by": string | null
+                    "category_id": string | null,"created_at": string | null,"created_by": string | null,"criticality": string | null,"custom_values": Json | null,"id": string | null,"in_service_date": string | null,"location_changed_at": string | null,"location_id": string | null,"location_reason": string | null,"manufacturer": string | null,"model": string | null,"name": string | null,"parent_asset_id": string | null,"purchase_currency": string | null,"purchase_date": string | null,"purchase_value": number | null,"quantity": number | null,"serial_number": string | null,"status": string | null,"status_changed_at": string | null,"status_id": string | null,"status_reason": string | null,"tag": string | null,"tenant_id": string | null,"updated_at": string | null,"updated_by": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                           "category_id"?: string | null,"created_at"?: string | null,"created_by"?: string | null,"criticality"?: string | null,"custom_values"?: never,"id"?: string | null,"in_service_date"?: string | null,"location_changed_at"?: string | null,"location_id"?: string | null,"location_reason"?: string | null,"manufacturer"?: string | null,"model"?: string | null,"name"?: string | null,"parent_asset_id"?: string | null,"purchase_currency"?: never,"purchase_date"?: string | null,"purchase_value"?: never,"quantity"?: number | null,"serial_number"?: string | null,"status"?: string | null,"status_changed_at"?: string | null,"status_reason"?: string | null,"tag"?: string | null,"tenant_id"?: string | null,"updated_at"?: string | null,"updated_by"?: string | null
+                           "category_id"?: string | null,"created_at"?: string | null,"created_by"?: string | null,"criticality"?: string | null,"custom_values"?: never,"id"?: string | null,"in_service_date"?: string | null,"location_changed_at"?: string | null,"location_id"?: string | null,"location_reason"?: string | null,"manufacturer"?: string | null,"model"?: string | null,"name"?: string | null,"parent_asset_id"?: string | null,"purchase_currency"?: never,"purchase_date"?: string | null,"purchase_value"?: never,"quantity"?: number | null,"serial_number"?: string | null,"status"?: string | null,"status_changed_at"?: string | null,"status_id"?: string | null,"status_reason"?: string | null,"tag"?: string | null,"tenant_id"?: string | null,"updated_at"?: string | null,"updated_by"?: string | null
                          }
                         Update: {
-                           "category_id"?: string | null,"created_at"?: string | null,"created_by"?: string | null,"criticality"?: string | null,"custom_values"?: never,"id"?: string | null,"in_service_date"?: string | null,"location_changed_at"?: string | null,"location_id"?: string | null,"location_reason"?: string | null,"manufacturer"?: string | null,"model"?: string | null,"name"?: string | null,"parent_asset_id"?: string | null,"purchase_currency"?: never,"purchase_date"?: string | null,"purchase_value"?: never,"quantity"?: number | null,"serial_number"?: string | null,"status"?: string | null,"status_changed_at"?: string | null,"status_reason"?: string | null,"tag"?: string | null,"tenant_id"?: string | null,"updated_at"?: string | null,"updated_by"?: string | null
+                           "category_id"?: string | null,"created_at"?: string | null,"created_by"?: string | null,"criticality"?: string | null,"custom_values"?: never,"id"?: string | null,"in_service_date"?: string | null,"location_changed_at"?: string | null,"location_id"?: string | null,"location_reason"?: string | null,"manufacturer"?: string | null,"model"?: string | null,"name"?: string | null,"parent_asset_id"?: string | null,"purchase_currency"?: never,"purchase_date"?: string | null,"purchase_value"?: never,"quantity"?: number | null,"serial_number"?: string | null,"status"?: string | null,"status_changed_at"?: string | null,"status_id"?: string | null,"status_reason"?: string | null,"tag"?: string | null,"tenant_id"?: string | null,"updated_at"?: string | null,"updated_by"?: string | null
                          }
                         Relationships: [
                     {
@@ -624,6 +662,12 @@ isOneToOne: false
 isOneToOne: false
       referencedRelation: "user_profile"
       referencedColumns: ["id"]
+    },{
+      foreignKeyName: "asset_status_fk"
+      columns: ["tenant_id","status_id","status"]
+isOneToOne: false
+      referencedRelation: "asset_status"
+      referencedColumns: ["tenant_id","id","system_status"]
     },{
       foreignKeyName: "asset_tenant_id_category_id_fkey"
       columns: ["tenant_id","category_id"]
@@ -673,7 +717,10 @@ isOneToOne: false
                 }
           }
           Functions: {
-            "asset_attachments":
+            "allowed_asset_statuses":
+{ Args: { "p_asset_id": string }; Returns: string[]
+                           },
+"asset_attachments":
 { Args: { "p_asset_id": string }; Returns: {
               "created_at": string,"file_name": string,"id": string,"mime_type": string,"size_bytes": number,"uploaded_by": string
             }[]
@@ -683,11 +730,16 @@ isOneToOne: false
               "action": string,"actor_name": string,"actor_type": string,"hidden_fields": (string)[],"id": string,"new_data": Json,"occurred_at": string,"old_data": Json
             }[]
                            },
+"category_statuses":
+{ Args: { "p_category_id"?: string }; Returns: (string)[]
+                           },
 "change_asset_status":
 { Args: { "p_asset_id": string,"p_reason"?: string,"p_status": string }; Returns: undefined
+                           } |
+{ Args: { "p_asset_id": string,"p_reason"?: string,"p_status_id": string }; Returns: undefined
                            },
 "count_assets":
-{ Args: { "p_category_id"?: string,"p_location_id"?: string,"p_status"?: string,"p_term"?: string }; Returns: number
+{ Args: { "p_category_id"?: string,"p_location_id"?: string,"p_status"?: string,"p_status_id"?: string,"p_term"?: string }; Returns: number
                            },
 "field_domains":
 { Args: { "p_entity": string }; Returns: {
@@ -695,7 +747,7 @@ isOneToOne: false
             }[]
                            },
 "list_assets":
-{ Args: { "p_after_id"?: string,"p_after_value"?: string,"p_category_id"?: string,"p_limit"?: number,"p_location_id"?: string,"p_sort"?: string,"p_status"?: string,"p_term"?: string }; Returns: {
+{ Args: { "p_after_id"?: string,"p_after_value"?: string,"p_category_id"?: string,"p_limit"?: number,"p_location_id"?: string,"p_sort"?: string,"p_status"?: string,"p_status_id"?: string,"p_term"?: string }; Returns: {
               "category_id": string | null,
 "created_at": string | null,
 "created_by": string | null,
@@ -717,6 +769,7 @@ isOneToOne: false
 "serial_number": string | null,
 "status": string | null,
 "status_changed_at": string | null,
+"status_id": string | null,
 "status_reason": string | null,
 "tag": string | null,
 "tenant_id": string | null,

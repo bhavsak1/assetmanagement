@@ -36,7 +36,11 @@ vi.mock('./supabase', () => {
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
-const none: Filters = { q: '', status: '', category_id: '', location_id: '' }
+const none: Filters = { q: '', status: '', status_id: '', category_id: '', location_id: '' }
+const statusRows = [
+  { id: 's-active', code: 'active', label: 'Active', system_status: 'active', tone: 'ok', is_active: true, deleted_at: null },
+  { id: 's-spare', code: 'spare', label: 'Spare', system_status: 'in_stock', tone: 'warn', is_active: true, deleted_at: null },
+]
 const categories = [{ id: 'c1', parent_id: null, name: 'Machines' }]
 const locations = [
   { id: 'l1', parent_id: null, name: 'Pune' },
@@ -54,7 +58,7 @@ const asset = (n: number) => ({
 
 test('filters become list_assets arguments; empty ones are left out', () => {
   expect(listArgs(none, 'name')).toEqual({ p_sort: 'name', p_limit: 51 })
-  expect(listArgs({ q: ' pump ', status: 'in_stock', category_id: 'c1', location_id: 'l1' }, 'tag', { value: 'AST-1', id: 'x' })).toEqual({
+  expect(listArgs({ q: ' pump ', status: 'in_stock', status_id: '', category_id: 'c1', location_id: 'l1' }, 'tag', { value: 'AST-1', id: 'x' })).toEqual({
     p_term: 'pump',
     p_status: 'in_stock',
     p_category_id: 'c1',
@@ -75,12 +79,15 @@ test('the next-page cursor is the sort value and id of the 50th row, only when a
 })
 
 test('a saved view round trip keeps its filters and drops what no longer exists', () => {
-  const f: Filters = { q: ' pump ', status: 'in_stock', category_id: 'c1', location_id: 'l2' }
+  const f: Filters = { q: ' pump ', status: 'in_stock', status_id: '', category_id: 'c1', location_id: 'l2' }
   const saved = savedFilters(f)
   expect(saved).toEqual({ q: 'pump', status: 'in_stock', category_id: 'c1', location_id: 'l2' })
   expect(viewFilters(saved, categories, locations)).toEqual({ ...f, q: 'pump' })
   expect(savedFilters(none)).toEqual({})
   expect(viewFilters({ category_id: 'gone', status: 'lost', extra: 1 }, categories, locations)).toEqual(none)
+  // 3.7: a tenant status is kept while it exists; old views (system status only) are unchanged.
+  expect(viewFilters({ status_id: 's-spare' }, categories, locations, statusRows)).toEqual({ ...none, status_id: 's-spare' })
+  expect(viewFilters({ status_id: 'gone' }, categories, locations, statusRows)).toEqual(none)
 })
 
 let root: Root
@@ -137,6 +144,19 @@ test('the list shows rows, status tags, place and count; Next and Previous page 
   expect(container.textContent).toContain('Showing 51–100 of 1,284')
   await act(async () => button(t.assets.previous).click())
   expect(lastList()).not.toHaveProperty('p_after_id')
+})
+
+test('tenant statuses: tag shows the tenant label and tone; the filter sends p_status_id', async () => {
+  db.results.asset_status = { data: statusRows, error: null }
+  db.results.list_assets = { data: [{ ...asset(1), status_id: 's-spare' }], error: null }
+  await render()
+  expect(container.querySelector('.tag.status.warn')?.textContent).toBe('Spare')
+  // Default rows (code = system status) are the system options, not repeated in the group.
+  expect([...select(t.assets.status).querySelectorAll('optgroup option')].map((o) => o.textContent)).toEqual(['Spare'])
+  await choose(t.assets.status, 's-spare')
+  expect(lastList()).toEqual({ p_status_id: 's-spare', p_sort: 'name', p_limit: 51 })
+  await choose(t.assets.status, 'active')
+  expect(lastList()).toEqual({ p_status: 'active', p_sort: 'name', p_limit: 51 })
 })
 
 test('a filter change goes back to the first page', async () => {

@@ -2,7 +2,7 @@
 -- Uses the seed (tenant A active, B read_only, starter role users) and supabase/test_harness.sql.
 -- planner.a (...a0003) views assets without asset_financials; auditor.a (...a0005) views both.
 begin;
-select plan(58);
+select plan(59);
 
 -- Fixtures as postgres: no signed-in user, so the user write rules do not apply.
 insert into public.asset_category (id, tenant_id, parent_id, name) values
@@ -93,9 +93,10 @@ select results_eq($$select name from public.list_assets(p_term => 'pump')$$, arr
 -- Access path on a large tenant (spike 1.7). Bulk rows skip the triggers; rolled back with the test.
 reset role;
 set local session_replication_role = replica;
-insert into public.asset (tenant_id, tag, name, category_id, serial_number)
+insert into public.asset (tenant_id, tag, name, category_id, serial_number, status_id)
 select '00000000-0000-0000-0000-00000000000a', 'BLK-' || lpad(n::text, 6, '0'),
-       (array['Pump', 'Motor', 'Valve', 'Lathe'])[n % 4 + 1] || ' ' || n, '00000000-0000-0000-0000-0000000032c1', 'SN' || n
+       (array['Pump', 'Motor', 'Valve', 'Lathe'])[n % 4 + 1] || ' ' || n, '00000000-0000-0000-0000-0000000032c1', 'SN' || n,
+       (select id from public.asset_status where tenant_id = '00000000-0000-0000-0000-00000000000a' and code = 'active')
 from generate_series(1, 30000) n;
 set local session_replication_role = origin;
 -- New GIN entries sit in the pending list until a vacuum, which makes the planner avoid the index.
@@ -117,6 +118,10 @@ select matches(pg_temp.plan(private.asset_list_sql(null, null, null, null, 'name
   'Index Scan using asset_name_idx[^\n]*\n[^\n]*Index Cond: [^\n]*ROW\(name, id\) >', 'name page starts at the cursor in asset_name_idx');
 select doesnt_match(pg_temp.plan(private.asset_list_sql(null, null, null, null, 'name', 'Pump 100', '00000000-0000-0000-0000-000000000000', 51)),
   'Sort', 'name page needs no sort');
+-- 3.7: the tenant status filter keeps the keyset walk.
+select matches(pg_temp.plan(private.asset_list_sql(null, null, null, null, 'name', 'Pump 100', '00000000-0000-0000-0000-000000000000', 51,
+  (select id from public.asset_status where tenant_id = '00000000-0000-0000-0000-00000000000a' and code = 'active'))),
+  'Index Scan using asset_name_idx[^\n]*\n[^\n]*Index Cond: [^\n]*ROW\(name, id\) >', 'status_id filter: name page still starts at the cursor');
 select matches(pg_temp.plan(private.asset_list_sql(null, 'active', null, null, 'updated', '2026-10-22', '00000000-0000-0000-0000-000000000000', 51)),
   'Index Scan using asset_updated_idx', 'updated page walks asset_updated_idx');
 select matches(pg_temp.plan(private.asset_list_sql(null, null, null, null, 'tag', 'BLK-001000', '00000000-0000-0000-0000-000000000000', 51)),

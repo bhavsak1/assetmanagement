@@ -453,3 +453,152 @@ pgTAP `3_6_attachments.test.sql`: storage insert refused for another tenant's pa
 ### 17.7 Open items used (lean)
 
 OQ-02 (login required, opaque id, scope via the detail read path) for 3.6b.
+
+---
+
+## 18. Story 3.7: Tenant asset statuses
+
+**Status:** in review, 22 Oct 2026. Owner accepted every lean (R0 to R8) on 22 Oct 2026. Built in migrations `3_7_asset_status`, `3_7_category_statuses`, `3_7_asset_status_id`, `3_7_change_asset_status`; management screens are story 3.7b.
+
+**As built (differences from the design below):**
+- Insert with `status_id`: `status` is set from it (any `status` sent with it is overwritten, not refused).
+- `category_statuses(p_category_id)` defaults to null: no category gives the "no set anywhere" list.
+- The backfill keeps `updated_at` (the `set_updated_at` trigger is off for that one update), so the "last updated" sort does not move.
+- `check_asset_values` adds `status_id` to its skip list (the status action is not a data save).
+- The Change status button shows when `allowed_asset_statuses` returns at least one target; the reason box shows always, as in 3.5.
+- An Audit tab row is titled "Status changed" when it has `status_changed_at` (set only by the action); a category change that remaps the status reads "Updated".
+- The 3.2 bulk-insert test fixture gives its rows a `status_id` (it skips triggers).
+
+**Goal (A2):** a tenant adds its own statuses, each mapped to one of the 5 system statuses (§3). Ordered sets per category, inherited from the nearest parent. A move is any step in the set that B11 allows between the mapped system statuses. `asset.status` (system) stays; `asset.status_id` is added.
+
+**Screen:** `assetly-screens.html` has no status settings screen. Its Assets list and Locations screens already show tenant-style labels ("Spare", "Maintenance", "Retired") in the 4 tag tones, which is what this builds.
+
+### 18.1 `asset_status` (public, 1.4 pattern)
+
+| Column | Type | Notes |
+|---|---|---|
+| id, tenant_id, std | | Standard. `unique (tenant_id, id)` and `unique (tenant_id, id, system_status)` (for the FK in 18.4) |
+| code | text not null | `^[a-z][a-z0-9_]*$`, max 40. Unique per tenant, **all rows, deleted or not** (like field keys, G4). Cannot change. Used by saved views, imports and the API |
+| label | text not null | 1 to 60 chars, unique per tenant among live rows (case-insensitive). Shown everywhere |
+| system_status | text not null | `check in ('in_stock', 'active', 'under_maintenance', 'inactive', 'disposed')`. **Cannot change** (18.4 relies on it) |
+| tone | text not null | `check in ('ok', 'warn', 'error', 'neutral')`: the 4 tag tones in `tokens.css` [R5] |
+| is_active | boolean not null default true | Deactivate, never delete (CLAUDE.md §8). Inactive: assets keep it; not offered as a target, on create, or in a new set |
+
+- **Default per system status [R3]:** the seeded row whose `code` equals its `system_status` (`active`, `in_stock`, ...). It cannot be deactivated. A tenant that wants "Running" as its normal Active renames that row's label. No `is_default` flag, no action to move it.
+- Triggers: `set_updated_at`, `check_soft_delete('category_config', 'manage')`, `audit_row('data')`, and a guard: `code` and `system_status` never change; a default row stays active.
+- Policies [R6]: select = tenant and (`category_config.view` **or** `asset_core.view`): anyone who sees an asset must see its status label; labels are not sensitive. Insert and update `category_config.manage` plus `tenant_can_write()`. No delete policy, delete and truncate revoked. `tests.cross_tenant`.
+
+### 18.2 Sets per category [R1] [R2]
+
+- **Storage:** `asset_category.status_ids uuid[] null`. Null = inherit. The array order is the set order. Written by the existing category update (policy `category_config.manage`, `tenant_can_write()`), audited by the existing category audit trigger.
+- **Check trigger on `asset_category`** (`security definer`, fixed `search_path`) when `status_ids` changes: not empty, no duplicates, every id a live, active `asset_status` of the same tenant, and at least one status mapped to `in_stock` or `active` (else nothing can be created in the category). Statuses are never hard-deleted, so the ids stay valid. A later merge function repoints arrays with one update.
+- **Inheritance:** `private.effective_status_ids(p_tenant_id, p_category_id) returns uuid[]`, `stable`, `security definer`. Walks up `parent_id` (recursive CTE, as the field line in §4.1 and `{CAT}` in §2 do) and returns the first non-null `status_ids`. **No set anywhere [R2]:** every active status of the tenant, ordered by system status (in_stock, active, under_maintenance, inactive, disposed) then label. So a tenant with only the 5 seeded rows behaves exactly as today. Categories are small trees (2.1: no closure), so one walk per write is enough; the list never calls it.
+- Read for the app: `public.category_statuses(p_category_id)` returns the effective ids in order. The create form uses it; the 3.7b category form shows "Inherited from <parent>" when `status_ids` is null.
+
+### 18.3 Moves [R4]
+
+`change_asset_status` decides on the **current tenant status S** and the **target tenant status T**:
+
+1. T is a live, active status of the tenant, and T ≠ S.
+2. T is in the asset's effective set (18.2). S need not be (it may predate a set change).
+3. The system move `sys(S) → sys(T)` is a B11 move (§3 table), **or** `sys(S) = sys(T)` (a relabel inside one system status, for example Running → Standby).
+4. From any S mapped to `disposed`: needs `asset_lifecycle.reopen`; target system `in_stock`, `active`, `inactive` (A3) or `disposed` (a correction, Sold → Scrapped). Every other move needs `asset_lifecycle.execute`.
+5. Reason: required when `sys(T)` is `inactive` or `disposed`, and always from `disposed`. Same as today.
+6. **Order inside the set is display order only.** "Any later step, or back to an earlier one" allows every direction, so B11 is the only gate. Order also decides which status a system status maps to (first in the set wins, 18.4).
+
+Example set on "Machine tools": In store (in_stock), Commissioning (active), Running (active), Standby (active), Breakdown (under_maintenance), Preventive (under_maintenance), Idle (inactive), Scrapped (disposed), Sold (disposed).
+
+| From | To | Result |
+|---|---|---|
+| Running | Standby | allowed, same system, no reason |
+| Running | Breakdown | allowed, active → under_maintenance |
+| Breakdown | Preventive | allowed, same system |
+| Breakdown | Idle | **refused** 22023: under_maintenance → inactive is not B11 |
+| In store | Running | allowed, in_stock → active |
+| In store | Breakdown | **refused** 22023 |
+| Standby | Idle | allowed, **reason required** |
+| Idle | Scrapped | allowed, reason required |
+| Scrapped | Sold | needs `reopen` and a reason (correction) |
+| Scrapped | Running | needs `reopen` and a reason (A3) |
+| Running | Calibration lab (active, not in this set) | **refused** 22023 |
+
+**Function shape:**
+- New `public.change_asset_status(p_asset_id uuid, p_status_id uuid, p_reason text default null)`: the rules above; sets `status_id`, `status` (from T), `status_reason`, `status_changed_at`, `updated_by`. Outbox `asset.status_changed` gains `from_id`, `to_id` and keeps `from`, `to` as system codes, so hooks keep working.
+- The 3.1 text version `(p_asset_id, p_status text, p_reason)` stays as a thin wrapper: it picks the **first status in the effective set** mapped to `p_status` (else the default row) and calls the new one. The Retire button and the 3.1 to 3.5 tests keep working. PostgREST tells the two apart by argument name.
+- `public.allowed_asset_statuses(p_asset_id) returns setof uuid`: the targets the caller may pick now (rules 1 to 4, permissions included), in set order. The Change status dialog reads it, so the app stops copying B11 (`nextStatuses` in `AssetDetail.tsx` goes). One engine (CLAUDE.md §7.3).
+
+### 18.4 `asset.status_id` (new migration, never an edit of 3.1)
+
+- `status_id uuid not null` after the backfill [R7].
+- **Agreement by a foreign key, not a trigger:** `foreign key (tenant_id, status_id, status) references asset_status (tenant_id, id, system_status)`. Postgres itself refuses any row where the two disagree, from any path (action, import, system job, SQL as owner). Safe because `system_status` never changes (18.1).
+- **Fill trigger** `private.assign_asset_status()`, before insert or update of `category_id`:
+  - Insert with `status_id`: it must be in the category's effective set, active, and map to `in_stock` or `active`; `status` is set from it.
+  - Insert with only `status` (today's form, later imports): `status_id` = the first status in the effective set with that system status, else the default row.
+  - Category change [R8]: if the current `status_id` is in the new category's effective set, nothing changes. Else it is remapped to the first status in the new set **with the same system status**, else the default row for that system status. The system status never changes, so B11 and the reason rules do not apply. The audit row shows the remap. A transfer (location) never touches status: sets belong to categories.
+- Grants: `status_id` joins the insert grant; **not** the update grant (action only, like `status`).
+- Index: `(tenant_id, status_id) where deleted_at is null`, for the status filter and "is this status in use".
+- **Backfill (staging has real assets), one migration:** add the column null; seed the 5 default rows for every existing tenant (`on conflict do nothing`); `update asset set status_id = <default row for its status>`; then `set not null` and add the FK. No row changes `status`. The audit trigger writes one update row per asset, by "System". 3.7 does not depend on the 3.8 migration being on staging.
+
+### 18.5 Seeding [R7]
+
+- `private.seed_asset_statuses(p_tenant_id)`: the 5 default rows (code = system code; labels In Stock, Active, Under maintenance, Inactive, Disposed; tones as §13.4: neutral, ok, warn, neutral, error). Idempotent (`on conflict (tenant_id, code) do nothing`).
+- **Hook:** an after-insert trigger on `tenant` calls it, so every tenant (provisioning script, local seed, tests, a later signup) always has them. The 18.4 backfill calls it for existing tenants. `seed_starter_groups` is not touched.
+
+### 18.6 Reads and app changes
+
+| Where | Change |
+|---|---|
+| `asset_view` | Appends `status_id` (`create or replace view` may only append; nothing else moves). Label and tone come from `asset_status`, loaded once per page by the app (tens of rows per tenant). No join in the view, so the list plan does not change |
+| `list_assets`, `count_assets` | New argument `p_status_id uuid` (filter `v.status_id = %L`). `p_status` (system) stays. Dropped and recreated (signature change; only the app calls them) |
+| Status filter (Assets list) | One select: the 5 system statuses first (as today, In Stock included), then a group "Tenant statuses" with every non-default status. A system status filters on `status`; a tenant status on `status_id` |
+| Saved views | `filters` gains optional `status_id`. Old views store `status` (system) and keep working. An unknown `status_id` is dropped on load, as for category and location |
+| List tag, detail head | Label and tone of `status_id` |
+| Audit tab | A `status_id` change shows `Status: Running → Standby` (labels); the `status` line is hidden when `status_id` is in the same row. Old rows (only `status`) show as today. The backfill row reads "Status: Active" |
+| Asset form (create) | Status select = the category's effective set, insert-able ones only (mapped to in_stock or active), the first active-mapped one preselected; refreshed when the category changes |
+| Change status dialog | Options from `allowed_asset_statuses`; reason box when the target maps to inactive or disposed, or the asset is disposed |
+
+### 18.7 Permission
+
+- Statuses and sets are configuration, like fields: domain **`category_config`** (view, manage) from the 1.2 catalog. No new domain, no new operation, no starter-grid change [R6].
+- Moves keep `asset_lifecycle.execute` and `reopen` (3.1, 3.5).
+
+### 18.8 Size and split [R0]
+
+The database part plus the screens that must change so nothing breaks (list filter, form, detail, dialog, audit) is already a full PR. The management screens are a second review.
+
+- **3.7 (this session):** migrations (18.10), pgTAP, types, the app changes in 18.6. Until 3.7b, statuses and sets are added by SQL (the demo note gives the statements).
+- **3.7b (next session):** a Statuses card on the Categories page (list, add, rename, tone, deactivate; default rows marked) and a Statuses picker on the category form (inherit, or pick and order). Tracker change-log line if accepted.
+
+### 18.9 DECIDE
+
+"Cost to reverse" assumes assets on staging already have `status_id`.
+
+| # | Question | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| R0 | Split | **a)** 3.7 database plus app reads, 3.7b management screens. **b)** All in one PR | a. 3.6 precedent; the owner-review parts (RLS, action) stay in a small PR | None |
+| R1 | Where a set lives | **a)** `asset_category.status_ids uuid[]`, order = array order. **b)** Link table `category_status (category_id, status_id, position)`, 1.4 pattern. **c)** Named `status_set` + `status_set_member` + `asset_category.status_set_id` (reusable sets) | a. No new table, policy or cross-tenant test; the category policy and audit already cover it; reorder is one update. Reuse comes from inheritance (set it on the parent), as fields do (G3) | Low to medium: b or c later is a data copy from the arrays |
+| R2 | No set anywhere up the tree | **a)** Every active tenant status. **b)** A tenant default set (`tenant.default_status_ids`, plus an action and UI). **c)** Only the 5 default rows | a. A tenant with custom statuses and no sets sees them all; sets only narrow. Nothing new to store | Low |
+| R3 | Default status per system status | **a)** The seeded row (code = system code): renamable, never deactivated. **b)** `is_default` flag, one per system status, with an action to move it | a. No flag, no uniqueness swap | Low: b later is one column filled from a |
+| R4 | Meaning of set order | **a)** Display order, and "first in set" when mapping. Every in-set move B11 allows is fine, including same-system relabels and moves back (18.3). **b)** Forward any number of steps, back only one. **c)** Forward only; back needs a reason | a. A2 says "any later step or back": every direction, so B11 is the real gate | Low: one function body |
+| R5 | Colour | **a)** One of the 4 tag tones (`ok`, `warn`, `error`, `neutral`). **b)** Free hex colour | a. Matches `tokens.css`; contrast already checked | Low: b later widens a check |
+| R6 | Who manages, who reads | **a)** Manage `category_config.manage`; read `category_config.view` or `asset_core.view`. **b)** `tenant_settings.manage` | a. Statuses are per category, set up where fields are. Starter grid already right: Tenant Admin manages, everyone views | Low (policy change) |
+| R7 | `status_id` nullable, and the seed hook | **a)** `not null` after backfill, agreement by the composite FK; 5 rows seeded by an after-insert trigger on `tenant`. **b)** Nullable (null = the default for its system status); seed called from `provision-staging.sql` and `seed.sql` | a. No null to handle in reads, filters or reports; no tenant can miss its rows | Medium: dropping `not null` is easy, code that trusts it changes |
+| R8 | Category change leaves the set | **a)** Remap to the first same-system status in the new set, else the default row (18.4). **b)** Refuse the category change until the status is changed. **c)** Keep the old status; the next move must enter the set | a. The edit form never fails on status; system status and reports do not change | Low (trigger body) |
+
+### 18.10 Build plan (after answers)
+
+Migrations, one purpose each:
+1. `3_7_asset_status`: table, guard trigger, policies, `seed_asset_statuses()`, tenant trigger, seed for existing tenants.
+2. `3_7_category_statuses`: `asset_category.status_ids`, its check trigger, `effective_status_ids()`, `category_statuses()`.
+3. `3_7_asset_status_id`: column, fill trigger, backfill, `not null`, FK, index, grants, `asset_view` column, `list_assets` and `count_assets` with `p_status_id`.
+4. `3_7_change_asset_status`: the uuid action, the text wrapper, `allowed_asset_statuses()`.
+
+pgTAP `3_7_tenant_statuses.test.sql`: one block per permission step on `asset_status` (none, view via `category_config`, view via `asset_core`, manage, read-only tenant) and `tests.cross_tenant('public.asset_status', ...)`; code and system status cannot change, a default row cannot be deactivated; set check (other tenant, inactive, duplicate, no insert status); inheritance (own set, parent, grandparent, none); every row of the 18.3 table, reasons, reopen; `status` and `status_id` cannot disagree (owner SQL hits the FK); insert by `status` only and by `status_id`; category change remap; backfill leaves no null; a new tenant gets 5 rows; EXPLAIN on `list_assets` by name still walks the keyset index; tenancy guard green. The 3.1 to 3.5 tests pass unchanged (text wrapper). Web: filter groups, form options per category, dialog options from the RPC, audit labels.
+
+### 18.11 Open items used (lean)
+
+OQ-04 (Disposed terminal, admin reopen with a reason; a disposed-to-disposed correction counts as a reopen). B11 unchanged: tenant statuses only relabel inside it.
+
+### 18.12 Not in 3.7
+
+Management screens (3.7b, if R0 a). Reason lists (T4 b). Per-status permissions. Status-driven automation (Phase 2). Merging two statuses (a later merge function, B12).

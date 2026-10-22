@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
 import { AttachmentsTab } from './Attachments'
 import { lineFields } from './AssetForm'
-import { statusTone } from './Assets'
+import { loadStatuses, statusName, StatusTag, type Status } from './Assets'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import { buildTree, lineage } from './tree'
@@ -27,6 +27,7 @@ const labels: Record<string, string> = {
   category_id: t.assetForm.category,
   location_id: t.assetForm.location,
   status: t.assetForm.status,
+  status_id: t.assetForm.status,
   status_reason: d.statusReason,
   location_reason: d.transferReason,
   quantity: t.assetForm.quantity,
@@ -47,8 +48,10 @@ export function changes(row: History, label: (key: string) => string, show: (key
   const oc = obj(o.custom_values)
   const nc = obj(n.custom_values)
   const out: Change[] = []
+  // The tenant status (3.7) says it better than the system status in the same row.
+  const hide = (k: string) => skip.has(k) || (k === 'status' && 'status_id' in n)
   for (const k of new Set([...Object.keys(o), ...Object.keys(n)]))
-    if (!skip.has(k) && !same(o[k], n[k])) out.push({ field: label(k), from: show(k, o[k]), to: show(k, n[k]) })
+    if (!hide(k) && !same(o[k], n[k])) out.push({ field: label(k), from: show(k, o[k]), to: show(k, n[k]) })
   for (const k of new Set([...Object.keys(oc), ...Object.keys(nc)]))
     if (!same(oc[k], nc[k])) out.push({ field: label(`custom.${k}`), from: show(`custom.${k}`, oc[k]), to: show(`custom.${k}`, nc[k]) })
   for (const k of row.hidden_fields) out.push({ field: label(k), hidden: true })
@@ -59,7 +62,7 @@ export function historyTitle(row: History): string {
   if (row.action === 'insert') return h.created
   if (row.action === 'soft_delete') return h.deleted
   const n = obj(row.new_data)
-  if ('status' in n) return h.statusChanged
+  if ('status_changed_at' in n) return h.statusChanged
   return 'location_reason' in n ? h.transferred : h.updated
 }
 
@@ -71,15 +74,6 @@ export function moreCursor(rows: History[]): { p_before: string; p_before_id: st
 
 const statusLabel = (s: string) => (t.assets.statuses as Record<string, string>)[s] ?? s
 const a = d.actions
-
-// B11 moves offered by Change status (Disposed has its own Retire button). The database is the truth.
-const nextStatuses: Record<string, string[]> = {
-  in_stock: ['active'],
-  active: ['under_maintenance', 'inactive'],
-  under_maintenance: ['active'],
-  inactive: ['active'],
-  disposed: ['in_stock', 'active', 'inactive'],
-}
 
 // A transfer or status action error to a message (codes from transfer_asset and change_asset_status).
 export function actionError(e: { code?: string; message?: string }): string {
@@ -101,6 +95,9 @@ export function AssetDetailPage({ can }: { can: Can }) {
   const [fields, setFields] = useState<Field[]>([])
   const [domains, setDomains] = useState<Record<string, string>>({})
   const [timeZone, setTimeZone] = useState<string>()
+  const [statuses, setStatuses] = useState<Status[]>([])
+  // Change status offers what the database allows now (allowed_asset_statuses, 3.7).
+  const [targets, setTargets] = useState<string[]>([])
   const [tab, setTab] = useState<'overview' | 'attachments' | 'audit'>('overview')
   const [dialog, setDialog] = useState<'transfer' | 'retire' | 'status'>()
   // Bumped after an action: reloads the asset and the Audit tab.
@@ -116,7 +113,9 @@ export function AssetDetailPage({ can }: { can: Can }) {
       supabase.from('field_definition').select('*').eq('entity', 'asset').is('deleted_at', null),
       supabase.rpc('field_domains', { p_entity: 'asset' }),
       supabase.from('tenant').select('time_zone'),
-    ]).then(async ([a, ch, c, l, f, dm, tn]) => {
+      loadStatuses(),
+      supabase.rpc('allowed_asset_statuses', { p_asset_id: assetId }),
+    ]).then(async ([a, ch, c, l, f, dm, tn, st, al]) => {
       const row = a.data?.[0] ?? null
       const parent = row?.parent_asset_id ? (await supabase.from('asset_view').select('id, tag').eq('id', row.parent_asset_id)).data?.[0] : undefined
       if (!live) return
@@ -127,6 +126,8 @@ export function AssetDetailPage({ can }: { can: Can }) {
       setFields(f.data ?? [])
       setDomains(Object.fromEntries((dm.data ?? []).map((x) => [x.id, x.code])))
       setTimeZone(tn.data?.[0]?.time_zone)
+      setStatuses(st.data ?? [])
+      setTargets(al.data ?? [])
       if (parent?.id && parent.tag) setTags((m) => ({ ...m, [parent.id as string]: parent.tag as string }))
     })
     return () => {
@@ -157,6 +158,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
     if (key === 'location_id') return path(places, s)
     if (key === 'parent_asset_id') return tags[s] ?? '—'
     if (key === 'status') return statusLabel(s)
+    if (key === 'status_id') return statusName(statuses, s)
     if (typeof v === 'boolean') return v ? t.categories.yes : t.categories.no
     const f = key.startsWith('custom.') ? fieldOf(key.slice(7)) : undefined
     const option = f?.type === 'list' && Array.isArray(f.options) ? (f.options as { code: string; label: string }[]).find((o) => o.code === s) : undefined
@@ -188,7 +190,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
           </span>
           <h1>
             {asset.name}
-            {asset.status && <span className={`tag status ${statusTone[asset.status] ?? 'neutral'}`}>{statusLabel(asset.status)}</span>}
+            <StatusTag statuses={statuses} id={asset.status_id} system={asset.status} />
           </h1>
         </div>
         <div className="spacer" />
@@ -207,7 +209,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
             </button>
           </>
         )}
-        {can('asset_lifecycle', live ? 'execute' : 'reopen') && (
+        {targets.length > 0 && (
           <button className="btn" type="button" onClick={() => setDialog('status')}>
             {a.changeStatus}
           </button>
@@ -318,8 +320,8 @@ export function AssetDetailPage({ can }: { can: Can }) {
         <ActionDialog
           title={a.statusTitle.replace('{tag}', tag)}
           submit={a.changeStatus}
-          choices={{ label: a.newStatus, placeholder: a.chooseStatus, options: (nextStatuses[asset.status ?? ''] ?? []).map((s) => ({ value: s, text: statusLabel(s) })) }}
-          run={(status, reason) => supabase.rpc('change_asset_status', { p_asset_id: id, p_status: status, p_reason: reason })}
+          choices={{ label: a.newStatus, placeholder: a.chooseStatus, options: targets.map((s) => ({ value: s, text: statusName(statuses, s) })) }}
+          run={(status, reason) => supabase.rpc('change_asset_status', { p_asset_id: id, p_status_id: status, p_reason: reason })}
           onClose={close}
           onDone={done}
         />

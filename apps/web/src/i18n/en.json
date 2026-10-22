@@ -239,6 +239,7 @@
     "allCategories": "All categories",
     "status": "Status",
     "allStatuses": "All statuses",
+    "tenantStatuses": "Tenant statuses",
     "sort": "Sort",
     "sorts": {
       "name": "Name A–Z",
@@ -327,6 +328,7 @@
       "parentCycle": "An asset cannot be inside itself or one of its own parts.",
       "parentDepth": "Assets can nest at most 5 levels deep.",
       "categoryInactive": "Pick an active category.",
+      "statusNotInSet": "This category does not offer that status. Pick another.",
       "locationInactive": "Pick an active location.",
       "generic": "Could not save. Try again."
     }

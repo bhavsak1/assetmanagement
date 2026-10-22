@@ -9,11 +9,12 @@ type Asset = Tables<'asset_view'>
 type Option = { id: string; parent_id: string | null; name: string }
 type SavedView = Pick<Tables<'saved_view'>, 'id' | 'name' | 'filters' | 'sort'>
 export type Sort = 'name' | 'tag' | 'updated'
-export type Filters = { q: string; status: string; category_id: string; location_id: string }
+export type Filters = { q: string; status: string; status_id: string; category_id: string; location_id: string }
+export type Status = Pick<Tables<'asset_status'>, 'id' | 'code' | 'label' | 'system_status' | 'tone' | 'is_active' | 'deleted_at'>
 export type Cursor = { value: string; id: string }
 
 const PAGE = 50
-const emptyFilters: Filters = { q: '', status: '', category_id: '', location_id: '' }
+const emptyFilters: Filters = { q: '', status: '', status_id: '', category_id: '', location_id: '' }
 // System statuses (data-model-goal3 §3) and their tag colours from tokens.css.
 export const statuses = ['in_stock', 'active', 'under_maintenance', 'inactive', 'disposed'] as const
 export const statusTone: Record<string, string> = {
@@ -22,6 +23,19 @@ export const statusTone: Record<string, string> = {
   under_maintenance: 'warn',
   inactive: 'neutral',
   disposed: 'error',
+}
+
+// Tenant statuses (3.7), each mapped to a system status. Few rows per tenant: loaded whole.
+export const loadStatuses = () => supabase.from('asset_status').select('id, code, label, system_status, tone, is_active, deleted_at').order('label')
+const systemLabel = (s: string) => (t.assets.statuses as Record<string, string>)[s] ?? s
+export const statusName = (statuses: Status[], id: string | null | undefined, system?: string | null) =>
+  statuses.find((s) => s.id === id)?.label ?? (system ? systemLabel(system) : '—')
+
+// The tag of an asset's status: the tenant status' label and tone, else the system status.
+export function StatusTag({ statuses, id, system }: { statuses: Status[]; id: string | null | undefined; system: string | null | undefined }) {
+  if (!id && !system) return null
+  const s = statuses.find((x) => x.id === id)
+  return <span className={`tag status ${s?.tone ?? statusTone[system ?? ''] ?? 'neutral'}`}>{statusName(statuses, id, system)}</span>
 }
 
 // Filters, sort and cursor to list_assets() arguments. Empty filters are left out (null in SQL).
@@ -39,6 +53,7 @@ export function countArgs(f: Filters): Database['public']['Functions']['count_as
   return {
     ...(f.q.trim() && { p_term: f.q.trim() }),
     ...(f.status && { p_status: f.status }),
+    ...(f.status_id && { p_status_id: f.status_id }),
     ...(f.category_id && { p_category_id: f.category_id }),
     ...(f.location_id && { p_location_id: f.location_id }),
   }
@@ -54,13 +69,14 @@ export function nextCursor(rows: Asset[], sort: Sort): Cursor | undefined {
 
 // A saved view back to filters. Ids of categories or locations that are gone, and unknown keys
 // or statuses, are dropped: the view still opens, with fewer filters.
-export function viewFilters(saved: SavedView['filters'], categories: Option[], locations: Option[]): Filters {
+export function viewFilters(saved: SavedView['filters'], categories: Option[], locations: Option[], statusRows: Status[] = []): Filters {
   const s = (saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}) as Record<string, unknown>
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
   const known = (v: unknown, rows: Option[]) => (rows.some((r) => r.id === v) ? str(v) : '')
   return {
     q: str(s.q),
     status: (statuses as readonly string[]).includes(str(s.status)) ? str(s.status) : '',
+    status_id: statusRows.some((r) => r.id === s.status_id && !r.deleted_at) ? str(s.status_id) : '',
     category_id: known(s.category_id, categories),
     location_id: known(s.location_id, locations),
   }
@@ -86,6 +102,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
   const [total, setTotal] = useState<number>()
   const [categories, setCategories] = useState<Option[]>([])
   const [locations, setLocations] = useState<Option[]>([])
+  const [statusRows, setStatusRows] = useState<Status[]>([])
   const [views, setViews] = useState<SavedView[]>([])
   const [viewId, setViewId] = useState('')
   const [error, setError] = useState<string>()
@@ -96,10 +113,12 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
     void Promise.all([
       supabase.from('asset_category').select('id, parent_id, name').is('deleted_at', null),
       supabase.from('location').select('id, parent_id, name').is('deleted_at', null),
-    ]).then(([c, l]) => {
+      loadStatuses(),
+    ]).then(([c, l, st]) => {
       if (!live) return
       setCategories(c.data ?? [])
       setLocations(l.data ?? [])
+      setStatusRows(st.data ?? [])
     })
     return () => {
       live = false
@@ -175,7 +194,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
     setViewId(id)
     const v = views.find((x) => x.id === id)
     if (!v) return
-    const f = viewFilters(v.filters, categories, locations)
+    const f = viewFilters(v.filters, categories, locations, statusRows)
     setTyped(f.q)
     apply(f, isSort(v.sort) ? v.sort : 'name')
   }
@@ -210,6 +229,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
     const parent = l && nameOf(locations, l.parent_id)
     return l ? (parent ? `${l.name} · ${parent.name}` : l.name) : '—'
   }
+  const tenantStatuses = statusRows.filter((s) => s.code !== s.system_status && !s.deleted_at)
   const count = total === undefined ? '' : total > 10000 ? t.assets.manyCount : total.toLocaleString()
 
   return (
@@ -241,13 +261,33 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
         />
         <TreeSelect label={t.assets.location} all={t.assets.allLocations} rows={locations} value={filters.location_id} onChange={(v) => pick('location_id', v)} />
         <TreeSelect label={t.assets.category} all={t.assets.allCategories} rows={categories} value={filters.category_id} onChange={(v) => pick('category_id', v)} />
-        <select className="filter" aria-label={t.assets.status} value={filters.status} onChange={(e) => pick('status', e.target.value)}>
+        {/* System statuses filter on status; tenant statuses (not the default rows) on status_id. */}
+        <select
+          className="filter"
+          aria-label={t.assets.status}
+          value={filters.status || filters.status_id}
+          onChange={(e) => {
+            const v = e.target.value
+            const system = (statuses as readonly string[]).includes(v)
+            setViewId('')
+            apply({ ...filters, q: typed, status: system ? v : '', status_id: system ? '' : v })
+          }}
+        >
           <option value="">{t.assets.allStatuses}</option>
           {statuses.map((s) => (
             <option key={s} value={s}>
               {t.assets.statuses[s]}
             </option>
           ))}
+          {tenantStatuses.length > 0 && (
+            <optgroup label={t.assets.tenantStatuses}>
+              {tenantStatuses.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
         <select
           className="filter"
@@ -319,7 +359,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
                   <td>{nameOf(categories, a.category_id)?.name ?? '—'}</td>
                   <td>{place(a.location_id)}</td>
                   <td>
-                    {a.status && <span className={`tag status ${statusTone[a.status] ?? 'neutral'}`}>{t.assets.statuses[a.status as (typeof statuses)[number]] ?? a.status}</span>}
+                    <StatusTag statuses={statusRows} id={a.status_id} system={a.status} />
                   </td>
                 </tr>
               ))}

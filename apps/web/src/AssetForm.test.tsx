@@ -210,3 +210,23 @@ test('a database error shows on its field', async () => {
   expect(fieldEl('custom.fluid')?.textContent).toContain(t.assetForm.errors.required)
   expect(fieldEl('custom.rated_kw')?.textContent).not.toContain(t.assetForm.errors.required)
 })
+
+test('create: status offers the category set narrowed to In Stock and Active ones, first Active preselected', async () => {
+  const st = (id: string, label: string, system_status: string) => ({ id, code: id, label, system_status, tone: 'ok', is_active: true, deleted_at: null })
+  db.results.asset_status = { data: [st('s-is', 'In store', 'in_stock'), st('s-run', 'Running', 'active'), st('s-sb', 'Standby', 'active'), st('s-bd', 'Breakdown', 'under_maintenance')], error: null }
+  db.results.category_statuses = { data: ['s-is', 's-run', 's-sb', 's-bd'], error: null }
+  const canCreate = (d: string, o: string) => ['asset_core.view', 'asset_core.create'].includes(`${d}.${o}`)
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={['/assets/new']}>
+        <Routes>
+          <Route path="/assets/new" element={<AssetFormPage tenantId="ta" can={canCreate} />} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  )
+  const status = container.querySelector<HTMLSelectElement>('[name="status_id"]')!
+  expect([...status.options].map((o) => o.textContent)).toEqual(['In store', 'Running', 'Standby'])
+  expect(status.value).toBe('s-run')
+  expect(fieldErrors({ code: '23514', message: "status is inactive or not in the category's status set" })).toEqual({ status_id: t.assetForm.errors.statusNotInSet })
+})
