@@ -87,9 +87,9 @@
 | 3.4 | Asset detail: Overview tab and Audit tab | | Done |
 | 3.5 | Transfer between locations with history, and Retire with reason | OQ-01, OQ-04, OQ-07 | Done |
 | 3.6 | Attachments (per-tenant storage): private bucket, storage policies, Attachments tab | | Done |
-| 3.6b | QR label with scan-to-open (login return, print view) | OQ-02 | In review |
+| 3.6b | QR label with scan-to-open (login return, print view) | OQ-02 | Done |
 | 3.7 | Tenant asset statuses: each maps to one of the 5 system statuses, ordered status sets attached to categories (inherited from the nearest parent), any later step or back within B11. Adds `asset.status_id` | OQ-04 | Todo |
-| 3.8 | Settings: asset tag pattern field with a live sample tag (`set_asset_tag_pattern()`), and a Code field on the category form (for `{CAT}`) | | Todo |
+| 3.8 | Settings: asset tag pattern field with a live sample tag (`set_asset_tag_pattern()`), and a Code field on the category form (for `{CAT}`) | | In review |
 
 Note: start WhatsApp provider onboarding around this goal because of lead time (OQ-14).
 

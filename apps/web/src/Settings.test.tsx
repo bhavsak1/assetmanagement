@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { SettingsPage, formatDate } from './Settings'
+import { SettingsPage, formatDate, tagErrorMessage } from './Settings'
 import { t } from './i18n'
 
 const db = vi.hoisted(() => ({
@@ -14,7 +14,7 @@ const db = vi.hoisted(() => ({
 vi.mock('./supabase', () => {
   const chain = (table: string) => {
     const q: Record<string, unknown> = {}
-    for (const m of ['select', 'eq']) q[m] = () => q
+    for (const m of ['select', 'eq', 'is', 'order']) q[m] = () => q
     q.then = (resolve: (v: unknown) => void) => resolve(db.results[table] ?? { data: [], error: null })
     return q
   }
@@ -30,6 +30,7 @@ const tenant = {
   date_format: 'dd-MM-yyyy',
   fiscal_year_start_month: 4,
   required_asset_fields: ['model'],
+  asset_tag_pattern: 'AST-{SEQ:5}',
 }
 
 let root: Root
@@ -100,4 +101,76 @@ test('a refused save shows the permission message', async () => {
   await render(true, true)
   await act(async () => container.querySelector('form')!.requestSubmit())
   expect(container.querySelector('[role="alert"]')?.textContent).toBe(t.settings.errors.noPermission)
+})
+
+// React tracks a controlled input's value, so set it through the native setter, then fire input.
+function type(el: HTMLInputElement, value: string) {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, value)
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+}
+const previews = () => db.rpc.mock.calls.filter(([name]) => name === 'preview_asset_tag')
+const button = (text: string) => [...container.querySelectorAll('button')].find((b) => b.textContent === text)
+
+test('tag errors map to their messages', () => {
+  const e = t.settings.tag.errors
+  expect(tagErrorMessage({ code: '23514' })).toBe(e.format)
+  expect(tagErrorMessage({ code: '22023', message: 'the tag pattern needs a location code: set a location' })).toBe(e.needsLocation)
+  expect(tagErrorMessage({ code: '22023', message: 'the tag pattern needs a category code: add one' })).toBe(e.needsCategory)
+  expect(tagErrorMessage({ code: '42501' })).toBe(e.noPermission)
+  expect(tagErrorMessage({ code: 'XX000' })).toBe(e.generic)
+})
+
+test('a part chip inserts at the cursor', async () => {
+  await render(true, true)
+  const input = field<HTMLInputElement>('tagPattern')
+  expect(input.value).toBe('AST-{SEQ:5}')
+  input.setSelectionRange(0, 3)
+  await act(async () => button('{CAT}')!.click())
+  expect(input.value).toBe('{CAT}-{SEQ:5}')
+})
+
+test('the sample comes from preview_asset_tag, debounced', async () => {
+  vi.useFakeTimers()
+  try {
+    db.rpc.mockImplementation((name: string) => (name === 'preview_asset_tag' ? { data: 'CNC-0001', error: null } : { data: null, error: null }))
+    await render(true, true)
+    const input = field<HTMLInputElement>('tagPattern')
+    await act(async () => type(input, '{CAT}'))
+    await act(async () => type(input, '{CAT}-{SEQ:4}'))
+    await act(async () => vi.advanceTimersByTime(299))
+    expect(previews()).toHaveLength(0)
+    await act(async () => vi.advanceTimersByTime(1))
+    expect(previews()).toEqual([['preview_asset_tag', { p_pattern: '{CAT}-{SEQ:4}', p_location_id: undefined, p_category_id: undefined }]])
+    expect(container.textContent).toContain('CNC-0001')
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('a refused preview shows the mapped message', async () => {
+  vi.useFakeTimers()
+  try {
+    db.rpc.mockReturnValue({ data: null, error: { code: '23514', message: 'invalid tag pattern' } })
+    await render(true, true)
+    await act(async () => vi.advanceTimersByTime(300))
+    expect(container.textContent).toContain(t.settings.tag.errors.format)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('manage: save sends the pattern to set_asset_tag_pattern', async () => {
+  await render(true, true)
+  await act(async () => type(field<HTMLInputElement>('tagPattern'), '{CAT}-{SEQ:4}'))
+  await act(async () => button(t.settings.tag.save)!.click())
+  expect(db.rpc).toHaveBeenCalledWith('set_asset_tag_pattern', { p_pattern: '{CAT}-{SEQ:4}' })
+  expect(container.textContent).toContain(t.settings.tag.saved)
+})
+
+test('view only: tag pattern read-only, no chips, no save, sample still shown', async () => {
+  await render(true, false)
+  expect(field<HTMLInputElement>('tagPattern').disabled).toBe(true)
+  expect(button('{CAT}')).toBeUndefined()
+  expect(button(t.settings.tag.save)).toBeUndefined()
+  expect(container.textContent).toContain(t.settings.tag.sample)
 })

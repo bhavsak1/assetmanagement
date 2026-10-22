@@ -63,6 +63,9 @@
     "name": "Name",
     "parent": "Parent category",
     "noParent": "None (top level)",
+    "code": "Code",
+    "codeHint": "Used by {CAT} in asset tags. Letters, digits and . _ - (20 at most). Tags show it in upper case.",
+    "codeInherited": "No code of its own: tags use {code} from {name}.",
     "active": "Active",
     "key": "Key",
     "keyHint": "Lowercase letters, digits and _. Starts with a letter. Cannot change later.",
@@ -102,6 +105,8 @@
       "load": "Could not load categories. Refresh to try again.",
       "noPermission": "You do not have permission to make this change.",
       "duplicateName": "A category with this name already exists.",
+      "duplicateCode": "Another category already uses this code. Codes ignore case.",
+      "code": "Code can use letters, digits and . _ - only, 20 at most.",
       "duplicateKey": "A field with this key already exists. Keys are never reused, even for inactive fields.",
       "invalid": "This change is not allowed. A category cannot sit under itself or its own sub-category.",
       "generic": "Could not save. Try again.",
@@ -151,7 +156,7 @@
     }
   },
   "settings": {
-    "subtitle": "Regional settings and mandatory asset fields",
+    "subtitle": "Regional settings, asset tags and mandatory asset fields",
     "noAccess": "You do not have access to tenant settings.",
     "regional": "Regional",
     "currency": "Currency",
@@ -180,6 +185,32 @@
       "timeZone": "Unknown time zone. Pick one from the list.",
       "invalid": "One of the values is not allowed.",
       "generic": "Could not save. Try again."
+    },
+    "tag": {
+      "title": "Asset tag",
+      "pattern": "Tag pattern",
+      "hint": "Letters, digits and . _ / - with the parts below. End with {SEQ:n}. Tags are upper case.",
+      "newOnly": "A change applies to new assets only. Existing tags stay as they are.",
+      "parts": "Insert a part",
+      "partHelp": {
+        "LOC": "Code of the asset's location, or its nearest parent with a code",
+        "CAT": "Code of the asset's category, or its nearest parent with a code",
+        "DATE": "Date the asset is added, for example 202610. Formats: yyyy, yy, mm, mmm, dd",
+        "SEQ": "Running number with n digits (3 to 9). Restarts for each new prefix"
+      },
+      "sampleLocation": "Sample location",
+      "sampleCategory": "Sample category",
+      "noSample": "None",
+      "sample": "Next tag",
+      "save": "Save tag pattern",
+      "saved": "Tag pattern saved.",
+      "errors": {
+        "format": "This pattern is not valid. Use letters, digits, . _ / - and the parts, and end with {SEQ:n}.",
+        "needsLocation": "This pattern uses {LOC}. Pick a sample location that has a code, or a parent with one.",
+        "needsCategory": "This pattern uses {CAT}. Pick a sample category that has a code, or a parent with one.",
+        "noPermission": "You do not have permission to change settings.",
+        "generic": "Could not get a sample tag. Try again."
+      }
     }
   },
   "pages": {

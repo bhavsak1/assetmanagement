@@ -775,3 +775,9 @@ a.btn {
     border: 0;
   }
 }
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
