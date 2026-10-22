@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { NavLink, Navigate, Outlet, Route, Routes } from 'react-router'
+import { NavLink, Navigate, Outlet, Route, Routes, useLocation, useSearchParams } from 'react-router'
 import type { Session } from '@supabase/supabase-js'
 import { AssetDetailPage } from './AssetDetail'
 import { AssetFormPage } from './AssetForm'
+import { AssetLabelPage, ScanPage } from './AssetLabel'
 import { AssetsPage } from './Assets'
 import { CategoriesPage } from './Categories'
 import { LocationsPage } from './Locations'
@@ -12,6 +13,10 @@ import { supabase } from './supabase'
 
 type PageKey = keyof typeof t.pages
 type Company = { id: string; name: string; status: string }
+
+// Where to go after sign-in: only a path in this app. '//host' and '/\host' leave the origin, and browsers drop
+// tabs and newlines, so only printable ASCII without a backslash passes (no open redirect).
+export const safeNext = (next: string | null) => (next && /^\/(?![/\\])[\x21-\x5b\x5d-\x7e]*$/.test(next) ? next : undefined)
 
 // tenant_id and permission_version are added by the JWT hook once select_tenant() ran for this
 // login session [D3]. Read here only to route and to know when to reload grants; RLS checks the signed token itself.
@@ -249,6 +254,8 @@ function LoginPage() {
 }
 
 export function App() {
+  const location = useLocation()
+  const [params] = useSearchParams()
   // undefined until Supabase reports the stored session; it fires INITIAL_SESSION on subscribe.
   const [session, setSession] = useState<Session | null>()
 
@@ -311,8 +318,9 @@ export function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={session ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
-      <Route element={session ? signedIn : <Navigate to="/login" replace />}>
+      <Route path="/login" element={session ? <Navigate to={safeNext(params.get('next')) ?? '/dashboard'} replace /> : <LoginPage />} />
+      {/* The target page survives sign-in, and the company pick too (it renders in place) [3.6b]. */}
+      <Route element={session ? signedIn : <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />}>
         {navGroups.flatMap(({ items }) =>
           items
             .filter((key) => key !== 'assets' && key !== 'categories' && key !== 'locations' && key !== 'settings')
@@ -337,6 +345,8 @@ export function App() {
           element={<SettingsPage tenantId={tenantId ?? ''} canView={can('tenant_settings', 'view')} canManage={can('tenant_settings', 'manage')} />}
         />
         <Route path="/assets/:assetId" element={<AssetDetailPage can={can} />} />
+        <Route path="/assets/:assetId/label" element={<AssetLabelPage />} />
+        <Route path="/q/:assetId" element={<ScanPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

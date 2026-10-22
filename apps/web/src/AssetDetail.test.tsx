@@ -183,6 +183,16 @@ const disposed = () => {
   r.data[0]!.status = 'disposed'
 }
 
+test('QR label: shown with asset_core.view, links to the print view', async () => {
+  const qr = () => [...container.querySelectorAll('a')].find((l) => l.textContent === t.assetDetail.label.button)
+  await render([])
+  expect(qr()).toBeUndefined()
+  act(() => root.unmount())
+  root = createRoot(container)
+  await render(['asset_core.view'])
+  expect(qr()?.getAttribute('href')).toBe('/assets/a1/label')
+})
+
 test('actions: hidden without asset_lifecycle; Disposed shows only Change status, and only with reopen', async () => {
   await render(['asset_core.view', 'asset_core.update'])
   expect(buttons()).not.toContain(a.transfer)

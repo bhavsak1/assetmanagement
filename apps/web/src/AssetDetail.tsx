@@ -192,7 +192,11 @@ export function AssetDetailPage({ can }: { can: Can }) {
           </h1>
         </div>
         <div className="spacer" />
-        {/* QR label arrives with 3.6b. */}
+        {can('asset_core', 'view') && (
+          <Link className="btn" to={`/assets/${asset.id}/label`}>
+            {d.label.button}
+          </Link>
+        )}
         {live && can('asset_lifecycle', 'execute') && (
           <>
             <button className="btn" type="button" onClick={() => setDialog('transfer')}>

@@ -724,3 +724,54 @@ a.btn {
 .dialog h2 {
   margin-top: 0;
 }
+
+/* 3.6b QR label: a 50 × 25 mm preview on screen; on paper only the label prints. */
+.qr-label {
+  display: flex;
+  gap: 2mm;
+  align-items: center;
+  width: 50mm;
+  height: 25mm;
+  padding: 1.5mm;
+  overflow: hidden;
+  color: #000;
+  background: #fff;
+  border: 1px dashed var(--color-divider);
+}
+
+.qr-label svg {
+  flex: none;
+  height: 100%;
+}
+
+.qr-label div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 7pt;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.qr-label b {
+  font-size: 12pt;
+}
+
+/* The 50 × 25 mm @page rule is rendered by the label page only, so other pages print normally. */
+@media print {
+  body:has(.qr-label) * {
+    visibility: hidden;
+  }
+
+  .qr-label,
+  .qr-label * {
+    visibility: visible;
+  }
+
+  .qr-label {
+    position: fixed;
+    top: 0;
+    left: 0;
+    border: 0;
+  }
+}
