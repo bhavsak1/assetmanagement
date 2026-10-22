@@ -1,16 +1,17 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
 import { lineFields } from './AssetForm'
 import { statusTone } from './Assets'
 import { t } from './i18n'
 import { supabase } from './supabase'
-import { lineage } from './tree'
+import { buildTree, lineage } from './tree'
 import type { Database, Json, Tables } from './types/database'
 
 type Asset = Tables<'asset_view'>
 type Field = Tables<'field_definition'>
 type Node = { id: string; parent_id: string | null; name: string }
 type Category = Node & { is_active: boolean }
+type Place = Node & { active: boolean }
 export type History = Database['public']['Functions']['asset_history']['Returns'][number]
 export type Change = { field: string; from?: string; to?: string; hidden?: boolean }
 type Can = (domain: string, operation: string) => boolean
@@ -26,6 +27,7 @@ const labels: Record<string, string> = {
   location_id: t.assetForm.location,
   status: t.assetForm.status,
   status_reason: d.statusReason,
+  location_reason: d.transferReason,
   quantity: t.assetForm.quantity,
   parent_asset_id: t.assetForm.parent,
   criticality: t.assetForm.criticality,
@@ -33,7 +35,7 @@ const labels: Record<string, string> = {
   ...t.settings.assetFields,
 }
 // Bookkeeping columns, not shown as changes.
-const skip = new Set(['id', 'tenant_id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'status_changed_at', 'deleted_at', 'custom_values'])
+const skip = new Set(['id', 'tenant_id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'status_changed_at', 'location_changed_at', 'deleted_at', 'custom_values'])
 const obj = (j: Json | undefined) => (j && typeof j === 'object' && !Array.isArray(j) ? j : {})
 const same = (a: Json | undefined, b: Json | undefined) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
@@ -55,7 +57,9 @@ export function changes(row: History, label: (key: string) => string, show: (key
 export function historyTitle(row: History): string {
   if (row.action === 'insert') return h.created
   if (row.action === 'soft_delete') return h.deleted
-  return 'status' in obj(row.new_data) ? h.statusChanged : h.updated
+  const n = obj(row.new_data)
+  if ('status' in n) return h.statusChanged
+  return 'location_reason' in n ? h.transferred : h.updated
 }
 
 // Keyset cursor for Load more: the last row shown, when the page came back full.
@@ -65,6 +69,26 @@ export function moreCursor(rows: History[]): { p_before: string; p_before_id: st
 }
 
 const statusLabel = (s: string) => (t.assets.statuses as Record<string, string>)[s] ?? s
+const a = d.actions
+
+// B11 moves offered by Change status (Disposed has its own Retire button). The database is the truth.
+const nextStatuses: Record<string, string[]> = {
+  in_stock: ['active'],
+  active: ['under_maintenance', 'inactive'],
+  under_maintenance: ['active'],
+  inactive: ['active'],
+  disposed: ['in_stock', 'active', 'inactive'],
+}
+
+// A transfer or status action error to a message (codes from transfer_asset and change_asset_status).
+export function actionError(e: { code?: string; message?: string }): string {
+  if (e.code === '42501') return a.errors.noPermission
+  if (e.code === 'P0002') return a.errors.notFound
+  if (e.code === '23514') return a.errors.locationInactive
+  if (e.code === '23502') return a.errors.reasonRequired
+  if (e.code === '22023') return e.message?.includes('already at') ? a.errors.sameLocation : e.message?.includes('cannot be transferred') ? a.errors.disposed : a.errors.statusNotAllowed
+  return a.errors.failed
+}
 
 export function AssetDetailPage({ can }: { can: Can }) {
   const { assetId = '' } = useParams()
@@ -72,11 +96,14 @@ export function AssetDetailPage({ can }: { can: Can }) {
   const [tags, setTags] = useState<Record<string, string>>({})
   const [children, setChildren] = useState<Pick<Asset, 'id' | 'tag' | 'name'>[]>([])
   const [categories, setCategories] = useState<Category[]>([])
-  const [places, setPlaces] = useState<Node[]>([])
+  const [places, setPlaces] = useState<Place[]>([])
   const [fields, setFields] = useState<Field[]>([])
   const [domains, setDomains] = useState<Record<string, string>>({})
   const [timeZone, setTimeZone] = useState<string>()
   const [tab, setTab] = useState<'overview' | 'audit'>('overview')
+  const [dialog, setDialog] = useState<'transfer' | 'retire' | 'status'>()
+  // Bumped after an action: reloads the asset and the Audit tab.
+  const [version, setVersion] = useState(0)
 
   useEffect(() => {
     let live = true
@@ -84,7 +111,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
       supabase.from('asset_view').select('*').eq('id', assetId),
       supabase.from('asset_view').select('id, tag, name').eq('parent_asset_id', assetId).order('tag'),
       supabase.from('asset_category').select('id, parent_id, name, is_active').is('deleted_at', null),
-      supabase.from('location').select('id, parent_id, name').is('deleted_at', null),
+      supabase.from('location').select('id, parent_id, name, active').is('deleted_at', null),
       supabase.from('field_definition').select('*').eq('entity', 'asset').is('deleted_at', null),
       supabase.rpc('field_domains', { p_entity: 'asset' }),
       supabase.from('tenant').select('time_zone'),
@@ -104,7 +131,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
     return () => {
       live = false
     }
-  }, [assetId])
+  }, [assetId, version])
 
   if (asset === undefined) return <p className="muted" role="status">{d.loading}</p>
   if (asset === null) return <p className="muted">{d.notFound}</p>
@@ -138,6 +165,14 @@ export function AssetDetailPage({ can }: { can: Can }) {
   const money = !seeMoney ? <Hidden /> : asset.purchase_value == null ? '—' : `${Number(asset.purchase_value).toLocaleString()} ${asset.purchase_currency ?? ''}`
   const parentTag = asset.parent_asset_id ? tags[asset.parent_asset_id] : undefined
   const tabs = ['overview', 'coverage', 'obligations', 'service', 'bom', 'attachments', 'audit'] as const
+  const live = asset.status !== 'disposed'
+  const tag = asset.tag ?? ''
+  const id = asset.id ?? assetId
+  const close = () => setDialog(undefined)
+  const done = () => {
+    close()
+    setVersion((v) => v + 1)
+  }
 
   return (
     <>
@@ -156,7 +191,22 @@ export function AssetDetailPage({ can }: { can: Can }) {
           </h1>
         </div>
         <div className="spacer" />
-        {/* QR label (3.6), Transfer and Retire (3.5) arrive with their stories. */}
+        {/* QR label arrives with 3.6. */}
+        {live && can('asset_lifecycle', 'execute') && (
+          <>
+            <button className="btn" type="button" onClick={() => setDialog('transfer')}>
+              {a.transfer}
+            </button>
+            <button className="btn" type="button" onClick={() => setDialog('retire')}>
+              {a.retire}
+            </button>
+          </>
+        )}
+        {can('asset_lifecycle', live ? 'execute' : 'reopen') && (
+          <button className="btn" type="button" onClick={() => setDialog('status')}>
+            {a.changeStatus}
+          </button>
+        )}
         {can('asset_core', 'update') && (
           <Link className="btn btn-main" to={`/assets/${asset.id}/edit`}>
             {d.edit}
@@ -195,6 +245,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
               <Row k={t.assetForm.criticality}>{asset.criticality ?? '—'}</Row>
               <Row k={t.assetForm.quantity}>{asset.quantity}</Row>
               {asset.status_reason && <Row k={d.statusReason}>{asset.status_reason}</Row>}
+              {asset.location_reason && <Row k={d.transferReason}>{asset.location_reason}</Row>}
               <Row k={t.assetForm.parent}>{parentTag ? <Link className="row-link" to={`/assets/${asset.parent_asset_id}`}>{parentTag}</Link> : '—'}</Row>
               <Row k={d.children}>
                 {children.length
@@ -232,9 +283,107 @@ export function AssetDetailPage({ can }: { can: Can }) {
           )}
         </div>
       ) : (
-        <AuditTab key={asset.id} assetId={asset.id ?? assetId} timeZone={timeZone} label={label} show={show} onTags={(m) => setTags((x) => ({ ...x, ...m }))} known={tags} />
+        <AuditTab key={`${asset.id}-${version}`} assetId={asset.id ?? assetId} timeZone={timeZone} label={label} show={show} onTags={(m) => setTags((x) => ({ ...x, ...m }))} known={tags} />
+      )}
+      {dialog === 'transfer' && (
+        <ActionDialog
+          title={a.transferTitle.replace('{tag}', tag)}
+          hint={a.transferHint}
+          submit={a.transfer}
+          // Active places only; the current one cannot be picked. Inactive ones keep the tree shape.
+          choices={{ label: a.to, placeholder: a.choose, options: buildTree(places).map(({ row, depth }) => ({ value: row.id, text: `${'— '.repeat(depth)}${row.name}`, off: !row.active || row.id === asset.location_id })) }}
+          run={(to, reason) => supabase.rpc('transfer_asset', { p_asset_id: id, p_to_location_id: to, p_reason: reason })}
+          onClose={close}
+          onDone={done}
+        />
+      )}
+      {dialog === 'retire' && (
+        <ActionDialog
+          title={a.retireTitle.replace('{tag}', tag)}
+          hint={a.retireHint}
+          submit={a.retire}
+          run={(_, reason) => supabase.rpc('change_asset_status', { p_asset_id: id, p_status: 'disposed', p_reason: reason })}
+          onClose={close}
+          onDone={done}
+        />
+      )}
+      {dialog === 'status' && (
+        <ActionDialog
+          title={a.statusTitle.replace('{tag}', tag)}
+          submit={a.changeStatus}
+          choices={{ label: a.newStatus, placeholder: a.chooseStatus, options: (nextStatuses[asset.status ?? ''] ?? []).map((s) => ({ value: s, text: statusLabel(s) })) }}
+          run={(status, reason) => supabase.rpc('change_asset_status', { p_asset_id: id, p_status: status, p_reason: reason })}
+          onClose={close}
+          onDone={done}
+        />
       )}
     </>
+  )
+}
+
+// One modal for transfer, retire and change status: an optional choice, a reason, the action.
+function ActionDialog(props: {
+  title: string
+  hint?: string
+  submit: string
+  choices?: { label: string; placeholder: string; options: { value: string; text: string; off?: boolean }[] }
+  run: (choice: string, reason: string) => PromiseLike<{ error: { code?: string; message?: string } | null }>
+  onClose: () => void
+  onDone: () => void
+}) {
+  const { choices } = props
+  const [choice, setChoice] = useState('')
+  const [reason, setReason] = useState('')
+  const [error, setError] = useState<string>()
+  const [busy, setBusy] = useState(false)
+
+  async function send(ev: FormEvent) {
+    ev.preventDefault()
+    setBusy(true)
+    const { error } = await props.run(choice, reason)
+    setBusy(false)
+    if (error) setError(actionError(error))
+    else props.onDone()
+  }
+
+  return (
+    <div className="overlay" onKeyDown={(ev) => ev.key === 'Escape' && props.onClose()}>
+      <form className="card dialog" role="dialog" aria-modal="true" aria-labelledby="action-title" onSubmit={(ev) => void send(ev)} noValidate>
+        <h2 id="action-title">{props.title}</h2>
+        {props.hint && <p className="muted">{props.hint}</p>}
+        {error && (
+          <p className="login-error" role="alert">
+            {error}
+          </p>
+        )}
+        {choices && (
+          <label className="field">
+            {choices.label}
+            <select name="choice" value={choice} autoFocus onChange={(ev) => setChoice(ev.target.value)}>
+              <option value="">{choices.placeholder}</option>
+              {choices.options.map((o) => (
+                <option key={o.value} value={o.value} disabled={o.off}>
+                  {o.text}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label className="field">
+          {a.reason}
+          <textarea name="reason" rows={3} value={reason} autoFocus={!choices} onChange={(ev) => setReason(ev.target.value)} />
+        </label>
+        <div className="page-head">
+          <div className="spacer" />
+          <button className="btn" type="button" onClick={props.onClose}>
+            {a.cancel}
+          </button>
+          <button className="btn btn-main" type="submit" disabled={busy || (!!choices && !choice)}>
+            {props.submit}
+          </button>
+        </div>
+      </form>
+    </div>
   )
 }
 

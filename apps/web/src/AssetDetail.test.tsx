@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { AssetDetailPage, changes, historyTitle, moreCursor, type History } from './AssetDetail'
+import { actionError, AssetDetailPage, changes, historyTitle, moreCursor, type History } from './AssetDetail'
 import { t } from './i18n'
 
 const db = vi.hoisted(() => ({
@@ -64,6 +64,7 @@ test('changes: a create lists only the values that were set', () => {
   expect(historyTitle(r)).toBe(t.assetDetail.history.created)
   expect(historyTitle(row(2, { new_data: { status: 'inactive' } }))).toBe(t.assetDetail.history.statusChanged)
   expect(historyTitle(row(3))).toBe(t.assetDetail.history.updated)
+  expect(historyTitle(row(4, { new_data: { location_id: 'l2', location_reason: 'Moved' } }))).toBe(t.assetDetail.history.transferred)
 })
 
 test('moreCursor: only after a full page, from the last row shown', () => {
@@ -157,4 +158,92 @@ test('audit: rows with actor and hidden values; Load more asks after the last ro
   expect(container.querySelectorAll('.history ol > li')).toHaveLength(51)
   expect(container.textContent).toContain(t.assetDetail.history.formerMember)
   expect(container.textContent).not.toContain(t.assetDetail.history.more)
+})
+
+const a = t.assetDetail.actions
+const buttons = () => [...container.querySelectorAll('.page-head button')].map((b) => b.textContent)
+async function set(name: string, value: string) {
+  const el = container.querySelector<HTMLSelectElement | HTMLTextAreaElement>(`[name="${name}"]`)!
+  Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')!.set!.call(el, value)
+  await act(async () => {
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+const submit = () => act(async () => container.querySelector<HTMLFormElement>('.dialog')!.requestSubmit())
+const disposed = () => {
+  const r = db.results.asset_view as { data: Record<string, unknown>[] }
+  r.data[0]!.status = 'disposed'
+}
+
+test('actions: hidden without asset_lifecycle; Disposed shows only Change status, and only with reopen', async () => {
+  await render(['asset_core.view', 'asset_core.update'])
+  expect(buttons()).not.toContain(a.transfer)
+  expect(buttons()).not.toContain(a.retire)
+  expect(buttons()).not.toContain(a.changeStatus)
+  act(() => root.unmount())
+  root = createRoot(container)
+  await render(['asset_core.view', 'asset_lifecycle.execute'])
+  expect(buttons()).toEqual([a.transfer, a.retire, a.changeStatus])
+  act(() => root.unmount())
+  root = createRoot(container)
+  disposed()
+  await render(['asset_core.view', 'asset_lifecycle.execute'])
+  expect(buttons()).toEqual([])
+  act(() => root.unmount())
+  root = createRoot(container)
+  await render(['asset_core.view', 'asset_lifecycle.reopen'])
+  expect(buttons()).toEqual([a.changeStatus])
+})
+
+test('transfer: picker excludes the current and inactive locations; a database error shows as a message', async () => {
+  db.results.location = {
+    data: [
+      { id: 'l1', parent_id: null, name: 'Plant 1', active: true },
+      { id: 'l2', parent_id: 'l1', name: 'Bay 3', active: true },
+      { id: 'l3', parent_id: 'l1', name: 'Old shed', active: false },
+      { id: 'l4', parent_id: null, name: 'Plant 2', active: true },
+    ],
+    error: null,
+  }
+  db.results.transfer_asset = { data: null, error: { code: '23514', message: 'location is inactive or deleted' } }
+  await render(['asset_core.view', 'asset_lifecycle.execute'])
+  await act(async () => button(a.transfer).click())
+  const open = [...container.querySelectorAll<HTMLOptionElement>('[name="choice"] option')].filter((o) => o.value && !o.disabled).map((o) => o.value)
+  expect(open).toEqual(['l1', 'l4'])
+  await set('choice', 'l4')
+  await set('reason', 'Line move')
+  await submit()
+  expect(db.rpc.at(-1)).toEqual({ fn: 'transfer_asset', args: { p_asset_id: 'a1', p_to_location_id: 'l4', p_reason: 'Line move' } })
+  expect(container.querySelector('.dialog [role="alert"]')?.textContent).toBe(a.errors.locationInactive)
+})
+
+test('retire: sends disposed with the reason, closes and reloads on success; a missing reason maps', async () => {
+  db.results.change_asset_status = (args: { p_reason: string }) => ({ data: null, error: args.p_reason ? null : { code: '23502', message: 'a reason is required for this status change' } })
+  await render(['asset_core.view', 'asset_lifecycle.execute'])
+  await act(async () => button(a.retire).click())
+  await submit()
+  expect(container.querySelector('.dialog [role="alert"]')?.textContent).toBe(a.errors.reasonRequired)
+  await set('reason', 'Scrapped')
+  await submit()
+  expect(db.rpc.filter((c) => c.fn === 'change_asset_status').at(-1)?.args).toEqual({ p_asset_id: 'a1', p_status: 'disposed', p_reason: 'Scrapped' })
+  expect(container.querySelector('.dialog')).toBeNull()
+  // Reloaded: the page fetched its data again after the action.
+  expect(db.rpc.at(-1)?.fn).toBe('field_domains')
+})
+
+test('change status: offers the B11 next steps for the current status', async () => {
+  await render(['asset_core.view', 'asset_lifecycle.execute'])
+  await act(async () => button(a.changeStatus).click())
+  const values = [...container.querySelectorAll<HTMLOptionElement>('[name="choice"] option')].map((o) => o.value).filter(Boolean)
+  expect(values).toEqual(['under_maintenance', 'inactive'])
+})
+
+test('actionError: codes from the action functions to messages', () => {
+  expect(actionError({ code: '42501' })).toBe(a.errors.noPermission)
+  expect(actionError({ code: 'P0002' })).toBe(a.errors.notFound)
+  expect(actionError({ code: '22023', message: 'asset is already at this location' })).toBe(a.errors.sameLocation)
+  expect(actionError({ code: '22023', message: 'a disposed asset cannot be transferred' })).toBe(a.errors.disposed)
+  expect(actionError({ code: '22023', message: 'status cannot change from active to in_stock' })).toBe(a.errors.statusNotAllowed)
+  expect(actionError({ code: 'XX000' })).toBe(a.errors.failed)
 })

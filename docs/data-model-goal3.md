@@ -292,7 +292,7 @@ Detail page (3.4: the row link goes to the edit form until then), status change 
 
 ## 15. Story 3.4: Asset detail, Overview and Audit tabs
 
-**Status:** in review, 22 Oct 2026. Owner chose H1 a) on 22 Oct 2026. Everything else follows A6, §4.2 and §5. Built in migration `3_4_asset_history`.
+**Status:** done, 22 Oct 2026 (owner accepted). Owner chose H1 a) on 22 Oct 2026. Everything else follows A6, §4.2 and §5. Built in migration `3_4_asset_history`.
 
 **Screen:** `Asset detail` in `assetly-screens.html`. Head: breadcrumb `Assets / <category>`, name, status tag; buttons QR label (3.6), Transfer and Retire (3.5), Edit (3.3 form, shown with `asset_core.update`). 3.4 shows Edit only; the status action belongs to the 3.5 Retire dialog. Tabs: Overview and Audit work; Coverage, Obligations, Service history, BOM and Attachments show disabled (later stories), so the tab bar matches the screen. The Coverage and Obligations cards are left out (no data until Goal 4 and Phase 2).
 
@@ -324,3 +324,51 @@ Details card: tag, category path, location path, make and model, serial, purchas
 ### 15.4 Open items used (lean)
 
 OQ-07 (children listed one level down, no cascade), A5 (vendor fields empty and disabled).
+
+---
+
+## 16. Story 3.5: Transfer between locations, and Retire with reason
+
+**Status:** in review, 22 Oct 2026. Owner accepted every lean (T1 a, T2 a, T3 a, T4 a, T5 b) on 22 Oct 2026. Built in migrations `3_5_location_columns`, `3_5_transfer_write_rules`, `3_5_transfer_asset`.
+
+**As built:** `asset.location_reason` and `location_changed_at` are select-only for users (no insert or update grant) and appended to `asset_view`. Buttons: Transfer and Retire with `asset_lifecycle.execute` on a live asset; Change status with `execute`, or on a Disposed asset with `reopen`. The Audit tab titles a row with `location_reason` "Transferred" and shows `Location: old → new` and the reason. Edit still shows on a Disposed asset (3.3 behaviour, unchanged).
+
+**Screen:** `Asset detail` head has QR label, Transfer, Retire, Edit. The screens file has no dialog for Transfer or Retire, so both follow the 2.2 card and form style as modal dialogs (full width on a phone).
+
+### 16.1 `public.transfer_asset(p_asset_id, p_to_location_id, p_reason)`
+
+| | |
+|---|---|
+| Kind | `security definer`, plpgsql, `search_path = ''`, like `change_asset_status` (§3) |
+| Permission | `asset_core.view` and **`asset_lifecycle.execute`**: the 1.2 catalog says the domain is "Asset lifecycle actions such as transfer and retire". No new operation. Starter grid: Tenant Admin and Plant Manager. Planner, Technician and Auditor get no Transfer or Retire button |
+| Checks, in order | current tenant; permissions; `tenant_can_write()`; asset live in the tenant, locked `for update`; status not `disposed`; target location live, active, same tenant (locked `for share`, so it cannot be deactivated mid-call); target differs from the current location; reason not blank (T4) |
+| Writes | `location_id`, the T1 columns, `updated_by`. The `audit` trigger writes the update row; the function adds outbox event `asset.transferred` `{from, to, reason}`. One transaction |
+| Not changed | tag (§2, labels stay valid), status, quantity (OQ-01: the whole row moves, no partial transfer) |
+| Errors | 42501 not allowed, P0002 asset not found, 22023 disposed / same location, 23514 location inactive or not found, 23502 reason missing. The app maps each to an i18n message |
+| 6.1 | one set-form scope clause on the asset lookup, and one on the target location (a user moves assets only into places in their scope) |
+
+**Write-rule fix:** `check_asset_values` treats `location_id` as data, so a transfer would run the 2.5 mandatory check and an asset missing a newly mandatory field could not move. The status action is exempt (§4.1.6); the transfer is too: add `location_id` and the T1 columns to its skip list. Safe: on update `location_id` is not in the user grant, so only the action changes it.
+
+### 16.2 Retire and other status changes
+
+- **Retire** button: dialog with a reason, calls `change_asset_status(id, 'disposed', reason)`. Shown with `asset_lifecycle.execute` when the asset is not disposed. The function already refuses a blank reason and makes Disposed terminal.
+- **Retired assets in the list:** stay, as today. The list shows every status unless filtered; the Disposed chip filters them. No change (§13).
+- Children: status never cascades (OQ-07, §7).
+
+### 16.3 Tests planned
+
+pgTAP `3_5_transfer.test.sql`: transfer allowed; refused for no `execute`, read-only tenant, cross-tenant location, inactive location, same location, disposed asset, blank reason; plain `update ... set location_id` refused (column grant, 42501); audit row and `asset.transferred` outbox row written; T3 child behaviour; mandatory gap does not block a transfer; retire without reason refused; disposed terminal, reopen with `reopen` and a reason. If T1 b, the table gets the 1.4 tests and `tests.cross_tenant`. Web: picker excludes the current and inactive locations; dialogs map errors; buttons hidden without `asset_lifecycle.execute`.
+
+### 16.4 DECIDE
+
+| # | Question | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| T1 (chose a) | "With history": where the transfer reason and time live | **a)** Two columns on `asset`, `location_reason text`, `location_changed_at timestamptz`, like `status_reason`/`status_changed_at`. The audit row then holds from, to, reason, by, when; the Audit tab shows it with no change to `asset_history`. "Where was it on date X" reads `audit_log` (`audit_log_record_idx`). **b)** New `asset_transfer` table (from, to, reason, by, at), 1.4 pattern, `tests.cross_tenant`; `asset_history` adds its rows. Faster location-on-date reports | a. Phase 1 has no location report; a later table backfills from the audit rows | Low: b later = new table + backfill from `audit_log` |
+| T2 (chose a) | Back-dated effective date | **a)** No: the transfer happens now. **b)** Optional past date, not before the start of the open fiscal year | a. Only depreciation (Phase 2) cares about the date; b then adds one argument | Low |
+| T3 (chose a) | Children (OQ-07) | **a)** Stay put: transfer moves one row, like status (OQ-07 "nothing cascades"). **b)** The whole live subtree moves in the same call, one audit row each. **c)** Checkbox "also move N child assets", default on | a. Matches OQ-07 and keeps one row per call; a component sent out for repair is a separate move anyway. Ask users with OQ-07 | Low: b or c is a loop in the function and a checkbox |
+| T4 (chose a) | Reason | **a)** Free text, required for transfer and retire. **b)** Reason list as data (new table, per tenant) plus a note. **c)** Free text, optional for transfer | a. `status_reason` is already text; a list can come with 3.7 tenant statuses | Low for a to b (reasons stay text) |
+| T5 (chose b) | Other status changes (Active, Under maintenance, Inactive, reopen) | **a)** Only Retire now, per the screens; the rest wait. **b)** Also a "Change status" button: a dialog with the B11 next steps for the current status (and reopen with `asset_lifecycle.reopen`), reason box shown when required | b. The function exists; without it Under maintenance and reopen cannot be used or checked by hand. One small dialog, one extra button beside Retire | Low: UI only |
+
+### 16.5 Open items used (lean)
+
+OQ-01 (no partial transfer), OQ-04 (Disposed terminal, admin reopen with a reason), OQ-07 (T3).
