@@ -85,7 +85,7 @@
 | 3.2 | Assets list: filters (including In Stock), search, pagination, saved views | | Done |
 | 3.3 | Add and edit asset form, driven by category fields and mandatory rules | OQ-06 | Done |
 | 3.4 | Asset detail: Overview tab and Audit tab | | Done |
-| 3.5 | Transfer between locations with history, and Retire with reason | OQ-01, OQ-04, OQ-07 | In review |
+| 3.5 | Transfer between locations with history, and Retire with reason | OQ-01, OQ-04, OQ-07 | Done |
 | 3.6 | Attachments (per-tenant storage) and QR label with scan-to-open | OQ-02 | Todo |
 | 3.7 | Tenant asset statuses: each maps to one of the 5 system statuses, ordered status sets attached to categories (inherited from the nearest parent), any later step or back within B11. Adds `asset.status_id` | OQ-04 | Todo |
 | 3.8 | Settings: asset tag pattern field with a live sample tag (`set_asset_tag_pattern()`), and a Code field on the category form (for `{CAT}`) | | Todo |
