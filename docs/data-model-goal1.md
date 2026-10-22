@@ -196,9 +196,9 @@ Grant matrix. The migration `1_6_starter_groups` and the test `1_6_starter_group
 
 | Domain | Tenant Admin | Plant Manager | Planner | Technician | Auditor |
 |---|---|---|---|---|---|
-| `asset_core` | view, create, update, delete | view, create, update, delete | view, update | view | view |
+| `asset_core` | view, create, update, delete, set_tag | view, create, update, delete, set_tag | view, update | view | view |
 | `asset_financials` | view, update | view | – | – | view |
-| `asset_lifecycle` | execute | execute | – | – | – |
+| `asset_lifecycle` | execute, reopen | execute | – | – | – |
 | `vendor_core` | view, create, update, delete | view, create, update | view | view | view |
 | `vendor_tax_ids` | view, update | view | – | – | view |
 | `coverage_contract` | view, create, update, delete | view, create, update | view, create, update | view | view |

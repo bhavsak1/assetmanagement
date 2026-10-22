@@ -5,16 +5,72 @@ export type Database = {
   
   "public": {
           Tables: {
-            "asset_category": {
+            "asset": {
                   Row: {
-                    "created_at": string,"created_by": string | null,"deleted_at": string | null,"description": string | null,"id": string,"is_active": boolean,"name": string,"parent_id": string | null,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                    "category_id": string,"created_at": string,"created_by": string | null,"criticality": string | null,"custom_values": NonNullable<Json>,"deleted_at": string | null,"id": string,"in_service_date": string | null,"location_id": string | null,"manufacturer": string | null,"model": string | null,"name": string,"parent_asset_id": string | null,"purchase_currency": string | null,"purchase_date": string | null,"purchase_value": number | null,"quantity": number,"serial_number": string | null,"status": string,"status_changed_at": string | null,"status_reason": string | null,"tag": string,"tenant_id": string,"updated_at": string,"updated_by": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"description"?: string | null,"id"?: string,"is_active"?: boolean,"name": string,"parent_id"?: string | null,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                    "category_id": string,"created_at"?: string,"created_by"?: string | null,"criticality"?: string | null,"custom_values"?: NonNullable<Json>,"deleted_at"?: string | null,"id"?: string,"in_service_date"?: string | null,"location_id"?: string | null,"manufacturer"?: string | null,"model"?: string | null,"name": string,"parent_asset_id"?: string | null,"purchase_currency"?: string | null,"purchase_date"?: string | null,"purchase_value"?: number | null,"quantity"?: number,"serial_number"?: string | null,"status"?: string,"status_changed_at"?: string | null,"status_reason"?: string | null,"tag": string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Update: {
-                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"description"?: string | null,"id"?: string,"is_active"?: boolean,"name"?: string,"parent_id"?: string | null,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                    "category_id"?: string,"created_at"?: string,"created_by"?: string | null,"criticality"?: string | null,"custom_values"?: NonNullable<Json>,"deleted_at"?: string | null,"id"?: string,"in_service_date"?: string | null,"location_id"?: string | null,"manufacturer"?: string | null,"model"?: string | null,"name"?: string,"parent_asset_id"?: string | null,"purchase_currency"?: string | null,"purchase_date"?: string | null,"purchase_value"?: number | null,"quantity"?: number,"serial_number"?: string | null,"status"?: string,"status_changed_at"?: string | null,"status_reason"?: string | null,"tag"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "asset_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "asset_tenant_id_category_id_fkey"
+      columns: ["tenant_id","category_id"]
+isOneToOne: false
+      referencedRelation: "asset_category"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "asset_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "asset_tenant_id_location_id_fkey"
+      columns: ["tenant_id","location_id"]
+isOneToOne: false
+      referencedRelation: "location"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "asset_tenant_id_parent_asset_id_fkey"
+      columns: ["tenant_id","parent_asset_id"]
+isOneToOne: false
+      referencedRelation: "asset"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "asset_tenant_id_parent_asset_id_fkey"
+      columns: ["tenant_id","parent_asset_id"]
+isOneToOne: false
+      referencedRelation: "asset_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "asset_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"asset_category": {
+                  Row: {
+                    "code": string | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"description": string | null,"id": string,"is_active": boolean,"name": string,"parent_id": string | null,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "code"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"description"?: string | null,"id"?: string,"is_active"?: boolean,"name": string,"parent_id"?: string | null,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "code"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"description"?: string | null,"id"?: string,"is_active"?: boolean,"name"?: string,"parent_id"?: string | null,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Relationships: [
                     {
@@ -295,14 +351,14 @@ isOneToOne: false
                   ]
                 },"tenant": {
                   Row: {
-                    "created_at": string,"created_by": string | null,"currency_code": string,"date_format": string,"deleted_at": string | null,"fiscal_year_start_month": number,"id": string,"locale": string,"name": string,"required_asset_fields": (string)[],"slug": string,"status": string,"time_zone": string,"updated_at": string,"updated_by": string | null
+                    "asset_tag_pattern": string,"created_at": string,"created_by": string | null,"currency_code": string,"date_format": string,"deleted_at": string | null,"fiscal_year_start_month": number,"id": string,"locale": string,"name": string,"required_asset_fields": (string)[],"slug": string,"status": string,"time_zone": string,"updated_at": string,"updated_by": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"created_by"?: string | null,"currency_code": string,"date_format": string,"deleted_at"?: string | null,"fiscal_year_start_month": number,"id"?: string,"locale": string,"name": string,"required_asset_fields"?: (string)[],"slug": string,"status"?: string,"time_zone": string,"updated_at"?: string,"updated_by"?: string | null
+                    "asset_tag_pattern"?: string,"created_at"?: string,"created_by"?: string | null,"currency_code": string,"date_format": string,"deleted_at"?: string | null,"fiscal_year_start_month": number,"id"?: string,"locale": string,"name": string,"required_asset_fields"?: (string)[],"slug": string,"status"?: string,"time_zone": string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Update: {
-                    "created_at"?: string,"created_by"?: string | null,"currency_code"?: string,"date_format"?: string,"deleted_at"?: string | null,"fiscal_year_start_month"?: number,"id"?: string,"locale"?: string,"name"?: string,"required_asset_fields"?: (string)[],"slug"?: string,"status"?: string,"time_zone"?: string,"updated_at"?: string,"updated_by"?: string | null
+                    "asset_tag_pattern"?: string,"created_at"?: string,"created_by"?: string | null,"currency_code"?: string,"date_format"?: string,"deleted_at"?: string | null,"fiscal_year_start_month"?: number,"id"?: string,"locale"?: string,"name"?: string,"required_asset_fields"?: (string)[],"slug"?: string,"status"?: string,"time_zone"?: string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Relationships: [
                     {
@@ -462,7 +518,63 @@ isOneToOne: false
                 }
           }
           Views: {
-            "my_permission": {
+            "asset_view": {
+                  Row: {
+                    "category_id": string | null,"created_at": string | null,"created_by": string | null,"criticality": string | null,"custom_values": Json | null,"id": string | null,"in_service_date": string | null,"location_id": string | null,"manufacturer": string | null,"model": string | null,"name": string | null,"parent_asset_id": string | null,"purchase_currency": string | null,"purchase_date": string | null,"purchase_value": number | null,"quantity": number | null,"serial_number": string | null,"status": string | null,"status_changed_at": string | null,"status_reason": string | null,"tag": string | null,"tenant_id": string | null,"updated_at": string | null,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                           "category_id"?: string | null,"created_at"?: string | null,"created_by"?: string | null,"criticality"?: string | null,"custom_values"?: never,"id"?: string | null,"in_service_date"?: string | null,"location_id"?: string | null,"manufacturer"?: string | null,"model"?: string | null,"name"?: string | null,"parent_asset_id"?: string | null,"purchase_currency"?: never,"purchase_date"?: string | null,"purchase_value"?: never,"quantity"?: number | null,"serial_number"?: string | null,"status"?: string | null,"status_changed_at"?: string | null,"status_reason"?: string | null,"tag"?: string | null,"tenant_id"?: string | null,"updated_at"?: string | null,"updated_by"?: string | null
+                         }
+                        Update: {
+                           "category_id"?: string | null,"created_at"?: string | null,"created_by"?: string | null,"criticality"?: string | null,"custom_values"?: never,"id"?: string | null,"in_service_date"?: string | null,"location_id"?: string | null,"manufacturer"?: string | null,"model"?: string | null,"name"?: string | null,"parent_asset_id"?: string | null,"purchase_currency"?: never,"purchase_date"?: string | null,"purchase_value"?: never,"quantity"?: number | null,"serial_number"?: string | null,"status"?: string | null,"status_changed_at"?: string | null,"status_reason"?: string | null,"tag"?: string | null,"tenant_id"?: string | null,"updated_at"?: string | null,"updated_by"?: string | null
+                         }
+                        Relationships: [
+                    {
+      foreignKeyName: "asset_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "asset_tenant_id_category_id_fkey"
+      columns: ["tenant_id","category_id"]
+isOneToOne: false
+      referencedRelation: "asset_category"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "asset_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "asset_tenant_id_location_id_fkey"
+      columns: ["tenant_id","location_id"]
+isOneToOne: false
+      referencedRelation: "location"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "asset_tenant_id_parent_asset_id_fkey"
+      columns: ["tenant_id","parent_asset_id"]
+isOneToOne: false
+      referencedRelation: "asset"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "asset_tenant_id_parent_asset_id_fkey"
+      columns: ["tenant_id","parent_asset_id"]
+isOneToOne: false
+      referencedRelation: "asset_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "asset_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"my_permission": {
                   Row: {
                     "domain": string | null,"operation": string | null
                   }
@@ -473,13 +585,19 @@ isOneToOne: false
                 }
           }
           Functions: {
-            "field_domains":
+            "change_asset_status":
+{ Args: { "p_asset_id": string,"p_reason"?: string,"p_status": string }; Returns: undefined
+                           },
+"field_domains":
 { Args: { "p_entity": string }; Returns: {
               "code": string,"id": string
             }[]
                            },
 "select_tenant":
 { Args: { "p_tenant_id": string }; Returns: undefined
+                           },
+"set_asset_tag_pattern":
+{ Args: { "p_pattern": string }; Returns: undefined
                            },
 "update_tenant_settings":
 { Args: { "p_currency_code": string,"p_date_format": string,"p_fiscal_year_start_month": number,"p_locale": string,"p_required_asset_fields": (string)[],"p_time_zone": string }; Returns: undefined
