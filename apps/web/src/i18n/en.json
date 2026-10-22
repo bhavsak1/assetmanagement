@@ -197,5 +197,54 @@
     "security": "Security",
     "settings": "Settings",
     "empty": "This screen is not built yet."
+  },
+  "assets": {
+    "subtitle": "{count} assets",
+    "manyCount": "10,000+",
+    "filter": "Filter by name, tag or serial number",
+    "location": "Location",
+    "allLocations": "All locations",
+    "category": "Category",
+    "allCategories": "All categories",
+    "status": "Status",
+    "allStatuses": "All statuses",
+    "sort": "Sort",
+    "sorts": {
+      "name": "Name A–Z",
+      "tag": "Tag",
+      "updated": "Recently updated"
+    },
+    "statuses": {
+      "in_stock": "In Stock",
+      "active": "Active",
+      "under_maintenance": "Under maintenance",
+      "inactive": "Inactive",
+      "disposed": "Disposed"
+    },
+    "col": {
+      "tag": "Tag",
+      "name": "Name",
+      "category": "Category",
+      "location": "Location",
+      "status": "Status"
+    },
+    "loading": "Loading assets…",
+    "none": "No assets yet.",
+    "noMatch": "No assets match these filters.",
+    "showing": "Showing {from}–{to} of {count}",
+    "previous": "Previous",
+    "next": "Next",
+    "views": {
+      "label": "Saved views",
+      "save": "Save view",
+      "delete": "Delete view",
+      "namePrompt": "Name for this view",
+      "deleteConfirm": "Delete the saved view \"{name}\"?",
+      "duplicate": "You already have a view with this name.",
+      "saveError": "Could not save the view. Try again."
+    },
+    "errors": {
+      "load": "Could not load assets. Try again."
+    }
   }
 }

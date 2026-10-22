@@ -15,6 +15,7 @@ const auth = vi.hoisted(() => ({
   refreshSession: vi.fn(),
   rpc: vi.fn(),
   memberships: [] as { tenant_id: string; tenant: { name: string; status: string; deleted_at: null } }[],
+  entitlements: [] as { id: string }[],
 }))
 
 vi.mock('./supabase', () => ({
@@ -29,11 +30,13 @@ vi.mock('./supabase', () => ({
       refreshSession: auth.refreshSession,
     },
     rpc: auth.rpc,
-    // tenant_membership query: select().eq().eq().is() resolves to the mocked rows.
-    // my_permission: select() resolves to no grants.
+    // Any query chain; awaiting it gives the mocked memberships or entitlements, else no rows
+    // (my_permission: no grants).
     from: (table: string) => {
-      if (table === 'my_permission') return { select: () => Promise.resolve({ data: [] }) }
-      const q = { select: () => q, eq: () => q, is: () => Promise.resolve({ data: auth.memberships }) }
+      const q: Record<string, unknown> = {}
+      for (const m of ['select', 'eq', 'is', 'lte', 'or', 'order', 'limit']) q[m] = () => q
+      const data = table === 'tenant_membership' ? auth.memberships : table === 'tenant_entitlement' ? auth.entitlements : []
+      q.then = (resolve: (v: unknown) => void) => resolve({ data, error: null })
       return q
     },
   },
@@ -64,6 +67,7 @@ const session = (claims: object = {}) => ({
 
 beforeEach(() => {
   auth.memberships = []
+  auth.entitlements = []
   auth.rpc.mockResolvedValue({ error: null })
   auth.refreshSession.mockResolvedValue({ error: null })
 })
@@ -95,6 +99,19 @@ test('signed in with a tenant: protected route renders, and sign out returns to 
   expect(container.textContent).toContain('Tenant A')
   act(() => auth.listener?.('SIGNED_OUT', null))
   expect(heading()).toBe(t.pages.login)
+})
+
+test('Ask Assetly and Intelligence show only with the AI add-on', async () => {
+  auth.memberships = [membership('ta', 'Tenant A')]
+  await render('/dashboard', session({ tenant_id: 'ta' }))
+  expect(container.textContent).not.toContain(t.topbar.askAssetly)
+  expect(container.textContent).not.toContain(t.nav.groups.intelligence)
+  act(() => root.unmount())
+  root = createRoot(container)
+  auth.entitlements = [{ id: 'e1' }]
+  await render('/dashboard', session({ tenant_id: 'ta' }))
+  expect(container.textContent).toContain(t.topbar.askAssetly)
+  expect(container.textContent).toContain(t.nav.groups.intelligence)
 })
 
 test('failed sign in shows one generic message', async () => {

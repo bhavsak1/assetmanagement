@@ -303,6 +303,50 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"saved_view": {
+                  Row: {
+                    "created_at": string,"created_by": string | null,"deleted_at": string | null,"entity": string,"filters": NonNullable<Json>,"id": string,"name": string,"sort": string,"tenant_id": string,"updated_at": string,"updated_by": string | null,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"entity": string,"filters"?: NonNullable<Json>,"id"?: string,"name": string,"sort"?: string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null,"user_id"?: string
+                  }
+                  Update: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"entity"?: string,"filters"?: NonNullable<Json>,"id"?: string,"name"?: string,"sort"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "saved_view_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "saved_view_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "saved_view_tenant_id_user_id_fkey"
+      columns: ["tenant_id","user_id"]
+isOneToOne: false
+      referencedRelation: "tenant_membership"
+      referencedColumns: ["tenant_id","user_id"]
+    },{
+      foreignKeyName: "saved_view_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "saved_view_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"security_domain": {
                   Row: {
                     "code": string,"created_at": string,"description": string,"entity": string,"id": string,"is_system": boolean,"kind": string,"updated_at": string
@@ -588,11 +632,47 @@ isOneToOne: false
             "change_asset_status":
 { Args: { "p_asset_id": string,"p_reason"?: string,"p_status": string }; Returns: undefined
                            },
+"count_assets":
+{ Args: { "p_category_id"?: string,"p_location_id"?: string,"p_status"?: string,"p_term"?: string }; Returns: number
+                           },
 "field_domains":
 { Args: { "p_entity": string }; Returns: {
               "code": string,"id": string
             }[]
                            },
+"list_assets":
+{ Args: { "p_after_id"?: string,"p_after_value"?: string,"p_category_id"?: string,"p_limit"?: number,"p_location_id"?: string,"p_sort"?: string,"p_status"?: string,"p_term"?: string }; Returns: {
+              "category_id": string | null,
+"created_at": string | null,
+"created_by": string | null,
+"criticality": string | null,
+"custom_values": Json | null,
+"id": string | null,
+"in_service_date": string | null,
+"location_id": string | null,
+"manufacturer": string | null,
+"model": string | null,
+"name": string | null,
+"parent_asset_id": string | null,
+"purchase_currency": string | null,
+"purchase_date": string | null,
+"purchase_value": number | null,
+"quantity": number | null,
+"serial_number": string | null,
+"status": string | null,
+"status_changed_at": string | null,
+"status_reason": string | null,
+"tag": string | null,
+"tenant_id": string | null,
+"updated_at": string | null,
+"updated_by": string | null
+            }[]
+                          SetofOptions: {
+        from: "*"
+        to: "asset_view"
+        isOneToOne: false
+        isSetofReturn: true
+      } },
 "select_tenant":
 { Args: { "p_tenant_id": string }; Returns: undefined
                            },
