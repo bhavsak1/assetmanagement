@@ -12,6 +12,7 @@ create temp table expected (domain_code, tenant_admin, plant_manager, planner, t
   ('asset_core',         '{view,create,update,delete,set_tag}'::text[], '{view,create,update,delete,set_tag}'::text[], '{view,update}'::text[], '{view}'::text[], '{view}'::text[]),
   ('asset_financials',   '{view,update}',                 '{view}',                         '{}',                             '{}',                             '{view}'),
   ('asset_lifecycle',    '{execute,reopen}',              '{execute}',                      '{}',                             '{}',                             '{}'),
+  ('asset_attachment',   '{view,create,delete}',          '{view,create,delete}',           '{view,create}',                  '{view,create}',                  '{view}'),
   ('vendor_core',        '{view,create,update,delete}',   '{view,create,update}',           '{view}',                         '{view}',                         '{view}'),
   ('vendor_tax_ids',     '{view,update}',                 '{view}',                         '{}',                             '{}',                             '{view}'),
   ('coverage_contract',  '{view,create,update,delete}',   '{view,create,update}',           '{view,create,update}',           '{view}',                         '{view}'),
@@ -136,6 +137,13 @@ select c.tenant_id, c.name, c.id from public.asset_category c where c.name in ('
 insert into public.saved_view (tenant_id, user_id, entity, name)
 select t, '00000000-0000-0000-0000-0000000000a1', 'asset', 'row'
 from unnest(array['00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b']::uuid[]) t;
+-- 3.6: an attachment needs its stored file first. No user claims, so the uploader check does not apply.
+select set_config('request.jwt.claims', '', true);
+insert into storage.objects (bucket_id, name, metadata)
+select 'attachments', a.tenant_id || '/asset/' || a.id || '/' || a.id, '{"size": 1, "mimetype": "text/plain"}'
+from public.asset a where a.name in ('a-row', 'b-row');
+insert into public.asset_attachment (id, tenant_id, asset_id, file_name)
+select a.id, a.tenant_id, a.id, 'row' from public.asset a where a.name in ('a-row', 'b-row');
 select is(array(select name from tenant_table where pg_temp.count_rows(name, $$tenant_id = '00000000-0000-0000-0000-00000000000b'$$) = 0 order by 1),
           '{}', 'every public tenant_id table holds tenant B rows to hide');
 -- One test per tenant A user, each acting as that user over every table. Plain queries, so RLS decides.

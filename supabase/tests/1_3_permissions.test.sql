@@ -107,7 +107,7 @@ select ok(not private.has_permission('vendor_core', 'view'), 'operation only the
 -- Policies as a1 in A, a security admin.
 select results_eq(
   'select (select count(*)::int from public.security_domain), (select count(*)::int from public.domain_operation)',
-  $$values (21, 53)$$, 'security admin reads the catalog (incl. rls_sample, 1.4)'
+  $$values (22, 56)$$, 'security admin reads the catalog (incl. rls_sample, 1.4)'
 );
 -- code filter: the seed also gives each tenant the five 1.6 starter groups.
 select is((select count(*)::int from public.security_group where code like 'test\_%'), 5, 'admin reads only current tenant groups');

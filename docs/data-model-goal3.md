@@ -377,7 +377,15 @@ OQ-01 (no partial transfer), OQ-04 (Disposed terminal, admin reopen with a reaso
 
 ## 17. Story 3.6: Attachments and QR label
 
-**Status:** design, 22 Oct 2026. Waiting for the owner on DECIDE (17.5). No migration yet.
+**Status:** in review, 22 Oct 2026. Owner accepted every lean (Z1 to Z9) on 22 Oct 2026. 3.6 builds attachments in migrations `3_6_attachment_domain`, `3_6_asset_attachment`, `3_6_attachment_storage`; QR is story 3.6b.
+
+**As built (differences from the design below):**
+- Domain `asset_attachment` has `entity = 'attachment'`, not `'asset'`, so it is not offered as a custom-field domain (`field_domains('asset')`).
+- Upload is allowed on any live (not soft-deleted) asset, Disposed included: a disposal certificate belongs on the disposed asset.
+- The row insert trigger also checks the uploader: a user can only claim a file whose storage `owner_id` is them (system writes skip this).
+- The tab reads `public.asset_attachments(p_asset_id)` (invoker, RLS decides) with the uploader's name from `private.member_name()`, the H1 a rule (active member of the current tenant, name only).
+- Upload uses XHR to the Storage endpoint for progress (supabase-js has no progress events), same path and headers.
+- Users have no storage update or delete policy; Storage also blocks direct SQL deletes on its own.
 
 **Owner review (CLAUDE.md §9):** file access. Storage policies, signed URLs, the attachment RLS and the scan route.
 
@@ -440,7 +448,7 @@ Why select checks the row and not only the path: a soft-deleted attachment, or a
 
 ### 17.6 Tests planned
 
-pgTAP `3_6_attachments.test.sql`: storage insert refused for another tenant's path, a bad path, a disposed or other-tenant asset, no `create`, read-only tenant; select refused for another tenant, no `view`, a soft-deleted row, an object with no row; no user update or delete of objects; row insert refused when the object is missing; mime and size come from the object; soft delete needs `delete`; `tests.cross_tenant('public.asset_attachment', ...)`. Web: type and size checks before upload, buttons hidden without the operations, list and soft delete.
+pgTAP `3_6_attachments.test.sql`: storage insert refused for another tenant's path, a bad path, a soft-deleted or other-tenant asset, no `create`, read-only tenant; select refused for another tenant, no `view`, a soft-deleted row, an object with no row; no user update or delete of objects; row insert refused when the object is missing; mime and size come from the object; soft delete needs `delete`; `tests.cross_tenant('public.asset_attachment', ...)`. Web: type and size checks before upload, buttons hidden without the operations, list and soft delete.
 
 ### 17.7 Open items used (lean)
 

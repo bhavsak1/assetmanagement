@@ -569,6 +569,16 @@ td.actions {
   text-decoration: none;
 }
 
+button.row-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: var(--weight-medium);
+  text-align: left;
+  cursor: pointer;
+}
+
 @media (max-width: 767px) {
   .filters .search,
   .filters .filter {

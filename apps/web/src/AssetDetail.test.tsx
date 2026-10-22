@@ -135,6 +135,13 @@ test('overview: paths, status tag, masked money and custom field show as Hidden,
   expect([...container.querySelectorAll('.kv .tag')].map((x) => x.textContent)).toEqual([t.assetDetail.hidden, t.assetDetail.hidden])
   expect(container.textContent).not.toContain(t.assetDetail.edit)
   expect(button(t.assetDetail.tabs.coverage).disabled).toBe(true)
+  expect(button(t.assetDetail.tabs.attachments).disabled).toBe(true)
+})
+
+test('attachments: tab opens with asset_attachment.view', async () => {
+  await render(['asset_core.view', 'asset_attachment.view'])
+  await act(async () => button(t.assetDetail.tabs.attachments).click())
+  expect(container.textContent).toContain(t.assetDetail.attachments.none)
 })
 
 test('overview: Edit links to the form with update', async () => {

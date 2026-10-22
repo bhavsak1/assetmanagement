@@ -343,6 +343,27 @@
         "failed": "Could not save. Try again."
       }
     },
+    "attachments": {
+      "upload": "Upload file",
+      "uploading": "Uploading",
+      "limits": "Photos, PDF, Office or text files, up to 10 MB.",
+      "name": "File",
+      "size": "Size",
+      "by": "Uploaded by",
+      "when": "Uploaded",
+      "delete": "Delete",
+      "deleteConfirm": "Delete the attachment \"{name}\"?",
+      "none": "No attachments yet.",
+      "kb": "{n} KB",
+      "mb": "{n} MB",
+      "badType": "This file type is not allowed. Use a photo (JPEG, PNG, WebP, HEIC), PDF, Office or text file.",
+      "tooBig": "The file is larger than 10 MB.",
+      "empty": "The file is empty.",
+      "uploadError": "Could not upload the file. Try again.",
+      "openError": "Could not open the file. Try again.",
+      "deleteError": "Could not delete the attachment.",
+      "loadError": "Could not load the attachments. Try again."
+    },
     "hidden": "Hidden",
     "loading": "Loading…",
     "notFound": "This asset does not exist or you cannot see it.",
