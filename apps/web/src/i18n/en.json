@@ -299,5 +299,36 @@
       "locationInactive": "Pick an active location.",
       "generic": "Could not save. Try again."
     }
+  },
+  "assetDetail": {
+    "edit": "Edit",
+    "tabs": {
+      "overview": "Overview",
+      "coverage": "Coverage",
+      "obligations": "Obligations",
+      "service": "Service history",
+      "bom": "BOM",
+      "attachments": "Attachments",
+      "audit": "Audit"
+    },
+    "laterHint": "Arrives in a later release.",
+    "makeModel": "Make / model",
+    "purchase": "Purchase",
+    "statusReason": "Status reason",
+    "children": "Parts",
+    "hidden": "Hidden",
+    "loading": "Loading…",
+    "notFound": "This asset does not exist or you cannot see it.",
+    "history": {
+      "created": "Created",
+      "updated": "Updated",
+      "statusChanged": "Status changed",
+      "deleted": "Deleted",
+      "system": "System",
+      "formerMember": "Former member",
+      "none": "No history yet.",
+      "more": "Load more",
+      "error": "Could not load the history. Try again."
+    }
   }
 }

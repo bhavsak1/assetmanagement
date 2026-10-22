@@ -610,3 +610,84 @@ a.btn {
   align-items: center;
   text-decoration: none;
 }
+
+/* Asset detail (3.4): tab bar and key-value cards from the Asset detail screen. */
+.tabs {
+  display: flex;
+  gap: var(--space-8);
+  margin-top: var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+}
+
+.tabs button {
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font: inherit;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tabs button.on {
+  border-bottom-color: var(--color-primary);
+  color: var(--color-primary-dark);
+  font-weight: var(--weight-medium);
+}
+
+.tabs button:disabled {
+  color: var(--color-icon);
+  cursor: default;
+}
+
+.detail {
+  margin-top: var(--space-6);
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 10px 12px;
+  margin: 14px 0 0;
+}
+
+.kv dt {
+  color: var(--color-text-muted);
+}
+
+.kv dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kv .tag,
+.history .tag {
+  margin-left: 0;
+}
+
+.history ol,
+.history ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history ol > li + li {
+  margin-top: var(--space-6);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--color-divider);
+}
+
+.history ul {
+  margin-top: var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 767px) {
+  .kv {
+    grid-template-columns: 110px 1fr;
+  }
+}

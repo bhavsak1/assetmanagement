@@ -21,10 +21,11 @@ update public.rls_sample set deleted_at = now() where id = '00000000-0000-0000-0
 reset role;
 select results_eq(
   $$select action, category, actor_type, actor_user_id, table_name from public.audit_log
-    where record_id = '00000000-0000-0000-0000-0000000015a1' order by occurred_at, action$$,
+    where record_id = '00000000-0000-0000-0000-0000000015a1' order by occurred_at$$,
+  -- occurred_at is the write time since 3.4, so rows of one transaction keep their order.
   $$values ('insert', 'data', 'user', '00000000-0000-0000-0000-0000000000a1'::uuid, 'rls_sample'),
-           ('soft_delete', 'data', 'user', '00000000-0000-0000-0000-0000000000a1'::uuid, 'rls_sample'),
-           ('update', 'data', 'user', '00000000-0000-0000-0000-0000000000a1'::uuid, 'rls_sample')$$,
+           ('update', 'data', 'user', '00000000-0000-0000-0000-0000000000a1'::uuid, 'rls_sample'),
+           ('soft_delete', 'data', 'user', '00000000-0000-0000-0000-0000000000a1'::uuid, 'rls_sample')$$,
   'insert, update and soft delete each write one audit row'
 );
 select results_eq(
