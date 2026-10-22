@@ -82,8 +82,8 @@
 | ID | Story | Open items | Status |
 |---|---|---|---|
 | 3.1 | Asset table, status lifecycle, identifiers, JSONB custom values, RLS | OQ-01, OQ-04, OQ-07 | Done |
-| 3.2 | Assets list: filters (including In Stock), search, pagination, saved views | | In review |
-| 3.3 | Add and edit asset form, driven by category fields and mandatory rules | OQ-06 | Todo |
+| 3.2 | Assets list: filters (including In Stock), search, pagination, saved views | | Done |
+| 3.3 | Add and edit asset form, driven by category fields and mandatory rules | OQ-06 | In review |
 | 3.4 | Asset detail: Overview tab and Audit tab | | Todo |
 | 3.5 | Transfer between locations with history, and Retire with reason | | Todo |
 | 3.6 | Attachments (per-tenant storage) and QR label with scan-to-open | OQ-02 | Todo |

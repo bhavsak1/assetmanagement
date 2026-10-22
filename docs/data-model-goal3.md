@@ -1,6 +1,6 @@
 # Goal 3 data model: asset (story 3.1)
 
-**Status:** in review, 22 Oct 2026. Owner answered A1 to A6 on 22 Oct 2026 (section 9). Built in the `3_1_*` migrations.
+**Status:** done, 22 Oct 2026. Owner answered A1 to A6 on 22 Oct 2026 (section 9). Built in the `3_1_*` migrations.
 
 **Reads with:** CLAUDE.md §6 to §8, `security-model.md` §4 and §8, [data-model-goal1.md](data-model-goal1.md) §1 (conventions) and D7, [data-model-goal2.md](data-model-goal2.md) §1.2, §2 and §5 (fields, values, 2.5 mandatory rules), [data-model-goal2-locations.md](data-model-goal2-locations.md), [spike-1-7-rls-performance.md](spike-1-7-rls-performance.md) §3 and §6.
 
@@ -183,7 +183,7 @@ UI (3.2 to 3.4), search helper and trigram index (3.2), transfer and history (3.
 
 ## 13. Story 3.2: Assets list, search, saved views
 
-**Status:** in review, 22 Oct 2026. Owner accepted every lean (S1a to S5a) on 22 Oct 2026. Built in the `3_2_*` migrations.
+**Status:** done, 22 Oct 2026. Owner accepted every lean (S1a to S5a) on 22 Oct 2026. Built in the `3_2_*` migrations.
 
 **Screen:** `Assets` in `assetly-screens.html`. Columns Tag, Name, Category, Location, Status. Filters: text box, Location, Category, Status (In Stock included, open-items change #5), Saved views. Count "Showing 1–50 of N", Previous and Next.
 
@@ -243,3 +243,47 @@ filters: {"q": text, "status": text, "category_id": uuid, "location_id": uuid}
 | S5 | Total count | **a)** Exact, capped: "10,000+" past 10,000 (spike: exact count of 200k is 84 to 146 ms). **b)** Exact always. **c)** PostgREST estimate | a | Low |
 
 **No decision needed:** the trigram index and search helper follow spike F5 and §8. Hide "Ask Assetly" and the Intelligence nav group when the tenant has no live `ai_addon` row in `tenant_entitlement` (CLAUDE.md §11; `tenant_entitlement` is readable by members since 1.1). Status filter labels and tag colours: Active green, In Stock and Inactive grey, Under maintenance amber, Disposed red, from `tokens.css`.
+
+---
+
+## 14. Story 3.3: Add and edit asset form
+
+**Status:** in review, 22 Oct 2026. No DECIDE item: 3.1 already fixed the write path and the hidden-value rules. 3.3 closes two gaps in them (14.2) and builds the form. Built in migration `3_3_asset_write_rules`.
+
+**Screen:** `assetly-screens.html` has no Add or Edit asset screen. The form follows the 2.2 and 2.5 card style and the field order of the Asset detail Details card (tag, category, location, make and model, serial, purchase, criticality).
+
+### 14.1 Write path (from 3.1, no choice left)
+
+- **Direct writes on `asset`** under RLS, the column grants (§3) and the `check_asset_values` trigger (§4.1). No create or update action function. The app inserts with a client `id` (`crypto.randomUUID()`, in the insert grant), updates by `id`, and reads back through `asset_view`.
+- **Status on create:** a two-choice select, Active (the table default, §1) or In Stock (the only insert statuses, §3). Later changes only through `change_asset_status` (3.5 builds the dialog). The edit form shows status read-only.
+- **Location on edit:** read-only. `location_id` is not in the update grant; it changes through the 3.5 transfer.
+- **Tag:** empty means generated on save (A1). The field is editable only with `asset_core.set_tag`; without it the form says "Generated on save" (create) or shows the tag read-only (edit).
+- **Parent (OQ-07):** typed as the parent's tag and looked up in `asset_view` (`tag = upper(input)`, the tag index). A select of every asset does not scale. The trigger's cycle and depth errors show on the field.
+- **Vendor (OQ-06, A5):** OEM vendor and O&M vendor show empty and disabled, with a note that vendors come in Goal 4. 4.1 adds the columns.
+
+### 14.2 Hidden keys and columns on save (database guarantees)
+
+| Case | Guarantee | Where |
+|---|---|---|
+| Custom key the user cannot view | Kept as stored, whatever the client sends | 3.1 trigger (§4.1.2) |
+| Custom key the user can view, not update (read-only on the form) | Sent back unchanged, allowed. **Gap closed:** omitting it (removing the key) is now refused with 42501, like a change | `3_3_asset_write_rules` |
+| `purchase_value`, `purchase_currency` | A plain update only writes the columns it names, so the form leaves them out when hidden. A change needs `asset_financials.update` (3.1). **Gap closed:** it now also needs `asset_financials.view`, so a user who cannot see the value cannot overwrite or blank it blind | `3_3_asset_write_rules` |
+| Custom keys of fields that no longer apply after a category change | Kept, unchanged, not shown (§4.1.4, G4) | 3.1 trigger; the form keeps them in the payload |
+
+The form never sends a key or column the user cannot view: it builds `custom_values` from the `asset_view` row (already masked) plus the edited visible fields.
+
+### 14.3 Form rules
+
+- **Fields shown:** the category line (G3: every-asset fields, then furthest ancestor first, by `sort_order`), active fields only. Hidden without the field domain's `view`; read-only without its `update` (or without `asset_core.update`/`create`).
+- **Required markers:** name and category always. `field_definition.is_required` in the line, and `tenant.required_asset_fields`, minus fields the user cannot write (M2), minus `location` on edit (§4.1.6). The same rule the trigger applies, so the marker and the database agree.
+- **Client checks** for fast feedback only: required, number, date, quantity ≥ 1, money ≥ 0. The database is the truth.
+- **Error mapping:** one function maps the Postgres error to a field (`missing mandatory fields: a, b` to each field; `custom field X ...` to X; FK and check names to category, location, parent, quantity, tag) and an i18n message.
+- **Money:** amount plus currency, currency defaulting to `tenant.currency_code`. Shown only with `asset_financials.view`, editable with `update`.
+
+### 14.4 Open items used (lean)
+
+OQ-01 (quantity, a number ≥ 1, no split), OQ-06 (no vendor picker until Goal 4, A5), OQ-07 (parent by tag, depth and cycle checked by the 3.1 trigger).
+
+### 14.5 Not in 3.3
+
+Detail page (3.4: the row link goes to the edit form until then), status change and transfer dialogs (3.5), tag pattern and category code fields (3.8), vendor columns (4.1), optimistic locking (two people editing the same asset: last save wins).

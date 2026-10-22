@@ -107,11 +107,11 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-async function render(canSaveViews = true) {
+async function render(canSaveViews = true, canCreate = false, canEdit = false) {
   await act(async () =>
     root.render(
       <MemoryRouter>
-        <AssetsPage tenantId="ta" canSaveViews={canSaveViews} />
+        <AssetsPage tenantId="ta" canSaveViews={canSaveViews} canCreate={canCreate} canEdit={canEdit} />
       </MemoryRouter>,
     ),
   )
@@ -190,4 +190,15 @@ test('saved views: open applies filters and sort, save stores them, delete soft 
 test('without write access there is no Save view button', async () => {
   await render(false)
   expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain(t.assets.views.save)
+})
+
+test('Add asset shows only with asset_core.create; rows link to edit only with update', async () => {
+  await render()
+  expect(container.textContent).not.toContain(t.assets.add)
+  expect(container.querySelector('tbody a')?.getAttribute('href')).toBe('/assets/id1')
+  act(() => root.unmount())
+  root = createRoot(container)
+  await render(true, true, true)
+  expect(container.querySelector('a.btn-main')?.getAttribute('href')).toBe('/assets/new')
+  expect(container.querySelector('tbody a')?.getAttribute('href')).toBe('/assets/id1/edit')
 })
