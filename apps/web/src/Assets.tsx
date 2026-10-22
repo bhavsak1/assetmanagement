@@ -73,7 +73,7 @@ export function savedFilters(f: Filters): Record<string, string> {
 
 const isSort = (v: string): v is Sort => v === 'name' || v === 'tag' || v === 'updated'
 
-export function AssetsPage({ tenantId, canSaveViews }: { tenantId: string; canSaveViews: boolean }) {
+export function AssetsPage({ tenantId, canSaveViews, canCreate, canEdit }: { tenantId: string; canSaveViews: boolean; canCreate: boolean; canEdit: boolean }) {
   const [filters, setFilters] = useState<Filters>(emptyFilters)
   const [sort, setSort] = useState<Sort>('name')
   // The search box applies after a short pause, not on every key.
@@ -220,6 +220,12 @@ export function AssetsPage({ tenantId, canSaveViews }: { tenantId: string; canSa
           <h1>{t.pages.assets}</h1>
           <span className="muted">{count && t.assets.subtitle.replace('{count}', count)}</span>
         </div>
+        <div className="spacer" />
+        {canCreate && (
+          <Link className="btn btn-main" to="/assets/new">
+            {t.assets.add}
+          </Link>
+        )}
       </div>
       <div className="page-head filters">
         <input
@@ -306,7 +312,8 @@ export function AssetsPage({ tenantId, canSaveViews }: { tenantId: string; canSa
                 <tr key={a.id}>
                   <td className="muted">{a.tag}</td>
                   <td>
-                    <Link className="row-link" to={`/assets/${a.id}`}>
+                    {/* Edit until 3.4 builds the detail page. */}
+                    <Link className="row-link" to={canEdit ? `/assets/${a.id}/edit` : `/assets/${a.id}`}>
                       {a.name}
                     </Link>
                   </td>

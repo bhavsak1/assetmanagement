@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { NavLink, Navigate, Outlet, Route, Routes } from 'react-router'
 import type { Session } from '@supabase/supabase-js'
+import { AssetFormPage } from './AssetForm'
 import { AssetsPage } from './Assets'
 import { CategoriesPage } from './Categories'
 import { LocationsPage } from './Locations'
@@ -316,7 +317,19 @@ export function App() {
             .filter((key) => key !== 'assets' && key !== 'categories' && key !== 'locations' && key !== 'settings')
             .map((key) => <Route key={key} path={`/${key}`} element={<EmptyPage page={key} />} />),
         )}
-        <Route path="/assets" element={<AssetsPage tenantId={tenantId ?? ''} canSaveViews={can('asset_core', 'view') && writable} />} />
+        <Route
+          path="/assets"
+          element={
+            <AssetsPage
+              tenantId={tenantId ?? ''}
+              canSaveViews={can('asset_core', 'view') && writable}
+              canCreate={can('asset_core', 'create')}
+              canEdit={can('asset_core', 'update')}
+            />
+          }
+        />
+        <Route path="/assets/new" element={<AssetFormPage tenantId={tenantId ?? ''} can={can} />} />
+        <Route path="/assets/:assetId/edit" element={<AssetFormPage tenantId={tenantId ?? ''} can={can} />} />
         <Route path="/categories" element={<CategoriesPage tenantId={tenantId ?? ''} canManage={can('category_config', 'manage')} />} />
         <Route path="/locations" element={<LocationsPage tenantId={tenantId ?? ''} canManage={can('location_hierarchy', 'manage')} />} />
         <Route

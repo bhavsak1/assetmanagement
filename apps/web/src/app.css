@@ -587,3 +587,26 @@ td.actions {
   font: inherit;
   color: var(--color-text-muted);
 }
+
+/* Asset form (3.3): fields flow into columns, one column at phone width. */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  column-gap: var(--space-6);
+}
+
+.form-grid .field input,
+.form-grid .field select {
+  width: 100%;
+}
+
+.field-error {
+  color: var(--tag-error-text);
+  font-size: var(--text-sm);
+}
+
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
