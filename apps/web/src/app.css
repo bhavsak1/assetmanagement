@@ -691,3 +691,26 @@ a.btn {
     grid-template-columns: 110px 1fr;
   }
 }
+
+/* 3.5 action dialogs (transfer, retire, change status): centred card, full width on a phone. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: rgb(0 0 0 / 0.4);
+}
+
+.dialog {
+  width: 100%;
+  max-width: 480px;
+  max-height: calc(100vh - 2 * var(--space-6));
+  overflow: auto;
+}
+
+.dialog h2 {
+  margin-top: 0;
+}

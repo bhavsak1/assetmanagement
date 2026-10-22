@@ -292,7 +292,7 @@ Detail page (3.4: the row link goes to the edit form until then), status change 
 
 ## 15. Story 3.4: Asset detail, Overview and Audit tabs
 
-**Status:** in review, 22 Oct 2026. Owner chose H1 a) on 22 Oct 2026. Everything else follows A6, §4.2 and §5. Built in migration `3_4_asset_history`.
+**Status:** done, 22 Oct 2026 (owner accepted). Owner chose H1 a) on 22 Oct 2026. Everything else follows A6, §4.2 and §5. Built in migration `3_4_asset_history`.
 
 **Screen:** `Asset detail` in `assetly-screens.html`. Head: breadcrumb `Assets / <category>`, name, status tag; buttons QR label (3.6), Transfer and Retire (3.5), Edit (3.3 form, shown with `asset_core.update`). 3.4 shows Edit only; the status action belongs to the 3.5 Retire dialog. Tabs: Overview and Audit work; Coverage, Obligations, Service history, BOM and Attachments show disabled (later stories), so the tab bar matches the screen. The Coverage and Obligations cards are left out (no data until Goal 4 and Phase 2).
 
@@ -329,7 +329,9 @@ OQ-07 (children listed one level down, no cascade), A5 (vendor fields empty and 
 
 ## 16. Story 3.5: Transfer between locations, and Retire with reason
 
-**Status:** design, 22 Oct 2026. Waiting on owner answers T1 to T5 (16.4). No migration yet.
+**Status:** in review, 22 Oct 2026. Owner accepted every lean (T1 a, T2 a, T3 a, T4 a, T5 b) on 22 Oct 2026. Built in migrations `3_5_location_columns`, `3_5_transfer_write_rules`, `3_5_transfer_asset`.
+
+**As built:** `asset.location_reason` and `location_changed_at` are select-only for users (no insert or update grant) and appended to `asset_view`. Buttons: Transfer and Retire with `asset_lifecycle.execute` on a live asset; Change status with `execute`, or on a Disposed asset with `reopen`. The Audit tab titles a row with `location_reason` "Transferred" and shows `Location: old → new` and the reason. Edit still shows on a Disposed asset (3.3 behaviour, unchanged).
 
 **Screen:** `Asset detail` head has QR label, Transfer, Retire, Edit. The screens file has no dialog for Transfer or Retire, so both follow the 2.2 card and form style as modal dialogs (full width on a phone).
 
@@ -361,11 +363,11 @@ pgTAP `3_5_transfer.test.sql`: transfer allowed; refused for no `execute`, read-
 
 | # | Question | Options | Lean | Cost to reverse |
 |---|---|---|---|---|
-| T1 | "With history": where the transfer reason and time live | **a)** Two columns on `asset`, `location_reason text`, `location_changed_at timestamptz`, like `status_reason`/`status_changed_at`. The audit row then holds from, to, reason, by, when; the Audit tab shows it with no change to `asset_history`. "Where was it on date X" reads `audit_log` (`audit_log_record_idx`). **b)** New `asset_transfer` table (from, to, reason, by, at), 1.4 pattern, `tests.cross_tenant`; `asset_history` adds its rows. Faster location-on-date reports | a. Phase 1 has no location report; a later table backfills from the audit rows | Low: b later = new table + backfill from `audit_log` |
-| T2 | Back-dated effective date | **a)** No: the transfer happens now. **b)** Optional past date, not before the start of the open fiscal year | a. Only depreciation (Phase 2) cares about the date; b then adds one argument | Low |
-| T3 | Children (OQ-07) | **a)** Stay put: transfer moves one row, like status (OQ-07 "nothing cascades"). **b)** The whole live subtree moves in the same call, one audit row each. **c)** Checkbox "also move N child assets", default on | a. Matches OQ-07 and keeps one row per call; a component sent out for repair is a separate move anyway. Ask users with OQ-07 | Low: b or c is a loop in the function and a checkbox |
-| T4 | Reason | **a)** Free text, required for transfer and retire. **b)** Reason list as data (new table, per tenant) plus a note. **c)** Free text, optional for transfer | a. `status_reason` is already text; a list can come with 3.7 tenant statuses | Low for a to b (reasons stay text) |
-| T5 | Other status changes (Active, Under maintenance, Inactive, reopen) | **a)** Only Retire now, per the screens; the rest wait. **b)** Also a "Change status" button: a dialog with the B11 next steps for the current status (and reopen with `asset_lifecycle.reopen`), reason box shown when required | b. The function exists; without it Under maintenance and reopen cannot be used or checked by hand. One small dialog, one extra button beside Retire | Low: UI only |
+| T1 (chose a) | "With history": where the transfer reason and time live | **a)** Two columns on `asset`, `location_reason text`, `location_changed_at timestamptz`, like `status_reason`/`status_changed_at`. The audit row then holds from, to, reason, by, when; the Audit tab shows it with no change to `asset_history`. "Where was it on date X" reads `audit_log` (`audit_log_record_idx`). **b)** New `asset_transfer` table (from, to, reason, by, at), 1.4 pattern, `tests.cross_tenant`; `asset_history` adds its rows. Faster location-on-date reports | a. Phase 1 has no location report; a later table backfills from the audit rows | Low: b later = new table + backfill from `audit_log` |
+| T2 (chose a) | Back-dated effective date | **a)** No: the transfer happens now. **b)** Optional past date, not before the start of the open fiscal year | a. Only depreciation (Phase 2) cares about the date; b then adds one argument | Low |
+| T3 (chose a) | Children (OQ-07) | **a)** Stay put: transfer moves one row, like status (OQ-07 "nothing cascades"). **b)** The whole live subtree moves in the same call, one audit row each. **c)** Checkbox "also move N child assets", default on | a. Matches OQ-07 and keeps one row per call; a component sent out for repair is a separate move anyway. Ask users with OQ-07 | Low: b or c is a loop in the function and a checkbox |
+| T4 (chose a) | Reason | **a)** Free text, required for transfer and retire. **b)** Reason list as data (new table, per tenant) plus a note. **c)** Free text, optional for transfer | a. `status_reason` is already text; a list can come with 3.7 tenant statuses | Low for a to b (reasons stay text) |
+| T5 (chose b) | Other status changes (Active, Under maintenance, Inactive, reopen) | **a)** Only Retire now, per the screens; the rest wait. **b)** Also a "Change status" button: a dialog with the B11 next steps for the current status (and reopen with `asset_lifecycle.reopen`), reason box shown when required | b. The function exists; without it Under maintenance and reopen cannot be used or checked by hand. One small dialog, one extra button beside Retire | Low: UI only |
 
 ### 16.5 Open items used (lean)
 
