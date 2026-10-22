@@ -116,7 +116,50 @@
       "optionsRequired": "A list field needs at least one option.",
       "optionCode": "Option codes must start with a lowercase letter and use only lowercase letters, digits and _.",
       "optionDuplicate": "Each option code can be used once.",
-      "domain": "Pick a security domain."
+      "domain": "Pick a security domain.",
+      "duplicateStatusCode": "A status with this code already exists. Codes are never reused, even for inactive statuses.",
+      "duplicateStatusLabel": "A status with this label already exists. Labels ignore case.",
+      "statusLabel": "Enter a label (60 characters at most).",
+      "statusCode": "Code must start with a lowercase letter and use only lowercase letters, digits and _ (40 at most).",
+      "statusInvalid": "This status is not valid. Check the label and code.",
+      "defaultStatus": "The default status of a system status cannot be deactivated.",
+      "setEmpty": "Pick at least one status, or inherit from the parent.",
+      "setStart": "Pick at least one status mapped to In Stock or Active, so new assets have somewhere to start.",
+      "setInvalid": "This status set is not allowed. Remove inactive statuses, and keep one mapped to In Stock or Active."
+    },
+    "statuses": {
+      "title": "Statuses",
+      "subtitle": "Asset statuses of this company. Each one maps to a system status.",
+      "add": "Add status",
+      "edit": "Edit status",
+      "default": "Default",
+      "system": "System status",
+      "systemHint": "Decides which moves are allowed. Cannot change later.",
+      "tone": "Colour",
+      "tones": {
+        "ok": "Green",
+        "warn": "Amber",
+        "error": "Red",
+        "neutral": "Grey"
+      },
+      "codeHint": "Lowercase letters, digits and _. Starts with a letter. Left empty, it is made from the label. Cannot change later.",
+      "codeLocked": "The code cannot change after the status is created.",
+      "defaultLocked": "The default status of a system status is always active. You can rename it.",
+      "col": {
+        "status": "Status",
+        "code": "Code"
+      }
+    },
+    "statusSet": {
+      "title": "Statuses for assets in this category",
+      "inherit": "Inherit from parent",
+      "own": "Pick and order",
+      "inheritedFrom": "Inherited from {name}.",
+      "inheritedAll": "No set above this category: every active status, in system order.",
+      "addLabel": "Status to add",
+      "choose": "Choose a status",
+      "add": "Add",
+      "remove": "Remove"
     }
   },
   "locations": {

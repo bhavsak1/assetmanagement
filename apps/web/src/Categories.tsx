@@ -1,10 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { loadStatuses, type Status } from './Assets'
 import { t } from './i18n'
+import { StatusesCard, StatusSetPicker, validateSet } from './Statuses'
 import { supabase } from './supabase'
 import { buildTree, lineage } from './tree'
 import type { Json, Tables } from './types/database'
 
-type Category = Pick<Tables<'asset_category'>, 'id' | 'parent_id' | 'name' | 'code' | 'is_active'>
+type Category = Pick<Tables<'asset_category'>, 'id' | 'parent_id' | 'name' | 'code' | 'is_active' | 'status_ids'>
 type Field = Tables<'field_definition'>
 type Domain = { id: string; code: string }
 type Option = { code: string; label: string; is_active: boolean }
@@ -48,9 +50,13 @@ export function validateField(f: FieldInput): string | undefined {
 // Postgres and PostgREST errors to one clear message each.
 function errorMessage(error: { code?: string; message?: string } | null, duplicate: string): string {
   const e = t.categories.errors
+  const message = error?.message ?? ''
   if (error?.code === '42501') return e.noPermission
-  if (error?.code === '23505') return error.message?.includes('asset_category_code_uq') ? e.duplicateCode : duplicate
-  if (error?.code === '23514') return e.invalid
+  if (error?.code === '23505')
+    return message.includes('asset_category_code_uq') ? e.duplicateCode : message.includes('asset_status_label_uq') ? e.duplicateStatusLabel : duplicate
+  // The 3.7 set trigger's messages all name the status set.
+  if (error?.code === '23514') return message.includes('status set') ? e.setInvalid : message.includes('asset_status') ? e.statusInvalid : e.invalid
+  if (error?.code === '22023') return e.defaultStatus
   return e.generic
 }
 
@@ -64,6 +70,7 @@ export function CategoriesPage({ tenantId, canManage }: { tenantId: string; canM
   const [categories, setCategories] = useState<Category[]>([])
   const [fields, setFields] = useState<Field[]>([])
   const [domains, setDomains] = useState<Domain[]>([])
+  const [statuses, setStatuses] = useState<Status[]>([])
   const [selected, setSelected] = useState<string>()
   const [editing, setEditing] = useState<Editing>()
   const [error, setError] = useState<string>()
@@ -72,15 +79,17 @@ export function CategoriesPage({ tenantId, canManage }: { tenantId: string; canM
   useEffect(() => {
     let live = true
     void Promise.all([
-      supabase.from('asset_category').select('id, parent_id, name, code, is_active').is('deleted_at', null),
+      supabase.from('asset_category').select('id, parent_id, name, code, is_active, status_ids').is('deleted_at', null),
       supabase.from('field_definition').select('*').eq('entity', 'asset').is('deleted_at', null).order('sort_order'),
       supabase.rpc('field_domains', { p_entity: 'asset' }),
-    ]).then(([c, f, d]) => {
+      loadStatuses(),
+    ]).then(([c, f, d, s]) => {
       if (!live) return
       setCategories(c.data ?? [])
       setFields(f.data ?? [])
       setDomains(d.data ?? [])
-      if (c.error || f.error) setError(t.categories.errors.load)
+      setStatuses(s.data ?? [])
+      if (c.error || f.error || s.error) setError(t.categories.errors.load)
     })
     return () => {
       live = false
@@ -175,6 +184,7 @@ export function CategoriesPage({ tenantId, canManage }: { tenantId: string; canM
             <CategoryForm
               row={editing.row}
               categories={categories}
+              statuses={statuses}
               onCancel={() => setEditing(undefined)}
               onError={setError}
               onSave={(v) =>
@@ -289,6 +299,7 @@ export function CategoriesPage({ tenantId, canManage }: { tenantId: string; canM
           )}
         </div>
       </div>
+      <StatusesCard statuses={statuses} canManage={canManage} tenantId={tenantId} run={run} onError={setError} />
     </>
   )
 }
@@ -305,13 +316,15 @@ function Switch({ on }: { on: boolean }) {
 function CategoryForm({
   row,
   categories,
+  statuses,
   onSave,
   onCancel,
   onError,
 }: {
   row?: Category
   categories: Category[]
-  onSave: (v: { name: string; parent_id: string | null; code: string | null; is_active: boolean }) => Promise<boolean>
+  statuses: Status[]
+  onSave: (v: { name: string; parent_id: string | null; code: string | null; is_active: boolean; status_ids: string[] | null }) => Promise<boolean>
   onCancel: () => void
   onError: (message: string) => void
 }) {
@@ -319,6 +332,7 @@ function CategoryForm({
   const blocked = new Set(row ? categories.filter((c) => lineage(categories, c.id).includes(row.id)).map((c) => c.id) : [])
   const [parentId, setParentId] = useState(row?.parent_id ?? '')
   const [code, setCode] = useState(row?.code ?? '')
+  const [statusIds, setStatusIds] = useState(row?.status_ids ?? null)
   const inherited = inheritedCode(categories, parentId)
 
   function submit(e: FormEvent<HTMLFormElement>) {
@@ -326,11 +340,14 @@ function CategoryForm({
     const form = new FormData(e.currentTarget)
     const value = code.trim()
     if (value && !codePattern.test(value)) return onError(t.categories.errors.code)
+    const badSet = statusIds && validateSet(statusIds, statuses)
+    if (badSet) return onError(badSet)
     void onSave({
       name: String(form.get('name')).trim(),
       parent_id: parentId || null,
       code: value || null,
       is_active: form.get('active') === 'on',
+      status_ids: statusIds,
     })
   }
 
@@ -366,6 +383,7 @@ function CategoryForm({
         <input name="active" type="checkbox" defaultChecked={row?.is_active ?? true} />
         {t.categories.active}
       </label>
+      <StatusSetPicker categories={categories} statuses={statuses} parentId={parentId} value={statusIds} onChange={setStatusIds} />
       <FormButtons onCancel={onCancel} />
     </form>
   )
