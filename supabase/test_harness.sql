@@ -55,9 +55,10 @@ $$;
 grant execute on function tests.insert_row(regclass, jsonb) to authenticated;
 
 -- The cross-tenant check for one tenant table. Adds 8 tests to the plan. Run as postgres.
--- p_row: a valid row without tenant_id, for example '{"name":"x"}'. Gives a1 every operation of
+-- p_row: a valid row without tenant_id, for example '{"name":"x"}'. p_row_b: overrides for tenant B's
+-- row, for same-tenant FKs that cannot be null (3.1: asset.category_id). Gives a1 every operation of
 -- p_domain in both tenants, so only the tenant check can stop the reads and writes below.
-create or replace function tests.cross_tenant(p_table regclass, p_domain text, p_row jsonb)
+create or replace function tests.cross_tenant(p_table regclass, p_domain text, p_row jsonb, p_row_b jsonb default '{}')
 returns setof text language plpgsql as $$
 declare
   a  constant uuid := '00000000-0000-0000-0000-00000000000a';
@@ -79,7 +80,7 @@ begin
   perform tests.grant(b, a1, p_domain);
   perform tests.grant(b, a2, p_domain);
   v_own   := tests.insert_row(p_table, p_row || jsonb_build_object('tenant_id', a));
-  v_other := tests.insert_row(p_table, p_row || jsonb_build_object('tenant_id', b));
+  v_other := tests.insert_row(p_table, p_row || p_row_b || jsonb_build_object('tenant_id', b));
   execute format('select to_jsonb(t) from %s t where id = $1', p_table) into v_before using v_other;
 
   -- a1 is a member of both tenants, working in A.
@@ -90,7 +91,7 @@ begin
   return next is(v_n, 0, p_table || ': user sees no other tenant rows');
 
   return next throws_ok(
-    format('select tests.insert_row(%L, %L)', p_table, p_row || jsonb_build_object('tenant_id', b)),
+    format('select tests.insert_row(%L, %L)', p_table, p_row || p_row_b || jsonb_build_object('tenant_id', b)),
     '42501', null, p_table || ': user cannot insert into another tenant');
 
   -- Writes on another tenant's row: no row touched, or refused outright (column grants).

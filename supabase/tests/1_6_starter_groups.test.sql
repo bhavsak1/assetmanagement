@@ -9,9 +9,9 @@ select plan(47);
 -- The expected grid, kept apart from the migration on purpose: the two must agree.
 -- Same as docs/data-model-goal1.md §2.7a. A domain not listed (rls_sample) is granted to no group.
 create temp table expected (domain_code, tenant_admin, plant_manager, planner, technician, auditor) as values
-  ('asset_core',         '{view,create,update,delete}'::text[], '{view,create,update,delete}'::text[], '{view,update}'::text[], '{view}'::text[], '{view}'::text[]),
+  ('asset_core',         '{view,create,update,delete,set_tag}'::text[], '{view,create,update,delete,set_tag}'::text[], '{view,update}'::text[], '{view}'::text[], '{view}'::text[]),
   ('asset_financials',   '{view,update}',                 '{view}',                         '{}',                             '{}',                             '{view}'),
-  ('asset_lifecycle',    '{execute}',                     '{execute}',                      '{}',                             '{}',                             '{}'),
+  ('asset_lifecycle',    '{execute,reopen}',              '{execute}',                      '{}',                             '{}',                             '{}'),
   ('vendor_core',        '{view,create,update,delete}',   '{view,create,update}',           '{view}',                         '{view}',                         '{view}'),
   ('vendor_tax_ids',     '{view,update}',                 '{view}',                         '{}',                             '{}',                             '{view}'),
   ('coverage_contract',  '{view,create,update,delete}',   '{view,create,update}',           '{view,create,update}',           '{view}',                         '{view}'),
@@ -131,6 +131,8 @@ select t, 'asset', 'row_key', 'row', 'text', (select id from public.security_dom
 from unnest(array['00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b']::uuid[]) t;
 insert into public.location (tenant_id, name) values
   ('00000000-0000-0000-0000-00000000000a', 'a-site'), ('00000000-0000-0000-0000-00000000000b', 'b-site');
+insert into public.asset (tenant_id, name, category_id)
+select c.tenant_id, c.name, c.id from public.asset_category c where c.name in ('a-row', 'b-row');
 select is(array(select name from tenant_table where pg_temp.count_rows(name, $$tenant_id = '00000000-0000-0000-0000-00000000000b'$$) = 0 order by 1),
           '{}', 'every public tenant_id table holds tenant B rows to hide');
 -- One test per tenant A user, each acting as that user over every table. Plain queries, so RLS decides.
