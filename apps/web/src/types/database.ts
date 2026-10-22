@@ -629,7 +629,12 @@ isOneToOne: false
                 }
           }
           Functions: {
-            "change_asset_status":
+            "asset_history":
+{ Args: { "p_asset_id": string,"p_before"?: string,"p_before_id"?: string,"p_limit"?: number }; Returns: {
+              "action": string,"actor_name": string,"actor_type": string,"hidden_fields": (string)[],"id": string,"new_data": Json,"occurred_at": string,"old_data": Json
+            }[]
+                           },
+"change_asset_status":
 { Args: { "p_asset_id": string,"p_reason"?: string,"p_status": string }; Returns: undefined
                            },
 "count_assets":

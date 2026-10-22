@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { NavLink, Navigate, Outlet, Route, Routes } from 'react-router'
 import type { Session } from '@supabase/supabase-js'
+import { AssetDetailPage } from './AssetDetail'
 import { AssetFormPage } from './AssetForm'
 import { AssetsPage } from './Assets'
 import { CategoriesPage } from './Categories'
@@ -324,7 +325,6 @@ export function App() {
               tenantId={tenantId ?? ''}
               canSaveViews={can('asset_core', 'view') && writable}
               canCreate={can('asset_core', 'create')}
-              canEdit={can('asset_core', 'update')}
             />
           }
         />
@@ -336,7 +336,7 @@ export function App() {
           path="/settings"
           element={<SettingsPage tenantId={tenantId ?? ''} canView={can('tenant_settings', 'view')} canManage={can('tenant_settings', 'manage')} />}
         />
-        <Route path="/assets/:assetId" element={<EmptyPage page="assetDetail" />} />
+        <Route path="/assets/:assetId" element={<AssetDetailPage can={can} />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

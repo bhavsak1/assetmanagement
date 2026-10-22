@@ -287,3 +287,40 @@ OQ-01 (quantity, a number ≥ 1, no split), OQ-06 (no vendor picker until Goal 4
 ### 14.5 Not in 3.3
 
 Detail page (3.4: the row link goes to the edit form until then), status change and transfer dialogs (3.5), tag pattern and category code fields (3.8), vendor columns (4.1), optimistic locking (two people editing the same asset: last save wins).
+
+---
+
+## 15. Story 3.4: Asset detail, Overview and Audit tabs
+
+**Status:** in review, 22 Oct 2026. Owner chose H1 a) on 22 Oct 2026. Everything else follows A6, §4.2 and §5. Built in migration `3_4_asset_history`.
+
+**Screen:** `Asset detail` in `assetly-screens.html`. Head: breadcrumb `Assets / <category>`, name, status tag; buttons QR label (3.6), Transfer and Retire (3.5), Edit (3.3 form, shown with `asset_core.update`). 3.4 shows Edit only; the status action belongs to the 3.5 Retire dialog. Tabs: Overview and Audit work; Coverage, Obligations, Service history, BOM and Attachments show disabled (later stories), so the tab bar matches the screen. The Coverage and Obligations cards are left out (no data until Goal 4 and Phase 2).
+
+### 15.1 Overview (reads `asset_view` by id, §5)
+
+Details card: tag, category path, location path, make and model, serial, purchase date and value ("Hidden" without `asset_financials.view`), in-service date, criticality, quantity, parent (link), children (links, `parent_asset_id = id`, by tag). OEM and O&M vendor empty and disabled (A5). Custom fields card: the category line (3.3 `lineFields`); a field whose domain the user cannot view shows "Hidden" (its value is not in the row). Status reason and date under the status when set.
+
+### 15.2 `public.asset_history(p_asset_id, p_before, p_before_id, p_limit)`
+
+| | |
+|---|---|
+| Kind | `security definer`, `stable`, SQL, `search_path = ''`, in `public` (a read action; it reads `audit_log` without `audit_log.view`, A6) |
+| Checks | Current tenant, `asset_core.view`, and the asset exists in the tenant (soft-deleted included, as the base select policy). Otherwise no rows, like `asset_view`. 6.1 adds its set-form scope clause to that `exists` |
+| Rows | `audit_log` where `tenant_id`, `table_name = 'asset'`, `record_id = p_asset_id`. Index `audit_log_record_idx` |
+| Returns | `id, occurred_at, action, actor_type, actor_name, old_data, new_data, hidden_fields text[]` |
+| Masking | Same rules as `asset_view`: without `asset_financials.view`, `purchase_value` and `purchase_currency` are removed from `old_data` and `new_data`; `custom_values` loses `private.hidden_field_keys('asset')` in both. `hidden_fields` names what was removed **and changed** in that row (`purchase_value`, `purchase_currency`, `custom.<key>`), so the tab can say "Purchase value: hidden" instead of dropping the change |
+| Paging | Keyset, newest first: `(occurred_at, id) < (p_before, p_before_id)`. `p_limit` 1 to 100, default 50; the app asks for 51 |
+
+- **Order inside a transaction:** `audit_log.occurred_at` defaults to `now()`, the transaction start, so a create and an update in one transaction tie and come back in random order. The migration changes the default to `clock_timestamp()` (the time the row was written). `transaction_id` still groups a transaction. Old rows keep their values.
+- **Readable changes (app):** one line per changed field, `Label: old → new`. Ids show as category or location names and parent tags; statuses use the status labels; custom keys use their field label. System columns (`id`, `tenant_id`, `created_*`, `updated_*`, `status_changed_at`) are not shown. A row whose `new_data` has `status` is titled "Status changed" (with the reason); `insert` "Created" (the values set); `soft_delete` "Deleted"; else "Updated". UI only, no schema.
+- **Not here:** audit log screen masking (6.2), transfer rows (3.5 writes them; they will read as a location change).
+
+### 15.3 DECIDE
+
+| # | Question | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| H1 (chose a) | Who shows as the actor (1.11, co-tenant profile read, is parked) | **a)** The actor's `display_name` when the actor is an active member of the current tenant (the same rule 1.11 plans for `user_profile`), "Former member" otherwise, "System" for system rows. Read inside `asset_history` only, name only, no email. **b)** "You" for own rows, "Another user" for others, "System"; names come with 1.11. **c)** Build 1.11 first | a. An audit tab without names is weak for the demo, and (a) shows no more than 1.11 will | Low: one function body; no data or schema |
+
+### 15.4 Open items used (lean)
+
+OQ-07 (children listed one level down, no cascade), A5 (vendor fields empty and disabled).

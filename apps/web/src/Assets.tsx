@@ -15,8 +15,8 @@ export type Cursor = { value: string; id: string }
 const PAGE = 50
 const emptyFilters: Filters = { q: '', status: '', category_id: '', location_id: '' }
 // System statuses (data-model-goal3 §3) and their tag colours from tokens.css.
-const statuses = ['in_stock', 'active', 'under_maintenance', 'inactive', 'disposed'] as const
-const statusTone: Record<string, string> = {
+export const statuses = ['in_stock', 'active', 'under_maintenance', 'inactive', 'disposed'] as const
+export const statusTone: Record<string, string> = {
   in_stock: 'neutral',
   active: 'ok',
   under_maintenance: 'warn',
@@ -73,7 +73,7 @@ export function savedFilters(f: Filters): Record<string, string> {
 
 const isSort = (v: string): v is Sort => v === 'name' || v === 'tag' || v === 'updated'
 
-export function AssetsPage({ tenantId, canSaveViews, canCreate, canEdit }: { tenantId: string; canSaveViews: boolean; canCreate: boolean; canEdit: boolean }) {
+export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: string; canSaveViews: boolean; canCreate: boolean }) {
   const [filters, setFilters] = useState<Filters>(emptyFilters)
   const [sort, setSort] = useState<Sort>('name')
   // The search box applies after a short pause, not on every key.
@@ -312,8 +312,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate, canEdit }: { ten
                 <tr key={a.id}>
                   <td className="muted">{a.tag}</td>
                   <td>
-                    {/* Edit until 3.4 builds the detail page. */}
-                    <Link className="row-link" to={canEdit ? `/assets/${a.id}/edit` : `/assets/${a.id}`}>
+                    <Link className="row-link" to={`/assets/${a.id}`}>
                       {a.name}
                     </Link>
                   </td>

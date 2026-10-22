@@ -107,11 +107,11 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-async function render(canSaveViews = true, canCreate = false, canEdit = false) {
+async function render(canSaveViews = true, canCreate = false) {
   await act(async () =>
     root.render(
       <MemoryRouter>
-        <AssetsPage tenantId="ta" canSaveViews={canSaveViews} canCreate={canCreate} canEdit={canEdit} />
+        <AssetsPage tenantId="ta" canSaveViews={canSaveViews} canCreate={canCreate} />
       </MemoryRouter>,
     ),
   )
@@ -192,13 +192,13 @@ test('without write access there is no Save view button', async () => {
   expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain(t.assets.views.save)
 })
 
-test('Add asset shows only with asset_core.create; rows link to edit only with update', async () => {
+test('Add asset shows only with asset_core.create; rows link to the detail page', async () => {
   await render()
   expect(container.textContent).not.toContain(t.assets.add)
   expect(container.querySelector('tbody a')?.getAttribute('href')).toBe('/assets/id1')
   act(() => root.unmount())
   root = createRoot(container)
-  await render(true, true, true)
+  await render(true, true)
   expect(container.querySelector('a.btn-main')?.getAttribute('href')).toBe('/assets/new')
-  expect(container.querySelector('tbody a')?.getAttribute('href')).toBe('/assets/id1/edit')
+  expect(container.querySelector('tbody a')?.getAttribute('href')).toBe('/assets/id1')
 })
