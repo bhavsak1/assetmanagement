@@ -523,6 +523,61 @@ td.actions {
   margin-bottom: var(--space-6);
 }
 
+/* Assets list: filter row, status tags in the screen's colours, name links. */
+.filters {
+  margin-top: var(--space-6);
+}
+
+.filters .search {
+  max-width: 280px;
+  flex-basis: 220px;
+}
+
+.list {
+  margin-top: var(--space-6);
+  padding: 4px 8px;
+}
+
+.list td:first-child {
+  white-space: nowrap;
+}
+
+.tag.status {
+  margin-left: 0;
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+.tag.ok {
+  background: var(--tag-ok-bg);
+  color: var(--tag-ok-text);
+}
+
+.tag.warn {
+  background: var(--tag-warn-bg);
+  color: var(--tag-warn-text);
+}
+
+.tag.error {
+  background: var(--tag-error-bg);
+  color: var(--tag-error-text);
+}
+
+.row-link {
+  color: var(--color-primary-dark);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+}
+
+@media (max-width: 767px) {
+  .filters .search,
+  .filters .filter {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+}
+
+.filter,
 .company-switch {
   height: var(--control-height);
   padding: 0 var(--space-3);

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { NavLink, Navigate, Outlet, Route, Routes } from 'react-router'
 import type { Session } from '@supabase/supabase-js'
+import { AssetsPage } from './Assets'
 import { CategoriesPage } from './Categories'
 import { LocationsPage } from './Locations'
 import { SettingsPage } from './Settings'
@@ -48,6 +49,20 @@ async function openCompany(id: string): Promise<boolean> {
   return !error && !(await supabase.auth.refreshSession()).error
 }
 
+// The AI add-on is a live tenant_entitlement row (OQ-30). RLS shows only the active tenant's rows.
+async function hasAiAddon(): Promise<boolean> {
+  const now = new Date().toISOString()
+  const { data } = await supabase
+    .from('tenant_entitlement')
+    .select('id')
+    .eq('feature_code', 'ai_addon')
+    .is('deleted_at', null)
+    .lte('valid_from', now)
+    .or(`valid_to.is.null,valid_to.gt.${now}`)
+    .limit(1)
+  return !!data?.length
+}
+
 // Sidebar groups and order follow docs/assetly-screens.html. Each item's route is /<key>.
 const navGroups = [
   { group: 'operate', items: ['dashboard', 'assets', 'maintenance', 'locations'] },
@@ -67,6 +82,17 @@ function EmptyPage({ page }: { page: PageKey }) {
 }
 
 function Shell({ companies, tenantId }: { companies: Company[]; tenantId: string }) {
+  // Ask Assetly and the Intelligence group show only with the AI add-on (CLAUDE.md §11).
+  const [ai, setAi] = useState<{ tenantId: string; on: boolean }>()
+  useEffect(() => {
+    let live = true
+    void hasAiAddon().then((on) => live && setAi({ tenantId, on }))
+    return () => {
+      live = false
+    }
+  }, [tenantId])
+  const aiOn = ai?.tenantId === tenantId && ai.on
+
   return (
     <div className="app">
       <nav className="sidebar" aria-label={t.nav.label}>
@@ -74,7 +100,7 @@ function Shell({ companies, tenantId }: { companies: Company[]; tenantId: string
           <i aria-hidden="true" />
           {t.app.name}
         </div>
-        {navGroups.map(({ group, items }) => (
+        {navGroups.filter(({ group }) => aiOn || group !== 'intelligence').map(({ group, items }) => (
           <div key={group} className="nav-group">
             <div className="nav-heading">{t.nav.groups[group]}</div>
             {items.map((key) => (
@@ -88,7 +114,7 @@ function Shell({ companies, tenantId }: { companies: Company[]; tenantId: string
       <div className="main">
         <header className="topbar">
           <input className="search" type="search" placeholder={t.topbar.search} aria-label={t.topbar.search} />
-          <button className="btn" type="button">{t.topbar.askAssetly}</button>
+          {aiOn && <button className="btn" type="button">{t.topbar.askAssetly}</button>}
           <div className="spacer" />
           {companies.length > 1 ? (
             <select
@@ -287,9 +313,10 @@ export function App() {
       <Route element={session ? signedIn : <Navigate to="/login" replace />}>
         {navGroups.flatMap(({ items }) =>
           items
-            .filter((key) => key !== 'categories' && key !== 'locations' && key !== 'settings')
+            .filter((key) => key !== 'assets' && key !== 'categories' && key !== 'locations' && key !== 'settings')
             .map((key) => <Route key={key} path={`/${key}`} element={<EmptyPage page={key} />} />),
         )}
+        <Route path="/assets" element={<AssetsPage tenantId={tenantId ?? ''} canSaveViews={can('asset_core', 'view') && writable} />} />
         <Route path="/categories" element={<CategoriesPage tenantId={tenantId ?? ''} canManage={can('category_config', 'manage')} />} />
         <Route path="/locations" element={<LocationsPage tenantId={tenantId ?? ''} canManage={can('location_hierarchy', 'manage')} />} />
         <Route

@@ -178,3 +178,68 @@ Migrations, one purpose each:
 ## 12. Not in 3.1
 
 UI (3.2 to 3.4), search helper and trigram index (3.2), transfer and history (3.5), asset history function (3.4), attachments and QR (3.6), tenant statuses (3.7), tag pattern and category code fields in the UI (3.8), vendors (4.1), scope (6.1), audit log masking (6.2), B14 depreciation columns, custody.
+
+---
+
+## 13. Story 3.2: Assets list, search, saved views
+
+**Status:** in review, 22 Oct 2026. Owner accepted every lean (S1a to S5a) on 22 Oct 2026. Built in the `3_2_*` migrations.
+
+**Screen:** `Assets` in `assetly-screens.html`. Columns Tag, Name, Category, Location, Status. Filters: text box, Location, Category, Status (In Stock included, open-items change #5), Saved views. Count "Showing 1–50 of N", Previous and Next.
+
+**Not built in 3.2:** Coverage filter and column, Next service column (no coverage or maintenance data until Goal 4 and Phase 2). Import Excel (Goal 8) and Export (no story yet) buttons. Add asset links to 3.3, so it shows once 3.3 lands. The list screen shows no masked column (purchase value is not on it); masked values show as "Hidden" on the 3.4 detail screen.
+
+### 13.1 Why the list is a function, not PostgREST filters on `asset_view`
+
+Probed on the local stack. PostgREST passes RPC arguments as statement parameters (GET: `fn(p := $1)`; POST: a `json_to_record` lateral). So a plain SQL function with `p_x is null or ...` keeps the OR in the plan, and the plan cache may reuse a generic plan. Three things break with that:
+
+1. **Search** must drive from the trigram ids (spike F5). Behind `p_term is null or ...` it cannot, and a rare term walks the whole tenant (spike row 11, 276 ms).
+2. **Keyset paging** with PostgREST is `or=(name.gt.X,and(name.eq.X,id.gt.Y))`, which cannot start the index scan at the cursor. A deep page reads every row before it, like offset (spike row 04).
+3. **Location with descendants** needs the closure table, which is private.
+
+### 13.2 Objects
+
+| Object | Kind | What it does |
+|---|---|---|
+| `asset_search_trgm` | index | `gin (tenant_id, name gin_trgm_ops, tag gin_trgm_ops, serial_number gin_trgm_ops) where deleted_at is null`. Extensions `pg_trgm`, `btree_gin` in `extensions` (plain Postgres, portable) |
+| `private.search_asset_ids(p_term)` | `security definer`, stable, `search_path = ''` | Ids only. Tenant, `asset_core.view`, `deleted_at is null`, then `name`, `tag` or `serial_number` `ilike '%term%'` (wildcards in the term escaped). 6.1 adds the scope clause here in set form |
+| `private.location_subtree_ids(p_id)`, `private.category_subtree_ids(p_id)` | `security definer`, stable | The node and every descendant, current tenant only, as `uuid[]`. Location reads the closure; category walks `parent_id` |
+| `public.list_assets(...)` | invoker, plpgsql | Reads **`asset_view`** (so masking, tenant and permission checks stay in one place). Builds the statement from typed arguments with `format('%L')` and runs it with `execute`, so each call is planned with its real values |
+| `public.count_assets(...)` | invoker, plpgsql | Same filters, `count(*)` capped at 10,001 rows (S5) |
+
+`list_assets(p_term, p_status, p_category_id, p_location_id, p_sort, p_after_value, p_after_id, p_limit)`:
+
+- `p_term`: adds `v.id in (select private.search_asset_ids(p_term))`. Blank is no search.
+- `p_status`: one system status, or null for all. Single choice, like the screen's chip.
+- `p_category_id`, `p_location_id`: `= any (subtree ids)`, set form (spike §6).
+- `p_sort`: `name` (default), `tag`, `updated` (newest first). Each has its index (§8). `id` breaks ties.
+- Keyset: `p_after_value`, `p_after_id` from the last row of the page. `name`: `(v.name, v.id) > (value, id)`. `tag`: `v.tag > value` (unique). `updated`: `v.updated_at <= value and (v.updated_at < value or v.id > id)`. Previous keeps a stack of page cursors in the app.
+- `p_limit`: 1 to 100, default 50. The app asks for 51 to know whether Next exists.
+
+The functions are the read path for the list only. Detail (3.4) and the form (3.3) keep reading `asset_view` by id.
+
+**As built:** the statements come from `private.asset_list_sql()` and `private.asset_search_sql()`, so the tests EXPLAIN exactly what runs. Two findings from those plans: the search pattern must be a literal (as a parameter the planner cannot cost the trigram index and reads the whole table), and the list takes the found ids in set form, `v.id = any ((select array(...))::uuid[])`, so it looks them up in `(tenant_id, id)` whatever the table statistics say. The search helper and both subtree helpers return nothing without `asset_core.view` in the token's tenant.
+
+### 13.3 Saved views (new table)
+
+```
+saved_view: std columns, user_id uuid not null default auth.uid(), entity text check (entity = 'asset'),
+            name text not null, filters jsonb not null check (jsonb_typeof(filters) = 'object'),
+            sort text not null default 'name'
+unique (tenant_id, user_id, entity, lower(name)) where deleted_at is null
+filters: {"q": text, "status": text, "category_id": uuid, "location_id": uuid}
+```
+
+1.4 pattern: `set_updated_at`, `check_soft_delete`, `audit_row('data')`, select, insert and update policies with `tenant_can_write()` on writes, no delete grant, soft delete. Every policy also has `user_id = (select auth.uid())`. A filter that points to a deleted category or location is dropped when the view loads.
+
+### 13.4 Owner decisions (22 Oct 2026): every lean accepted
+
+| # | Question | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| S1 | List and search shape | **a)** `list_assets()` and `count_assets()` as above, plpgsql with `execute`. **b)** One inlinable SQL function with PostgREST filters and `or=` keyset: less SQL, but the plans in 13.1 | a | Low: two functions and one call site in the app |
+| S2 | Who sees a saved view | **a)** Only its owner. **b)** Owner, plus a "shared" flag that shows it to everyone in the tenant who can view assets | a. Shared later is one column and one policy change | Low |
+| S3 | Table shape | **a)** One `saved_view` table with `entity` (assets now; vendors and others later reuse it). **b)** `asset_saved_view`. Stored: filters and sort. Not stored: columns (the screen has no column picker) | a | Medium once users have views (rename and copy) |
+| S4 | Permission for own views | **a)** No new domain: anyone with `asset_core.view` keeps their own views (soft delete checks `asset_core.view` too). **b)** New domain `saved_view` with view, create, update, delete, added to the starter grid (new `seed_starter_groups` and backfill, as 3.1 did) | a. A personal view is a preference, not asset data | Low for a to b (add a domain, change policies) |
+| S5 | Total count | **a)** Exact, capped: "10,000+" past 10,000 (spike: exact count of 200k is 84 to 146 ms). **b)** Exact always. **c)** PostgREST estimate | a | Low |
+
+**No decision needed:** the trigram index and search helper follow spike F5 and §8. Hide "Ask Assetly" and the Intelligence nav group when the tenant has no live `ai_addon` row in `tenant_entitlement` (CLAUDE.md §11; `tenant_entitlement` is readable by members since 1.1). Status filter labels and tag colours: Active green, In Stock and Inactive grey, Under maintenance amber, Disposed red, from `tokens.css`.
