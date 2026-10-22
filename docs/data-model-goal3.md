@@ -425,7 +425,7 @@ Why select checks the row and not only the path: a soft-deleted attachment, or a
 - Starter grid: Tenant Admin and Plant Manager `view, create, delete`; Planner and Technician `view, create` (photos from the floor); Auditor `view`. New `seed_starter_groups` plus backfill, as 3.1 did. 1.6 test grid gets the cells.
 - 6.1: one set-form scope clause on the asset (same as `asset_view`) in the select policy and the storage insert policy.
 
-### 17.4 3.6b QR (design only, built next session)
+### 17.4 3.6b QR (built in 3.6b, no migration)
 
 - **What the QR holds [Z7]:** `https://<app>/q/<asset_id>`. The asset id is already an opaque random uuid: not the tag, not the tenant (OQ-02 lean). No token column, no resolve function: `/q/:id` redirects to `/assets/:id`, which reads `asset_view`, so tenant, `asset_core.view` and the 6.1 scope are checked by the same path as the detail page. Another tenant's id gives the existing "not found". A separate token only matters if the QR were the key, and here the login is the key.
 - **Login:** the scan needs a signed-in user. Today the login guard drops the target page. 3.6b keeps it (`/login?next=/q/...`, only same-app paths starting with `/`, so no open redirect) and returns there after sign-in.

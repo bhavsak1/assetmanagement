@@ -364,6 +364,14 @@
       "deleteError": "Could not delete the attachment.",
       "loadError": "Could not load the attachments. Try again."
     },
+    "label": {
+      "button": "QR label",
+      "title": "QR label",
+      "hint": "Prints one 50 × 25 mm label. In the print dialog, pick the label printer or paper size and set margins to none.",
+      "print": "Print",
+      "back": "Back to asset",
+      "qr": "QR code that opens this asset"
+    },
     "hidden": "Hidden",
     "loading": "Loading…",
     "notFound": "This asset does not exist or you cannot see it.",
