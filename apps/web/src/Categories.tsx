@@ -47,11 +47,22 @@ export function validateField(f: FieldInput): string | undefined {
   return undefined
 }
 
+// Fast feedback only: Postgres regex is close to, not the same as, JS. The database compiles it on save.
+export function validPattern(p: string): boolean {
+  try {
+    new RegExp(p)
+    return true
+  } catch {
+    return false
+  }
+}
+
 // Postgres and PostgREST errors to one clear message each.
-function errorMessage(error: { code?: string; message?: string } | null, duplicate: string): string {
+export function errorMessage(error: { code?: string; message?: string } | null, duplicate: string): string {
   const e = t.categories.errors
   const message = error?.message ?? ''
   if (error?.code === '42501') return e.noPermission
+  if (error?.code === '2201B') return e.pattern
   if (error?.code === '23505')
     return message.includes('asset_category_code_uq') ? e.duplicateCode : message.includes('asset_status_label_uq') ? e.duplicateStatusLabel : duplicate
   // The 3.7 set trigger's messages all name the status set.
@@ -398,9 +409,10 @@ export function inheritedCode(categories: Category[], parentId: string) {
 }
 
 type FieldValues = Partial<Pick<Field, 'key' | 'type'>> &
-  Pick<Field, 'label' | 'options' | 'unit' | 'is_required' | 'security_domain_id' | 'is_active'>
+  Pick<Field, 'label' | 'options' | 'unit' | 'pattern' | 'is_required' | 'security_domain_id' | 'is_active'>
 
-function FieldForm({
+// Also the Vendors page's field form (4.1): same table, entity vendor.
+export function FieldForm({
   row,
   domains,
   onSave,
@@ -429,10 +441,13 @@ function FieldForm({
     }
     const invalid = validateField(input)
     if (invalid) return onError(invalid)
+    const pattern = type === 'text' ? String(form.get('pattern')).trim() || null : null
+    if (pattern && !validPattern(pattern)) return onError(t.categories.errors.pattern)
     const values: FieldValues = {
       label: input.label,
       options,
       unit: type === 'number' ? String(form.get('unit')).trim() || null : null,
+      pattern,
       is_required: form.get('required') === 'on',
       security_domain_id: input.domainId,
       is_active: form.get('active') === 'on',
@@ -469,6 +484,13 @@ function FieldForm({
         <label className="field">
           {t.categories.unit}
           <input name="unit" defaultValue={row?.unit ?? ''} />
+        </label>
+      )}
+      {type === 'text' && (
+        <label className="field">
+          {t.categories.pattern}
+          <input name="pattern" defaultValue={row?.pattern ?? ''} maxLength={200} spellCheck={false} />
+          <span className="muted hint">{t.categories.patternHint}</span>
         </label>
       )}
       {type === 'list' && (

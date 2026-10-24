@@ -229,14 +229,14 @@ isOneToOne: false
                   ]
                 },"field_definition": {
                   Row: {
-                    "category_id": string | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"entity": string,"id": string,"is_active": boolean,"is_required": boolean,"key": string,"label": string,"options": NonNullable<Json>,"security_domain_id": string,"sort_order": number,"tenant_id": string,"type": string,"unit": string | null,"updated_at": string,"updated_by": string | null
+                    "category_id": string | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"entity": string,"id": string,"is_active": boolean,"is_required": boolean,"key": string,"label": string,"options": NonNullable<Json>,"pattern": string | null,"security_domain_id": string,"sort_order": number,"tenant_id": string,"type": string,"unit": string | null,"updated_at": string,"updated_by": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "category_id"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"entity": string,"id"?: string,"is_active"?: boolean,"is_required"?: boolean,"key": string,"label": string,"options"?: NonNullable<Json>,"security_domain_id": string,"sort_order"?: number,"tenant_id": string,"type": string,"unit"?: string | null,"updated_at"?: string,"updated_by"?: string | null
+                    "category_id"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"entity": string,"id"?: string,"is_active"?: boolean,"is_required"?: boolean,"key": string,"label": string,"options"?: NonNullable<Json>,"pattern"?: string | null,"security_domain_id": string,"sort_order"?: number,"tenant_id": string,"type": string,"unit"?: string | null,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Update: {
-                    "category_id"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"entity"?: string,"id"?: string,"is_active"?: boolean,"is_required"?: boolean,"key"?: string,"label"?: string,"options"?: NonNullable<Json>,"security_domain_id"?: string,"sort_order"?: number,"tenant_id"?: string,"type"?: string,"unit"?: string | null,"updated_at"?: string,"updated_by"?: string | null
+                    "category_id"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"entity"?: string,"id"?: string,"is_active"?: boolean,"is_required"?: boolean,"key"?: string,"label"?: string,"options"?: NonNullable<Json>,"pattern"?: string | null,"security_domain_id"?: string,"sort_order"?: number,"tenant_id"?: string,"type"?: string,"unit"?: string | null,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Relationships: [
                     {
@@ -641,6 +641,82 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"vendor": {
+                  Row: {
+                    "address": string | null,"code": string | null,"created_at": string,"created_by": string | null,"custom_values": NonNullable<Json>,"deleted_at": string | null,"email": string | null,"id": string,"is_active": boolean,"name": string,"notes": string | null,"phone": string | null,"roles": (string)[],"tenant_id": string,"updated_at": string,"updated_by": string | null,"website": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "address"?: string | null,"code"?: string | null,"created_at"?: string,"created_by"?: string | null,"custom_values"?: NonNullable<Json>,"deleted_at"?: string | null,"email"?: string | null,"id"?: string,"is_active"?: boolean,"name": string,"notes"?: string | null,"phone"?: string | null,"roles"?: (string)[],"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null,"website"?: string | null
+                  }
+                  Update: {
+                    "address"?: string | null,"code"?: string | null,"created_at"?: string,"created_by"?: string | null,"custom_values"?: NonNullable<Json>,"deleted_at"?: string | null,"email"?: string | null,"id"?: string,"is_active"?: boolean,"name"?: string,"notes"?: string | null,"phone"?: string | null,"roles"?: (string)[],"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null,"website"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "vendor_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "vendor_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "vendor_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"vendor_contact": {
+                  Row: {
+                    "created_at": string,"created_by": string | null,"deleted_at": string | null,"email": string | null,"id": string,"is_primary": boolean,"name": string,"phone": string | null,"tenant_id": string,"title": string | null,"updated_at": string,"updated_by": string | null,"vendor_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"email"?: string | null,"id"?: string,"is_primary"?: boolean,"name": string,"phone"?: string | null,"tenant_id": string,"title"?: string | null,"updated_at"?: string,"updated_by"?: string | null,"vendor_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"email"?: string | null,"id"?: string,"is_primary"?: boolean,"name"?: string,"phone"?: string | null,"tenant_id"?: string,"title"?: string | null,"updated_at"?: string,"updated_by"?: string | null,"vendor_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "vendor_contact_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "vendor_contact_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "vendor_contact_tenant_id_vendor_id_fkey"
+      columns: ["tenant_id","vendor_id"]
+isOneToOne: false
+      referencedRelation: "vendor"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "vendor_contact_tenant_id_vendor_id_fkey"
+      columns: ["tenant_id","vendor_id"]
+isOneToOne: false
+      referencedRelation: "vendor_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "vendor_contact_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
                 }
           }
           Views: {
@@ -713,6 +789,38 @@ isOneToOne: false
                   ComputedFields: never
                   Relationships: [
                     
+                  ]
+                },"vendor_view": {
+                  Row: {
+                    "address": string | null,"code": string | null,"created_at": string | null,"created_by": string | null,"custom_values": Json | null,"email": string | null,"id": string | null,"is_active": boolean | null,"name": string | null,"notes": string | null,"phone": string | null,"roles": (string)[] | null,"tenant_id": string | null,"updated_at": string | null,"updated_by": string | null,"website": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                           "address"?: string | null,"code"?: string | null,"created_at"?: string | null,"created_by"?: string | null,"custom_values"?: never,"email"?: string | null,"id"?: string | null,"is_active"?: boolean | null,"name"?: string | null,"notes"?: string | null,"phone"?: string | null,"roles"?: (string)[] | null,"tenant_id"?: string | null,"updated_at"?: string | null,"updated_by"?: string | null,"website"?: string | null
+                         }
+                        Update: {
+                           "address"?: string | null,"code"?: string | null,"created_at"?: string | null,"created_by"?: string | null,"custom_values"?: never,"email"?: string | null,"id"?: string | null,"is_active"?: boolean | null,"name"?: string | null,"notes"?: string | null,"phone"?: string | null,"roles"?: (string)[] | null,"tenant_id"?: string | null,"updated_at"?: string | null,"updated_by"?: string | null,"website"?: string | null
+                         }
+                        Relationships: [
+                    {
+      foreignKeyName: "vendor_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "vendor_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "vendor_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
                   ]
                 }
           }

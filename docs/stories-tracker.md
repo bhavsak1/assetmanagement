@@ -99,7 +99,8 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 
 | ID | Story | Open items | Status |
 |---|---|---|---|
-| 4.1 | Vendor, roles (OEM, O&M, supplier), contacts, optional GSTIN and PAN fields, Vendors screen | OQ-06 | Todo |
+| 4.1 | Vendor, roles (OEM, O&M, supplier), contacts, optional GSTIN and PAN fields, Vendors screen | OQ-06 | In review |
+| 4.1b | Category vendor tagging tab, asset OEM and O&M columns with write rules, form pickers and overview, `merge_vendor` | OQ-06 | Todo |
 | 4.2 | Coverage table, status derivation (active, expiring, expired, never covered) | OQ-05, OQ-26 | Todo |
 | 4.3 | Coverage screen and Coverage tab on asset detail | | Todo |
 | 4.4 | Coverage column and filter on the Assets list | | Todo |
@@ -204,3 +205,4 @@ Open items: OQ-11, OQ-21.
 | 22 Oct 2026 | Stories 3.7 and 3.8 added from the 3.1 design (owner decisions A1, A2): tenant statuses mapped to system statuses per category, and the UI for the tag pattern and category code. 3.1 builds only the database part |
 | 22 Oct 2026 | Story 3.6 split: 3.6 attachments, 3.6b QR label and scan-to-open. Two owner-review features; CLAUDE.md §5.4 one feature per session. Owner chose Z1 a |
 | 22 Oct 2026 | Story 3.7 split: 3.7 database, seed, backfill and the asset screens that read statuses; 3.7b the management screens. Owner chose R0 a |
+| 24 Oct 2026 | Story 4.1 split: 4.1 vendor, roles, contacts, tax-ID fields and masking, Vendors screen; 4.1b category tagging, asset OEM and O&M links, merge. Owner chose V6 a (docs/data-model-goal4.md) |

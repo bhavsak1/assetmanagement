@@ -1,6 +1,6 @@
 # Goal 4 data model: vendors (story 4.1)
 
-**Status:** design, 24 Oct 2026. Waiting for the owner on V1 to V7 (section 6). No migration yet.
+**Status:** in review, 24 Oct 2026. Owner accepted every lean, V1 to V7, on 24 Oct 2026. Built in the `4_1_*` migrations; 4.1b (section 7) is a separate story.
 
 **Reads with:** CLAUDE.md §6 to §8, `security-model.md` §4, knowledge base §2, §5, §6.2, §12, [data-model-goal2.md](data-model-goal2.md) §1.2 and §2 (field definitions, per-key masking), [data-model-goal3.md](data-model-goal3.md) §4, §5, §8, §13, A5, [data-model-goal2-locations.md](data-model-goal2-locations.md) L2 (deactivate versus soft delete), [spike-1-7-rls-performance.md](spike-1-7-rls-performance.md) §6.
 
@@ -47,10 +47,10 @@
 
 GSTIN and PAN are **vendor custom fields**: `field_definition` rows with `entity = 'vendor'`, `category_id` null (vendors have no category), type `text`, domain `vendor_tax_ids`. Nothing in core knows the words GSTIN or PAN.
 
-- **Read:** `public.vendor_view` (owner-run, `security_barrier`, like `asset_view`): repeats the base select policy (tenant, `vendor_core.view`, `deleted_at is null`) and returns `custom_values - (select private.hidden_field_keys('vendor'))`. The 3.1 helper already takes the entity. The base table grants `select` on every column except `custom_values`.
+- **Read:** `public.vendor_view` (owner-run, like `asset_view`, and not `security_barrier` for the same reason: a barrier view cannot use the list index): repeats the base select policy (tenant, `vendor_core.view`, `deleted_at is null`) and returns `custom_values - (select private.hidden_field_keys('vendor'))`. The 3.1 helper already takes the entity. The base table grants `select` on every column except `custom_values`.
 - **Write:** `private.check_vendor_values()` before insert or update, the same rules as asset §4.1 checks 2 to 4 and 6: hidden keys kept as stored, changed keys need an active definition, the right type (`private.custom_value_ok`), and `update` on the field's domain; unknown keys refused; `is_required` checked on insert and on data changes. No category line (every vendor field applies to every vendor).
-- **Format check** [V2]: only if the tenant set one on the field.
-- **Defining the fields:** a "Vendor fields" card on the Vendors page, reusing the 2.2 `FieldForm` (export it from `Categories.tsx`), shown to `category_config.manage` (the existing `field_definition` policies; no policy change). The local seed adds GSTIN and PAN to the demo tenant. A tenant outside India just never adds them.
+- **Format check** [V2]: only if the tenant set one on the field. `field_definition.pattern` (text fields only; the check constraint compiles the regex), checked on changed values by `private.validate_field_pattern()` on both `asset` and `vendor`.
+- **Defining the fields:** a "Vendor fields" card on the Vendors page, reusing the 2.2 `FieldForm` (export it from `Categories.tsx`), shown to `category_config.manage` (the existing `field_definition` policies; no policy change). A tenant outside India just never adds them. Not seeded locally: the SQL tests assume tenant A starts empty (as in every earlier story), so the demo adds GSTIN and PAN through the card.
 - **List column:** the screen shows a GSTIN column. With fields as data, the list shows the **first vendor field in `vendor_tax_ids` by sort order** as that column, labelled with its own label, and "Hidden" without `vendor_tax_ids.view`. No column if the tenant has none.
 
 ## 4. Policies (1.4 template)
@@ -66,7 +66,7 @@ GSTIN and PAN are **vendor custom fields**: `field_definition` rows with `entity
 
 ## 5. Read path and search [V5]
 
-- The Vendors list reads `vendor_view` through PostgREST: `order=name,id`, keyset by `(name, id)`, 50 a page, role filter `roles=cs.{oem}`, active filter.
+- The Vendors list reads `vendor_view` through PostgREST: `order=name,id`, 50 rows then "Show more" (a growing limit, not keyset: names inside a PostgREST `or()` cursor need escaping, and V5 assumes small lists), role filter `roles=cs.{oem}`, active filter.
 - Primary contact for the list: one extra query `vendor_contact?is_primary=eq.true&vendor_id=in.(...)` for the page's ids.
 - Search: lean is plain `ilike` on name and code (section 6, V5). The test proves the list walks `(tenant_id, name, id)` with a limit (EXPLAIN), as 3.1 did for assets.
 

@@ -820,3 +820,15 @@ a.btn {
   flex-wrap: wrap;
   gap: var(--space-3);
 }
+
+/* Vendors (4.1): a fieldset that only groups (disables all inputs at once), no box of its own. */
+fieldset.plain {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+fieldset.plain legend {
+  padding: 0;
+}
