@@ -1,6 +1,6 @@
 # Goal 4 data model: vendors (story 4.1)
 
-**Status:** in review, 24 Oct 2026. Owner accepted every lean, V1 to V7, on 24 Oct 2026. Built in the `4_1_*` migrations; 4.1b (section 7) is a separate story.
+**Status:** done, 24 Oct 2026. Owner accepted every lean, V1 to V7, on 24 Oct 2026. Built in the `4_1_*` migrations; 4.1b (section 7) is a separate story.
 
 **Reads with:** CLAUDE.md §6 to §8, `security-model.md` §4, knowledge base §2, §5, §6.2, §12, [data-model-goal2.md](data-model-goal2.md) §1.2 and §2 (field definitions, per-key masking), [data-model-goal3.md](data-model-goal3.md) §4, §5, §8, §13, A5, [data-model-goal2-locations.md](data-model-goal2-locations.md) L2 (deactivate versus soft delete), [spike-1-7-rls-performance.md](spike-1-7-rls-performance.md) §6.
 
@@ -154,3 +154,100 @@ GSTIN and PAN are **vendor custom fields**: `field_definition` rows with `entity
 ## 9. Not in 4.1
 
 Coverage (4.2), "has active coverage" filter and column (4.2), category tagging, asset vendor columns, merge (4.1b), vendor import (import story), vendor row scope (6.1), contact erase action, vendor attachments, saved views on vendors.
+
+---
+
+# Story 4.1b: vendor links (category tags, asset OEM and O&M, merge)
+
+**Status:** design, 24 Oct 2026. Waiting for the owner on B1 to B10. Nothing built yet.
+
+**Open items used (lean):** OQ-06: the OEM and O&M pickers offer only vendors tagged to the asset's category line. Admin override later (not built).
+
+**Screen:** `assetly-screens.html` has no tagging tab, no vendor picker and no merge dialog. The Asset detail Coverage card shows "Vendor: [OEM vendor]" (that card is 4.3). New UI follows the 3.7b status picker and the 2.2 card style.
+
+## 10. Category tags [B1] [B2]
+
+- **Storage (lean B1 a):** two arrays on `asset_category`: `oem_vendor_ids uuid[] not null default '{}'` and `om_vendor_ids uuid[] not null default '{}'`. Same reasons as R1 (3.7 status sets): the category policy (`category_config.manage`, `tenant_can_write()`) and its audit trigger already cover writes. No new table or policy. Order means nothing.
+- **Check trigger** `private.check_category_vendors()` (definer, fixed `search_path`) when an array changes: no duplicates; every **added** id is a live, active vendor of the same tenant holding that role (`oem` or `om`). Ids already there stay, even after the vendor is deactivated or drops the role (B4).
+- **Inheritance (lean B2 a): union up the tree**, like field definitions (G3). A tag on "Electrical" applies to every child. A child cannot remove a parent's tag.
+- **Helper:** `private.allowed_vendor_ids(p_tenant_id, p_category_id, p_role) returns uuid[]`, `stable`, definer. One recursive walk up `parent_id` (as `effective_status_ids`), then keeps vendors that are live, active and hold the role. Called once per asset write that changes a vendor, never by the list.
+- **Read for the app:** `public.category_vendors(p_category_id, p_role) returns setof uuid` (the helper for the current tenant, needs `category_config.view`), as `category_statuses` in 3.7. The asset form uses it.
+
+## 11. Asset columns and write rules [B3] [B4]
+
+- New migration: `asset.oem_vendor_id uuid null`, `asset.om_vendor_id uuid null`, FKs `(tenant_id, oem_vendor_id) → vendor (tenant_id, id)` (same for O&M). Null default, so staging assets need no backfill. Partial indexes `(tenant_id, oem_vendor_id) where oem_vendor_id is not null and deleted_at is null` (and O&M) for the merge and the "in use" counts.
+- Grants: both join the asset **insert and update** grants (plain form fields, like `parent_asset_id`).
+- **Rule trigger** `private.check_asset_vendors()`, before insert or update of the two columns, definer. For each column whose value is **new or changed** (not null):
+  1. the vendor is live and active,
+  2. it holds the column's role: `oem_vendor_id` needs `oem`, `om_vendor_id` needs `om` (lean B3 a),
+  3. it is in `allowed_vendor_ids(asset's category, role)` (OQ-06).
+  Error `23514`, mapped to the field by the form. Runs for every writer (UI, API, later imports), user or not: data rules, not permission rules. A cross-tenant id already fails the composite FK.
+- **Unchanged values stay valid (lean B4 a):** a category change, a removed tag, a deactivated vendor or a dropped role keeps existing links. Same rule as custom values (§4.1.4 of goal 3, G4). The form shows the current vendor as an extra option marked "Not tagged" or "Inactive"; picking another must pass the rules. Staging has no links yet, so B4 is cheap to change.
+- **Mandatory (2.5):** vendor columns do not join `required_asset_fields` in 4.1b.
+- **Soft delete guard:** a vendor soft delete is refused at commit while a live asset links to it (deferred constraint trigger; use `merge_vendor`). Deactivate is not affected. The Vendors screen has no delete button today.
+
+## 12. Reads [B5] [B6]
+
+| Where | Change |
+|---|---|
+| `asset_view` | Appends `oem_vendor_id`, `om_vendor_id` (ids only, lean B5 a). No join, so the list plan stays the same |
+| Names | The app reads `vendor_view?id=in.(...)`, so `vendor_core.view` applies; without it the overview shows "Hidden" |
+| `list_assets`, `count_assets` | No vendor filter (lean B6 a). Signatures unchanged |
+| 3.3 form | OEM and O&M selects: ids from `category_vendors(category, role)`, names from `vendor_view`, plus "None". Refreshed when the category changes; the current value is kept and marked (B4) |
+| 3.4 overview | Vendor names linked to the Vendors screen (opens that vendor's drawer). "Inactive" tag when inactive |
+| Audit tab | `oem_vendor_id` and `om_vendor_id` lines show vendor names; an id not in `vendor_view` shows "Former vendor" |
+| Category form | A "Vendors" section below Statuses: two multi-selects, OEM and O&M, each listing active vendors with that role. Under each, read-only "Inherited from <parent>: names" |
+
+## 13. `public.merge_vendor(p_from_id uuid, p_into_id uuid)` [B7] [B8]
+
+`security definer`, plpgsql, `search_path = ''`. One transaction, in this order:
+
+1. **Checks:** both ids in the current tenant, live, different; `into` active; `vendor_core.delete` (lean B7 a); `tenant_can_write()`. Both rows locked `for update`. Else `42501` (permission) or `22023`.
+2. `into.roles` = union of both roles.
+3. `from` soft-deleted (`deleted_at`, `updated_by`).
+4. Contacts: `vendor_id` set to `into`; a moved primary loses `is_primary` when `into` has one.
+5. Category tags: in both arrays `from` is replaced by `into`, duplicates removed (one update).
+6. Assets: `oem_vendor_id` and `om_vendor_id` from `from` to `into`.
+7. **4.2 hook:** the coverage repoint goes here as one more `update ... set vendor_id = p_into_id where vendor_id = p_from_id`.
+8. One `audit_log` row: `action = 'merge'`, `table_name = 'vendor'`, `record_id = from`, `new_data = {into_id, contacts, categories, assets}` (counts), and one outbox event `vendor.merged`. The row triggers also write their rows, same `transaction_id`.
+
+- **Rules during the merge:** the asset rule (§11) treats a change **away from a soft-deleted vendor** as the merge repoint and checks only that the new vendor is live and active (role and tag hold by steps 2 and 5; a stale link stays stale, as B4). The 2.5 mandatory check skips the same case, so an asset missing a mandatory field cannot block a merge. Only the merge can create that state: step 3 runs before step 6, and the soft-delete guard (§11) blocks it anywhere else. `check_asset_values` is replaced with that one condition added, as 3.5 and 3.7 did. The soft-delete guard is a **deferred** constraint trigger (checked at commit), so step 3 passes: by commit, step 6 has repointed every asset.
+- **What `into` keeps (lean B8 a):** its own name, code, contact basics and custom values. `from`'s values stay on the soft-deleted row and in the audit log.
+- **Merge dialog** (Vendors drawer, shown with `vendor_core.delete`): pick the active vendor to merge into, then a confirm that lists what moves: roles added, N contacts, N categories, N assets (head counts read by the app). One "Merge" button.
+
+## 14. Permissions [B9]
+
+- Tags: `category_config.manage` (lean B9 a).
+- Pickers: whoever can write the asset (`asset_core.create` or `update`), reading with `category_config.view` and `vendor_core.view` (every starter group has both).
+- Merge: `vendor_core.delete` (Tenant Admin in the starter grid).
+- No new domain or operation. No starter grid change.
+
+## 15. DECIDE
+
+| # | Question | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| B1 | Where tags live | **a)** Two arrays on `asset_category` (`oem_vendor_ids`, `om_vendor_ids`). **b)** Link table `category_vendor (tenant_id, category_id, vendor_id, role)`, 1.4 pattern, own policies and `tests.cross_tenant`. **c)** Link table without role (role read from `vendor.roles`, the §7 preview) | a. R1 precedent: no table, policy or cross-tenant test; category audit covers it; merge is one update. Per-role tags let Siemens be OEM for motors and O&M for compressors | Medium: a to b is a data copy |
+| B2 | Inheritance | **a)** Union up the tree (G3, §7 preview). **b)** Nearest set, like statuses (own tags replace the parent's). **c)** Own category only | a. Tag once on a parent; children rarely need fewer vendors | Low: one helper body |
+| B3 | Roles per column | **a)** OEM column needs `oem`, O&M column needs `om`. **b)** Any role in either | a. That is what the roles are for (V3) | Low |
+| B4 | Category change, tag removed, vendor deactivated, role dropped | **a)** Keep the link; the form marks it. **b)** Refuse the change while linked. **c)** Clear the link | a. Edits never fail on an old link; history stays true; same as G4 | Low (no links on staging yet) |
+| B5 | Vendor name in `asset_view` | **a)** Ids only; the app reads names from `vendor_view`. **b)** Names joined in the view | a. List plan unchanged; names stay under `vendor_core.view` | Low |
+| B6 | Vendor filter on the Assets list | **a)** Not now. **b)** `p_vendor_id` in `list_assets` | a. Not asked; 4.4 adds the coverage column | Low (additive argument) |
+| B7 | Who may merge | **a)** `vendor_core.delete`. **b)** New operation `vendor_core.merge`, Tenant Admin | a. Merge ends in a soft delete; same people | Low (seed row plus one check) |
+| B8 | Values on merge | **a)** `into` keeps its own; `from`'s stay on the soft-deleted row. **b)** Fill `into`'s empty fields and custom keys from `from` | a. No guessing which value is right; nothing lost | Low |
+| B9 | Who tags | **a)** `category_config.manage`. **b)** `vendor_core.update` | a. Tags sit on the category row, like statuses | Low (policy) |
+| B10 | Split | **a)** One story, one PR. **b)** 4.1b tags, columns, pickers, overview; 4.1c merge and dialog | a. 3 migrations, one test file, four small UI changes; merge design is settled here | None |
+
+## 16. Build plan (after answers)
+
+Migrations:
+1. `4_1b_category_vendors`: the two arrays, `check_category_vendors()`, `allowed_vendor_ids()`, `category_vendors()`.
+2. `4_1b_asset_vendors`: columns, FKs, indexes, grants, `check_asset_vendors()`, the soft-delete guard, `asset_view` columns, the `check_asset_values` merge condition.
+3. `4_1b_merge_vendor`: the function.
+
+pgTAP `4_1b_vendor_links.test.sql`: tag check (other tenant, inactive, wrong role, duplicate) and permission (view only, manage, read-only tenant); inheritance (own, parent, grandparent, sibling not); asset rules refuse wrong role, inactive, untagged, cross-tenant (FK), on insert and on a plain update; unchanged link kept after category change, untag and deactivate; hidden custom keys kept on a vendor-only save; vendor soft delete refused while linked; merge: roles, contacts (primary), tags deduplicated, assets repointed, source soft-deleted, merge audit row and outbox; refused cross-tenant, without `vendor_core.delete`, on a read-only tenant, into inactive, from = into; an asset missing a mandatory field does not block a merge; EXPLAIN `list_assets` by name still walks the keyset index; tenancy guard green.
+
+Web: category form Vendors section, asset form pickers, overview names and links, audit labels, Merge dialog, i18n, tests. Types regenerated.
+
+## 17. Not in 4.1b
+
+Admin override of the tag rule (OQ-06 later), vendor filter on the list (B6), supplier column on asset, mandatory vendor fields, a "tagged in" list on the Vendors screen, coverage (4.2).

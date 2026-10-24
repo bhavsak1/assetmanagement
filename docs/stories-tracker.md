@@ -99,7 +99,7 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 
 | ID | Story | Open items | Status |
 |---|---|---|---|
-| 4.1 | Vendor, roles (OEM, O&M, supplier), contacts, optional GSTIN and PAN fields, Vendors screen | OQ-06 | In review |
+| 4.1 | Vendor, roles (OEM, O&M, supplier), contacts, optional GSTIN and PAN fields, Vendors screen | OQ-06 | Done |
 | 4.1b | Category vendor tagging tab, asset OEM and O&M columns with write rules, form pickers and overview, `merge_vendor` | OQ-06 | Todo |
 | 4.2 | Coverage table, status derivation (active, expiring, expired, never covered) | OQ-05, OQ-26 | Todo |
 | 4.3 | Coverage screen and Coverage tab on asset detail | | Todo |
