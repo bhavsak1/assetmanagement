@@ -89,7 +89,7 @@
 | 3.6 | Attachments (per-tenant storage): private bucket, storage policies, Attachments tab | | Done |
 | 3.6b | QR label with scan-to-open (login return, print view) | OQ-02 | Done |
 | 3.7 | Tenant asset statuses: each maps to one of the 5 system statuses, ordered status sets attached to categories (inherited from the nearest parent), any later step or back within B11. Adds `asset.status_id` | OQ-04 | Done |
-| 3.7b | Statuses settings card on the Categories page (add, rename, tone, deactivate) and a status set picker on the category form (inherit, or pick and order) | | In review |
+| 3.7b | Statuses settings card on the Categories page (add, rename, tone, deactivate) and a status set picker on the category form (inherit, or pick and order) | | Done |
 | 3.8 | Settings: asset tag pattern field with a live sample tag (`set_asset_tag_pattern()`), and a Code field on the category form (for `{CAT}`) | | Done |
 
 Note: start WhatsApp provider onboarding around this goal because of lead time (OQ-14).
