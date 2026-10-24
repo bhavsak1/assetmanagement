@@ -159,7 +159,7 @@ Coverage (4.2), "has active coverage" filter and column (4.2), category tagging,
 
 # Story 4.1b: vendor links (category tags, asset OEM and O&M, merge)
 
-**Status:** in review, 24 Oct 2026. Owner accepted every lean on 24 Oct 2026 except B6: the Assets list gets a vendor filter (B6 b). Built in the `4_1b_*` migrations.
+**Status:** done, 24 Oct 2026. Owner accepted every lean on 24 Oct 2026 except B6: the Assets list gets a vendor filter (B6 b). Built in the `4_1b_*` migrations.
 
 **As built (differences from the design below):**
 - Another tenant's vendor id fails the asset rule (`23514`, it only finds the current tenant's vendors) before the composite FK.
@@ -258,3 +258,114 @@ Web: category form Vendors section, asset form pickers, overview names and links
 ## 17. Not in 4.1b
 
 Admin override of the tag rule (OQ-06 later), supplier column on asset, mandatory vendor fields, a "tagged in" list on the Vendors screen, coverage (4.2).
+
+---
+
+# Story 4.2: coverage table and status derivation
+
+**Status:** design, 24 Oct 2026. Waiting for the owner on C1 to C10. No migration yet.
+
+**Reads with:** KB §2 (glossary: "out of warranty" = no active warranty-type coverage today), §5 (coverage as its own entity), §6.6, §12; `security-model.md` §4; OQ-05, OQ-26, OQ-27, doc changes #5 and #8; [data-model-goal3.md](data-model-goal3.md) §5, §6, §13, §17; spike §6; §13 above (merge).
+
+**Open items used (lean):** OQ-05 (no exclusions), OQ-26 (see a contract if you see one covered asset), OQ-27 (hook only).
+
+**Already in the catalog (1.2 seed, 1.6 grid):** `coverage_contract` (entity: view, create, update, delete) and `coverage_values` (field: view, update). `field_definition.entity` already allows `'coverage'`. Grid: Tenant Admin all, plus values view and update; Plant Manager view, create, update, plus values view; Planner view, create, update; Technician view; Auditor view, plus values view. **No new domain, operation or grid change.** Contract values are hidden from Planner and Technician.
+
+**Screens (built in 4.3 and 4.4):** Coverage page: cards Active, Expiring in 60 days, Expired; tabs All, Warranty, AMC, Expiring; columns Type, Asset, Vendor, Start, End, Status ("Expires in 24 d"); doc change #5 adds Scope. Asset detail card: "Warranty Active to [End]", "AMC None", "Vendor". Assets list column: "Warranty · 8 mo", "AMC · 24 d", "Out of coverage", "None".
+
+## 18. `coverage` (public, 1.4 pattern)
+
+| Column | Type | Notes |
+|---|---|---|
+| id, tenant_id, std | | Standard, `unique (tenant_id, id)` |
+| coverage_type | text not null | [C1] `check in ('warranty', 'extended_warranty', 'amc', 'other')`. Labels from i18n |
+| vendor_id | uuid not null | Composite FK `(tenant_id, vendor_id) → vendor`. Rule on change [C2] |
+| reference | text null | Contract or warranty card number, 1 to 100 chars |
+| start_date, end_date | date not null | `check (end_date >= start_date)`. Both days are covered (inclusive). Plain dates; "today" is the tenant's (§21) |
+| contract_value | numeric(19, 4) null | `>= 0`. Domain `coverage_values`, masked (§20) |
+| contract_currency | text null | ISO 4217 shape. `check (contract_value is null or contract_currency is not null)`, as asset purchase value. No conversion |
+| renews_coverage_id | uuid null | [C5] Composite FK → `coverage`, not itself. A renewal is a new row |
+| notes | text null | |
+
+- Triggers: `set_updated_at`, `check_soft_delete('coverage_contract', 'delete')`, `audit_row('data')`, `private.check_coverage()`: vendor rule (C2), and a change of value or currency needs `coverage_values.update` (as 3.3 does for purchase value).
+- Indexes, partial `where deleted_at is null`, tenant first: `(tenant_id, end_date, id)` (Coverage page sort, expiring), `(tenant_id, vendor_id)` (merge, vendor counts).
+- Not on the row: custom values (the entity is allowed; the column and check come when a tenant needs a field), attachments [C8], exclusions (OQ-05).
+
+## 19. Scope: `coverage_asset` [C3]
+
+| Column | Type | Notes |
+|---|---|---|
+| id, tenant_id, std | | Standard |
+| coverage_id | uuid not null | Composite FK → `coverage` |
+| asset_id | uuid not null | Composite FK → `asset`. The asset must be live when added |
+
+- Unique `(tenant_id, coverage_id, asset_id) where deleted_at is null`; index `(tenant_id, asset_id) where deleted_at is null` (the per-asset lookup).
+- Adding or removing an asset edits the contract: insert, update and soft delete need `coverage_contract.update` and `tenant_can_write()` (like V7 contacts). The writer must see the asset (`with check` exists in `asset_view`), because FK checks ignore RLS.
+- Rows, not an array on `coverage`: one AMC can list hundreds of assets, and "coverages of asset X" needs an index on the asset.
+- No cascade to child assets (OQ-07 lean).
+
+## 20. Visibility (OQ-26) and masking
+
+- **Rule:** a user sees a coverage row when they hold `coverage_contract.view` and **either** at least one of its live assets is in `asset_view` for them, **or** it has no live assets yet (a contract being set up; it shows no asset data) [C4].
+- **Through `asset_view`**, not the asset table: `exists (select 1 from coverage_asset ca join asset_view av on av.id = ca.asset_id where ca.tenant_id = c.tenant_id and ca.coverage_id = c.id and ca.deleted_at is null)`. `asset_view` already holds the tenant, `asset_core.view` and live-row checks, and 6.1 adds its scope clause there once; coverage follows with no change.
+- The same clause is in the `coverage` select policy (so updates and `returning` agree) and in `coverage_view`. `coverage_asset` select: tenant, `coverage_contract.view`, and its asset in `asset_view`.
+- **Cost:** one index probe on `(tenant_id, coverage_id)` per coverage row, stopping at the first visible asset (primary key lookup). Thousands of contracts per tenant read in a few ms. Worst case: a contract with many assets of which none is visible (narrow 6.1 scope) probes all of them. Measure in 6.1 with the spike data (spike §6). A set form (`id = any (visible_coverage_ids())`) would read every contract of the tenant on every query, so it is worse here.
+- **`public.coverage_view`** (owner-run, not `security_barrier`, like `asset_view`): the rule above, live rows only, `contract_value` and `contract_currency` as `case when (select private.has_permission('coverage_values', 'view')) then ... end`, plus a computed `status` (§21). The base table grants `select` on every column except the two value columns. Writes go to the base table.
+
+## 21. Status derivation (live, nothing stored) [C6] [C7]
+
+- **Today:** `private.tenant_today()`, stable: `(now() at time zone tenant.time_zone)::date` for the current tenant. Used as `(select private.tenant_today())`, once per statement.
+- **N days:** `tenant.coverage_expiring_days smallint not null default 60 check (between 1 and 365)`. `update_tenant_settings` gets one more argument (last, default null = keep). The settings screen field is 4.3.
+- **Per coverage** (`coverage_view.status`):
+
+| Status | Rule |
+|---|---|
+| `future` | `start_date > today` |
+| `active` | `start_date <= today and end_date >= today + N` |
+| `expiring` | `start_date <= today and end_date between today and today + N - 1` |
+| `expired` | `end_date < today` |
+
+  Start today is active. End today is still covered (expiring). End yesterday is expired.
+- **Per asset, per group** [C6]. Groups: `warranty` (warranty and extended warranty: the KB "warranty-type"), `amc`, `other`. `public.asset_coverage(p_asset_ids uuid[])`: invoker, stable, reads `coverage_view` joined to `coverage_asset` with `ca.asset_id = any (p_asset_ids)`. One row per asset and group: `asset_id, coverage_group, status, coverage_id, vendor_id, start_date, end_date`. Best row wins: active, then expiring, then future, then expired; among equals the latest end (future: the earliest start).
+  - **Never covered** (doc change #8): no row comes back for that asset and group, because no live coverage of that group was ever linked. **Expired:** rows exist, none active, expiring or future today. **Future:** only contracts not started yet.
+  - 4.3 (detail card) and 4.4 (list column) call it once per page with the page's ids. 4.4 picks the line it shows from the groups and adds the list filter (a set-form id helper in `asset_list_where`, like search).
+  - **Responsible vendor (review point):** the `vendor_id` of the best row. OQ-27 precedence (most specific scope) is a Phase 2 hook: with asset-wise rows every row is equally specific.
+- Live, not stored: no `pg_cron`, plain SQL, right at midnight in each tenant's zone. A stored daily status needs a job per time zone and is stale between runs.
+
+## 22. Events [C9]
+
+- `coverage.*` and `coverage_asset.*` row events come from the existing audit trigger, in the same transaction.
+- `coverage.expiring` and `coverage.expired` (KB §6.6) need a daily job and have no reader before the notifications goal. Hook: a `pg_cron` job then writes one event per coverage per threshold (dedupe on `coverage_id, status, end_date`). Not built.
+
+## 23. Vendor merge and vendor delete
+
+- `merge_vendor` (§13 step 7): `create or replace` in a new migration with one added `update public.coverage set vendor_id = p_into_id, updated_by = auth.uid() where tenant_id = v_tenant_id and vendor_id = p_from_id` (soft-deleted coverages too, like assets), and `coverages` in the audit and outbox payloads. The C2 rule passes: `into` is live and active.
+- The 4.1b soft-delete guard (`check_vendor_unlinked`, deferred) also refuses while a live coverage points at the vendor.
+
+## 24. DECIDE
+
+| # | Question | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| C1 | Coverage types | **a)** System codes `warranty, extended_warranty, amc, other`, text with check. **b)** Tenant data table | a. Types drive logic ("out of warranty" = the warranty group), like vendor roles (V3) | Medium once data exists |
+| C2 | Vendor rule | **a)** Vendor required, live and active when set or changed; no role or tag rule. **b)** Role by type: warranty needs `oem`, AMC needs `om`. **c)** b plus the 4.1b category tag for every covered asset | a. Dealers give warranties, third parties sell extended warranties; a wrong refusal blocks real data. The tag rule does not fit a contract over many categories. b is one trigger line later | Low |
+| C3 | Scope | **a)** Asset-wise rows only (`coverage_asset`). **b)** Scope lines (asset, category, location subtree, company) resolved live through the closure and the category walk. **c)** b, expanded into asset rows by triggers | a. Indian AMCs list machines by serial; visibility, status and the list filter stay one index probe. **Note:** open-items §5 says "contracts have scope lines ... with no per-asset rows" (section A). a reverses that for Phase 1; b can come later as a second table feeding the same `asset_coverage()` | High once scope lines hold data; low the other way |
+| C4 | Contract with no assets | **a)** Visible to `coverage_contract.view`. **b)** Hidden until an asset is linked (the creator loses it after insert). **c)** At least one asset required (deferred check; create through an rpc) | a. Plain table writes keep working; the row shows no asset data | Low |
+| C5 | Renewal | **a)** New row with `renews_coverage_id`. **b)** Edit dates in place (history only in audit) | a. The old period stays true for past claims; the link shows the chain | Low (nullable column) |
+| C6 | Asset status | **a)** Per group: warranty (with extended), AMC, other. **b)** One overall status | a. KB defines "out of warranty" per type; the detail card shows warranty and AMC lines. Overall = best of the groups, in the app | Low (function body) |
+| C7 | Status | **a)** Live (view column and function, tenant time zone). **b)** Stored, refreshed daily by `pg_cron` | a. Portable, no job, never stale. 4.4's filter uses the set form; measure then | Low |
+| C8 | Contract PDFs | **a)** Hook: reuse the 3.6 pattern later (path `<tenant>/coverage/<id>/<att>`; the storage policies then take a second entity). **b)** Now | a. Storage policies are an owner-review area and not in the story | Low |
+| C9 | Expiry events | **a)** Hook (§22). **b)** Daily job now | a. No reader until notifications | Low |
+| C10 | Split | **a)** One story: 2 tables, view, `asset_coverage`, setting, merge and guard. **b)** 4.2 tables, visibility, masking, merge; 4.2b status, setting, function | a. Status is one case and one function, and the story name includes it | None |
+
+## 25. Build plan (after answers)
+
+Migrations:
+1. `4_2_coverage`: `tenant.coverage_expiring_days`, `tenant_today()`, `coverage`, `check_coverage()`, `coverage_asset`, policies, grants, `coverage_view`, `update_tenant_settings` with the new argument.
+2. `4_2_asset_coverage`: `public.asset_coverage(uuid[])`.
+3. `4_2_merge_vendor_coverage`: `merge_vendor` and the soft-delete guard with coverage.
+
+pgTAP `4_2_coverage.test.sql`: permission steps on both tables; `tests.cross_tenant` for both; OQ-26 (unseen asset hides the contract, one visible asset shows it, no assets shows it); value masked without `coverage_values.view`, change refused without `update`; vendor rule (inactive, other tenant); end before start refused; status: start today, end today, end yesterday, future start, end at today + N, no rows = never covered, overlapping warranty plus AMC, extended warranty in the warranty group, time zone boundary (same UTC moment, two tenant zones); merge repoints coverage, vendor delete guard; EXPLAIN `asset_coverage` for 50 ids uses `(tenant_id, asset_id)`; tenancy guard green. Types regenerated. No UI.
+
+## 26. Not in 4.2
+
+Coverage screen, asset Coverage tab, settings field, "Active coverages" on Vendors (4.3); list column and filter (4.4); scope lines and exclusions (C3, OQ-05); OQ-27 precedence; expiry events and job; contract PDFs; coverage custom fields.
