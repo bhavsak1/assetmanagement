@@ -9,12 +9,12 @@ type Asset = Tables<'asset_view'>
 type Option = { id: string; parent_id: string | null; name: string }
 type SavedView = Pick<Tables<'saved_view'>, 'id' | 'name' | 'filters' | 'sort'>
 export type Sort = 'name' | 'tag' | 'updated'
-export type Filters = { q: string; status: string; status_id: string; category_id: string; location_id: string }
+export type Filters = { q: string; status: string; status_id: string; category_id: string; location_id: string; vendor_id: string }
 export type Status = Pick<Tables<'asset_status'>, 'id' | 'code' | 'label' | 'system_status' | 'tone' | 'is_active' | 'deleted_at'>
 export type Cursor = { value: string; id: string }
 
 const PAGE = 50
-const emptyFilters: Filters = { q: '', status: '', status_id: '', category_id: '', location_id: '' }
+const emptyFilters: Filters = { q: '', status: '', status_id: '', category_id: '', location_id: '', vendor_id: '' }
 // System statuses (data-model-goal3 §3) and their tag colours from tokens.css.
 export const statuses = ['in_stock', 'active', 'under_maintenance', 'inactive', 'disposed'] as const
 export const statusTone: Record<string, string> = {
@@ -56,6 +56,7 @@ export function countArgs(f: Filters): Database['public']['Functions']['count_as
     ...(f.status_id && { p_status_id: f.status_id }),
     ...(f.category_id && { p_category_id: f.category_id }),
     ...(f.location_id && { p_location_id: f.location_id }),
+    ...(f.vendor_id && { p_vendor_id: f.vendor_id }),
   }
 }
 
@@ -69,7 +70,7 @@ export function nextCursor(rows: Asset[], sort: Sort): Cursor | undefined {
 
 // A saved view back to filters. Ids of categories or locations that are gone, and unknown keys
 // or statuses, are dropped: the view still opens, with fewer filters.
-export function viewFilters(saved: SavedView['filters'], categories: Option[], locations: Option[], statusRows: Status[] = []): Filters {
+export function viewFilters(saved: SavedView['filters'], categories: Option[], locations: Option[], statusRows: Status[] = [], vendors: { id: string }[] = []): Filters {
   const s = (saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}) as Record<string, unknown>
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
   const known = (v: unknown, rows: Option[]) => (rows.some((r) => r.id === v) ? str(v) : '')
@@ -79,6 +80,7 @@ export function viewFilters(saved: SavedView['filters'], categories: Option[], l
     status_id: statusRows.some((r) => r.id === s.status_id && !r.deleted_at) ? str(s.status_id) : '',
     category_id: known(s.category_id, categories),
     location_id: known(s.location_id, locations),
+    vendor_id: vendors.some((r) => r.id === s.vendor_id) ? str(s.vendor_id) : '',
   }
 }
 
@@ -103,6 +105,8 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
   const [categories, setCategories] = useState<Option[]>([])
   const [locations, setLocations] = useState<Option[]>([])
   const [statusRows, setStatusRows] = useState<Status[]>([])
+  // Vendor filter (4.1b B6): OEM or O&M. Few vendors per tenant (V5), loaded whole.
+  const [vendors, setVendors] = useState<{ id: string; name: string }[]>([])
   const [views, setViews] = useState<SavedView[]>([])
   const [viewId, setViewId] = useState('')
   const [error, setError] = useState<string>()
@@ -114,11 +118,13 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
       supabase.from('asset_category').select('id, parent_id, name').is('deleted_at', null),
       supabase.from('location').select('id, parent_id, name').is('deleted_at', null),
       loadStatuses(),
-    ]).then(([c, l, st]) => {
+      supabase.from('vendor_view').select('id, name').order('name'),
+    ]).then(([c, l, st, vn]) => {
       if (!live) return
       setCategories(c.data ?? [])
       setLocations(l.data ?? [])
       setStatusRows(st.data ?? [])
+      setVendors((vn.data ?? []).map((x) => ({ id: x.id ?? '', name: x.name ?? '' })))
     })
     return () => {
       live = false
@@ -194,7 +200,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
     setViewId(id)
     const v = views.find((x) => x.id === id)
     if (!v) return
-    const f = viewFilters(v.filters, categories, locations, statusRows)
+    const f = viewFilters(v.filters, categories, locations, statusRows, vendors)
     setTyped(f.q)
     apply(f, isSort(v.sort) ? v.sort : 'name')
   }
@@ -289,6 +295,16 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
             </optgroup>
           )}
         </select>
+        {vendors.length > 0 && (
+          <select className="filter" aria-label={t.assets.vendor} value={filters.vendor_id} onChange={(e) => pick('vendor_id', e.target.value)}>
+            <option value="">{t.assets.allVendors}</option>
+            {vendors.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
+            ))}
+          </select>
+        )}
         <select
           className="filter"
           aria-label={t.assets.sort}

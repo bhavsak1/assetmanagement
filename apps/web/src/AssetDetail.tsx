@@ -34,6 +34,8 @@ const labels: Record<string, string> = {
   parent_asset_id: t.assetForm.parent,
   criticality: t.assetForm.criticality,
   purchase_currency: t.assetForm.currency,
+  oem_vendor_id: t.assetForm.oemVendor,
+  om_vendor_id: t.assetForm.omVendor,
   ...t.settings.assetFields,
 }
 // Bookkeeping columns, not shown as changes.
@@ -96,6 +98,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
   const [domains, setDomains] = useState<Record<string, string>>({})
   const [timeZone, setTimeZone] = useState<string>()
   const [statuses, setStatuses] = useState<Status[]>([])
+  const [vendors, setVendors] = useState<{ id: string; name: string; is_active: boolean }[]>([])
   // Change status offers what the database allows now (allowed_asset_statuses, 3.7).
   const [targets, setTargets] = useState<string[]>([])
   const [tab, setTab] = useState<'overview' | 'attachments' | 'audit'>('overview')
@@ -115,7 +118,8 @@ export function AssetDetailPage({ can }: { can: Can }) {
       supabase.from('tenant').select('time_zone'),
       loadStatuses(),
       supabase.rpc('allowed_asset_statuses', { p_asset_id: assetId }),
-    ]).then(async ([a, ch, c, l, f, dm, tn, st, al]) => {
+      supabase.from('vendor_view').select('id, name, is_active'),
+    ]).then(async ([a, ch, c, l, f, dm, tn, st, al, vn]) => {
       const row = a.data?.[0] ?? null
       const parent = row?.parent_asset_id ? (await supabase.from('asset_view').select('id, tag').eq('id', row.parent_asset_id)).data?.[0] : undefined
       if (!live) return
@@ -128,6 +132,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
       setTimeZone(tn.data?.[0]?.time_zone)
       setStatuses(st.data ?? [])
       setTargets(al.data ?? [])
+      setVendors((vn.data ?? []).map((x) => ({ id: x.id ?? '', name: x.name ?? '', is_active: x.is_active ?? false })))
       if (parent?.id && parent.tag) setTags((m) => ({ ...m, [parent.id as string]: parent.tag as string }))
     })
     return () => {
@@ -159,6 +164,8 @@ export function AssetDetailPage({ can }: { can: Can }) {
     if (key === 'parent_asset_id') return tags[s] ?? '—'
     if (key === 'status') return statusLabel(s)
     if (key === 'status_id') return statusName(statuses, s)
+    // A merged (soft-deleted) vendor is not in vendor_view.
+    if (key === 'oem_vendor_id' || key === 'om_vendor_id') return vendors.find((x) => x.id === s)?.name ?? (can('vendor_core', 'view') ? d.formerVendor : d.hidden)
     if (typeof v === 'boolean') return v ? t.categories.yes : t.categories.no
     const f = key.startsWith('custom.') ? fieldOf(key.slice(7)) : undefined
     const option = f?.type === 'list' && Array.isArray(f.options) ? (f.options as { code: string; label: string }[]).find((o) => o.code === s) : undefined
@@ -267,13 +274,28 @@ export function AssetDetailPage({ can }: { can: Can }) {
                     ))
                   : '—'}
               </Row>
-              {/* A5: vendors arrive in Goal 4 (4.1 adds the columns). */}
-              <Row k={t.assetForm.oemVendor}>
-                <span className="muted" aria-disabled="true" title={t.assetForm.vendorHint}>—</span>
-              </Row>
-              <Row k={t.assetForm.omVendor}>
-                <span className="muted" aria-disabled="true" title={t.assetForm.vendorHint}>—</span>
-              </Row>
+              {([
+                [t.assetForm.oemVendor, asset.oem_vendor_id],
+                [t.assetForm.omVendor, asset.om_vendor_id],
+              ] as const).map(([k, vid]) => {
+                const x = vendors.find((y) => y.id === vid)
+                return (
+                  <Row key={k} k={k}>
+                    {!vid ? (
+                      '—'
+                    ) : !can('vendor_core', 'view') ? (
+                      <Hidden />
+                    ) : (
+                      <>
+                        <Link className="row-link" to={`/vendors?id=${vid}`}>
+                          {x?.name ?? d.formerVendor}
+                        </Link>
+                        {x && !x.is_active && <span className="tag">{t.vendors.inactive}</span>}
+                      </>
+                    )}
+                  </Row>
+                )
+              })}
             </dl>
           </section>
           {line.length > 0 && (

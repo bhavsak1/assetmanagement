@@ -11,6 +11,8 @@ type Field = Tables<'field_definition'>
 type Category = Pick<Tables<'asset_category'>, 'id' | 'parent_id' | 'name' | 'is_active'>
 type Place = { id: string; parent_id: string | null; name: string; active: boolean }
 type Option = { code: string; label: string; is_active: boolean }
+type Vendor = { id: string; name: string; is_active: boolean }
+const vendorRoles = ['oem', 'om'] as const
 type Can = (domain: string, operation: string) => boolean
 export type Errors = Record<string, string>
 
@@ -106,6 +108,8 @@ export function fieldErrors(error: { code?: string; message?: string }): Errors 
   if (m.includes('inside itself')) return { parent: e.parentCycle }
   if (m.includes('5 levels')) return { parent: e.parentDepth }
   if (m.includes('quantity')) return { quantity: e.quantity }
+  const vendor = /^(oem|om)_vendor_id: /.exec(m)?.[1]
+  if (vendor) return { [`${vendor}_vendor_id`]: m.includes('not tagged') ? e.vendorNotTagged : e.vendorInvalid }
   if (m.includes('status set')) return { status_id: e.statusNotInSet }
   if (m.includes('category')) return { category_id: e.categoryInactive }
   if (m.includes('location')) return { location_id: e.locationInactive }
@@ -130,6 +134,9 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
   const [statuses, setStatuses] = useState<Status[]>([])
   // Create only: the statuses a new asset of the chosen category may start in (3.7).
   const [startIds, setStartIds] = useState<string[]>([])
+  // The vendors the category offers per role (category_vendors, 4.1b), and every vendor's name.
+  const [allowed, setAllowed] = useState<Record<string, string[]>>({})
+  const [vendors, setVendors] = useState<Vendor[]>([])
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -142,7 +149,8 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
       supabase.rpc('field_domains', { p_entity: 'asset' }),
       assetId ? supabase.from('asset_view').select('*').eq('id', assetId) : Promise.resolve({ data: [], error: null }),
       loadStatuses(),
-    ]).then(async ([tn, c, l, f, d, a, st]) => {
+      supabase.from('vendor_view').select('id, name, is_active'),
+    ]).then(async ([tn, c, l, f, d, a, st, vn]) => {
       const row = a.data?.[0]
       const parent = row?.parent_asset_id ? (await supabase.from('asset_view').select('tag').eq('id', row.parent_asset_id)).data?.[0]?.tag : undefined
       if (!live) return
@@ -154,6 +162,7 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
       setFields(f.data ?? [])
       setDomains(Object.fromEntries((d.data ?? []).map((x) => [x.id, x.code])))
       setStatuses(st.data ?? [])
+      setVendors((vn.data ?? []).map((x) => ({ id: x.id ?? '', name: x.name ?? '', is_active: x.is_active ?? false })))
       setAsset(row)
       setParentTag(parent ?? '')
       const stored = (row?.custom_values ?? {}) as Record<string, Json>
@@ -163,6 +172,8 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
         category_id: row?.category_id ?? '',
         location_id: row?.location_id ?? '',
         status_id: row?.status_id ?? '',
+        oem_vendor_id: row?.oem_vendor_id ?? '',
+        om_vendor_id: row?.om_vendor_id ?? '',
         quantity: String(row?.quantity ?? 1),
         parent: parent ?? '',
         criticality: row?.criticality ?? '',
@@ -198,6 +209,16 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
       live = false
     }
   }, [editing, categoryId, statuses])
+
+  useEffect(() => {
+    if (categoryId === undefined) return
+    let live = true
+    const offered = (role: string) => (categoryId ? supabase.rpc('category_vendors', { p_category_id: categoryId, p_role: role }) : Promise.resolve({ data: [] as string[] }))
+    void Promise.all([offered('oem'), offered('om')]).then(([oem, om]) => live && setAllowed({ oem: oem.data ?? [], om: om.data ?? [] }))
+    return () => {
+      live = false
+    }
+  }, [categoryId])
 
   const canSave = can('asset_core', editing ? 'update' : 'create')
   const canTag = can('asset_core', 'set_tag')
@@ -243,6 +264,8 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
       model: text('model'),
       purchase_date: text('purchase_date'),
       in_service_date: text('in_service_date'),
+      oem_vendor_id: text('oem_vendor_id'),
+      om_vendor_id: text('om_vendor_id'),
       custom_values: customPayload((asset?.custom_values ?? {}) as Record<string, Json>, values, line, canWrite),
       // Left out when not editable: an update writes only the columns it names, so hidden money stays.
       ...(canMoney && { purchase_value: text('purchase_value') === null ? null : Number(values.purchase_value), purchase_currency: values.purchase_value?.trim() ? text('purchase_currency') : null }),
@@ -362,13 +385,30 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
                   </select>
                 </Labeled>
               )}
-              {/* A5: vendors arrive in Goal 4 (4.1 adds the columns). */}
-              <Labeled name="oem_vendor" text={t.assetForm.oemVendor} hint={t.assetForm.vendorHint}>
-                <input name="oem_vendor" disabled />
-              </Labeled>
-              <Labeled name="om_vendor" text={t.assetForm.omVendor}>
-                <input name="om_vendor" disabled />
-              </Labeled>
+              {vendorRoles.map((role) => {
+                const name = `${role}_vendor_id`
+                const current = values[name] ?? ''
+                // Tagged vendors (OQ-06), plus the stored one when it no longer is (B4: kept, marked).
+                const ids = [...new Set([...(allowed[role] ?? []), ...(current ? [current] : [])])]
+                const mark = (id: string) => {
+                  const x = vendors.find((y) => y.id === id)
+                  if (!x) return '—'
+                  const note = !x.is_active ? t.assetForm.vendorInactive : !allowed[role]?.includes(id) ? t.assetForm.notTagged : ''
+                  return note ? `${x.name} (${note})` : x.name
+                }
+                return (
+                  <Labeled key={role} name={name} text={role === 'oem' ? t.assetForm.oemVendor : t.assetForm.omVendor} hint={role === 'oem' ? t.assetForm.vendorHint : undefined} error={err(name)}>
+                    <select name={name} value={current} aria-invalid={!!errors[name]} onChange={(ev) => set(name, ev.target.value)}>
+                      <option value="">{t.assetForm.none}</option>
+                      {ids.map((id) => (
+                        <option key={id} value={id}>
+                          {mark(id)}
+                        </option>
+                      ))}
+                    </select>
+                  </Labeled>
+                )
+              })}
             </div>
           </fieldset>
           {line.length > 0 && (

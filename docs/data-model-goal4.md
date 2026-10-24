@@ -161,6 +161,13 @@ Coverage (4.2), "has active coverage" filter and column (4.2), category tagging,
 
 **Status:** in review, 24 Oct 2026. Owner accepted every lean on 24 Oct 2026 except B6: the Assets list gets a vendor filter (B6 b). Built in the `4_1b_*` migrations.
 
+**As built (differences from the design below):**
+- Another tenant's vendor id fails the asset rule (`23514`, it only finds the current tenant's vendors) before the composite FK.
+- The merge drops a stale tag (the source no longer holds the role) instead of repointing it, since `into` may not hold that role.
+- The merge's role update on `into` runs the 4.1 vendor checks, so a missing mandatory **vendor** field on `into` blocks the merge with that message (fill it first). Mandatory **asset** fields do not block it.
+- The category form sends `oem_vendor_ids` and `om_vendor_ids` only when they changed.
+- `/vendors?id=<id>` opens that vendor's panel (the overview link).
+
 **Open items used (lean):** OQ-06: the OEM and O&M pickers offer only vendors tagged to the asset's category line. Admin override later (not built).
 
 **Screen:** `assetly-screens.html` has no tagging tab, no vendor picker and no merge dialog. The Asset detail Coverage card shows "Vendor: [OEM vendor]" (that card is 4.3). New UI follows the 3.7b status picker and the 2.2 card style.

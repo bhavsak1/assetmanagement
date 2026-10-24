@@ -285,3 +285,19 @@ test('actionError: codes from the action functions to messages', () => {
   expect(actionError({ code: '22023', message: 'status cannot change from active to in_stock' })).toBe(a.errors.statusNotAllowed)
   expect(actionError({ code: 'XX000' })).toBe(a.errors.failed)
 })
+
+test('4.1b overview: vendor names link to the Vendors screen, inactive marked; Hidden without vendor_core.view', async () => {
+  Object.assign((db.results.asset_view as { data: Record<string, unknown>[] }).data[0]!, { oem_vendor_id: 'v1', om_vendor_id: 'v2' })
+  db.results.vendor_view = { data: [{ id: 'v1', name: 'Siemens', is_active: true }, { id: 'v2', name: 'Atlas', is_active: false }], error: null }
+  await render(['asset_core.view', 'vendor_core.view'])
+  const links = [...container.querySelectorAll<HTMLAnchorElement>('.kv a')].filter((a) => a.href.includes('/vendors'))
+  expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
+    ['Siemens', '/vendors?id=v1'],
+    ['Atlas', '/vendors?id=v2'],
+  ])
+  expect(container.textContent).toContain(t.vendors.inactive)
+  act(() => root.unmount())
+  root = createRoot(container)
+  await render(['asset_core.view'])
+  expect(container.querySelector('a[href^="/vendors"]')).toBeNull()
+})

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router'
 import { CustomInput, customPayload } from './AssetForm'
 import { errorMessage, FieldForm } from './Categories'
 import { t } from './i18n'
@@ -62,6 +63,21 @@ export function VendorsPage({ tenantId, can }: { tenantId: string; can: Can }) {
   const [open, setOpen] = useState<{ row?: Vendor }>()
   const [error, setError] = useState<string>()
   const [reload, setReload] = useState(0)
+  // ?id= opens that vendor (links from the asset overview, 4.1b).
+  const linked = useSearchParams()[0].get('id')
+
+  useEffect(() => {
+    if (!linked) return
+    let live = true
+    void supabase
+      .from('vendor_view')
+      .select('*')
+      .eq('id', linked)
+      .then(({ data }) => live && data?.[0] && setOpen({ row: data[0] }))
+    return () => {
+      live = false
+    }
+  }, [linked])
 
   // Search as you type, after a short pause.
   useEffect(() => {
@@ -168,6 +184,10 @@ export function VendorsPage({ tenantId, can }: { tenantId: string; can: Can }) {
             setReload((n) => n + 1)
           }}
           onContacts={() => setReload((n) => n + 1)}
+          onMerged={() => {
+            setOpen(undefined)
+            setReload((n) => n + 1)
+          }}
           onClose={() => setOpen(undefined)}
         />
       )}
@@ -245,6 +265,7 @@ function VendorPanel({
   can,
   onSaved,
   onContacts,
+  onMerged,
   onClose,
 }: {
   row?: Vendor
@@ -254,6 +275,7 @@ function VendorPanel({
   can: Can
   onSaved: (row: Vendor) => void
   onContacts: () => void
+  onMerged: () => void
   onClose: () => void
 }) {
   const editable = row ? can('vendor_core', 'update') : can('vendor_core', 'create')
@@ -398,7 +420,97 @@ function VendorPanel({
         )}
       </form>
       {row?.id && <Contacts tenantId={tenantId} vendorId={row.id} canEdit={can('vendor_core', 'update')} onChange={onContacts} />}
+      {row?.id && can('vendor_core', 'delete') && <MergeVendor from={row} onDone={onMerged} />}
     </div>
+  )
+}
+
+// Story 4.1b (B7, B8): merge this vendor into another with merge_vendor. Shows what moves first.
+function MergeVendor({ from, onDone }: { from: Vendor; onDone: () => void }) {
+  const m = v.merge
+  const id = from.id ?? ''
+  const [open, setOpen] = useState(false)
+  const [options, setOptions] = useState<Vendor[]>([])
+  const [into, setInto] = useState('')
+  const [counts, setCounts] = useState<{ contacts: number; categories: number; assets: number }>()
+  const [error, setError] = useState<string>()
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    let live = true
+    const head = { count: 'exact', head: true } as const
+    void Promise.all([
+      supabase.from('vendor_view').select('*').eq('is_active', true).neq('id', id).order('name'),
+      supabase.from('vendor_contact').select('id', head).eq('vendor_id', id).is('deleted_at', null),
+      supabase.from('asset_category').select('id', head).or(`oem_vendor_ids.cs.{${id}},om_vendor_ids.cs.{${id}}`),
+      supabase.from('asset_view').select('id', head).or(`oem_vendor_id.eq.${id},om_vendor_id.eq.${id}`),
+    ]).then(([o, c, g, a]) => {
+      if (!live) return
+      setOptions(o.data ?? [])
+      setCounts({ contacts: c.count ?? 0, categories: g.count ?? 0, assets: a.count ?? 0 })
+    })
+    return () => {
+      live = false
+    }
+  }, [open, id])
+
+  async function merge() {
+    setBusy(true)
+    setError(undefined)
+    const { error } = await supabase.rpc('merge_vendor', { p_from_id: id, p_into_id: into })
+    setBusy(false)
+    if (error) return setError(error.code === '42501' ? v.errors.noPermission : error.code === '22023' ? m.errors.inactive : m.errors.failed)
+    onDone()
+  }
+
+  if (!open)
+    return (
+      <div className="page-head">
+        <div className="spacer" />
+        <button className="btn" type="button" onClick={() => setOpen(true)}>
+          {m.button}
+        </button>
+      </div>
+    )
+  const target = options.find((o) => o.id === into)
+  const added = (from.roles ?? []).filter((r) => !target?.roles?.includes(r))
+  return (
+    <section aria-labelledby="merge-title">
+      <h2 id="merge-title">{m.title.replace('{name}', from.name ?? '')}</h2>
+      <p className="muted hint">{m.hint.replace('{name}', from.name ?? '')}</p>
+      {error && (
+        <p className="login-error" role="alert">
+          {error}
+        </p>
+      )}
+      <label className="field">
+        {m.into}
+        <select value={into} onChange={(e) => setInto(e.target.value)}>
+          <option value="">{m.choose}</option>
+          {options.map((o) => (
+            <option key={o.id} value={o.id ?? ''}>
+              {o.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {target && counts && (
+        <p role="status">
+          {m.moves.replace('{contacts}', String(counts.contacts)).replace('{categories}', String(counts.categories)).replace('{assets}', String(counts.assets))}
+          {added.length > 0 && ` ${m.roles.replace('{roles}', added.map((r) => (v.roles as Record<string, string>)[r] ?? r).join(', '))}`}
+        </p>
+      )}
+      <div className="page-head">
+        <div className="spacer" />
+        <button className="btn" type="button" onClick={() => setOpen(false)}>
+          {m.cancel}
+        </button>
+        <button className="btn btn-main" type="button" disabled={!target || busy} onClick={() => void merge()}>
+          {m.confirm}
+        </button>
+      </div>
+    </section>
   )
 }
 
