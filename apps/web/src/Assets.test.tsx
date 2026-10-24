@@ -36,7 +36,7 @@ vi.mock('./supabase', () => {
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
-const none: Filters = { q: '', status: '', status_id: '', category_id: '', location_id: '' }
+const none: Filters = { q: '', status: '', status_id: '', category_id: '', location_id: '', vendor_id: '' }
 const statusRows = [
   { id: 's-active', code: 'active', label: 'Active', system_status: 'active', tone: 'ok', is_active: true, deleted_at: null },
   { id: 's-spare', code: 'spare', label: 'Spare', system_status: 'in_stock', tone: 'warn', is_active: true, deleted_at: null },
@@ -58,11 +58,12 @@ const asset = (n: number) => ({
 
 test('filters become list_assets arguments; empty ones are left out', () => {
   expect(listArgs(none, 'name')).toEqual({ p_sort: 'name', p_limit: 51 })
-  expect(listArgs({ q: ' pump ', status: 'in_stock', status_id: '', category_id: 'c1', location_id: 'l1' }, 'tag', { value: 'AST-1', id: 'x' })).toEqual({
+  expect(listArgs({ q: ' pump ', status: 'in_stock', status_id: '', category_id: 'c1', location_id: 'l1', vendor_id: 'v1' }, 'tag', { value: 'AST-1', id: 'x' })).toEqual({
     p_term: 'pump',
     p_status: 'in_stock',
     p_category_id: 'c1',
     p_location_id: 'l1',
+    p_vendor_id: 'v1',
     p_sort: 'tag',
     p_after_value: 'AST-1',
     p_after_id: 'x',
@@ -79,7 +80,7 @@ test('the next-page cursor is the sort value and id of the 50th row, only when a
 })
 
 test('a saved view round trip keeps its filters and drops what no longer exists', () => {
-  const f: Filters = { q: ' pump ', status: 'in_stock', status_id: '', category_id: 'c1', location_id: 'l2' }
+  const f: Filters = { q: ' pump ', status: 'in_stock', status_id: '', category_id: 'c1', location_id: 'l2', vendor_id: '' }
   const saved = savedFilters(f)
   expect(saved).toEqual({ q: 'pump', status: 'in_stock', category_id: 'c1', location_id: 'l2' })
   expect(viewFilters(saved, categories, locations)).toEqual({ ...f, q: 'pump' })
@@ -88,6 +89,9 @@ test('a saved view round trip keeps its filters and drops what no longer exists'
   // 3.7: a tenant status is kept while it exists; old views (system status only) are unchanged.
   expect(viewFilters({ status_id: 's-spare' }, categories, locations, statusRows)).toEqual({ ...none, status_id: 's-spare' })
   expect(viewFilters({ status_id: 'gone' }, categories, locations, statusRows)).toEqual(none)
+  // 4.1b: a vendor is kept while it exists.
+  expect(viewFilters({ vendor_id: 'v1' }, categories, locations, [], [{ id: 'v1' }])).toEqual({ ...none, vendor_id: 'v1' })
+  expect(viewFilters({ vendor_id: 'gone' }, categories, locations, [], [{ id: 'v1' }])).toEqual(none)
 })
 
 let root: Root

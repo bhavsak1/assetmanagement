@@ -130,7 +130,8 @@
       "defaultStatus": "The default status of a system status cannot be deactivated.",
       "setEmpty": "Pick at least one status, or inherit from the parent.",
       "setStart": "Pick at least one status mapped to In Stock or Active, so new assets have somewhere to start.",
-      "setInvalid": "This status set is not allowed. Remove inactive statuses, and keep one mapped to In Stock or Active."
+      "setInvalid": "This status set is not allowed. Remove inactive statuses, and keep one mapped to In Stock or Active.",
+      "vendorTag": "Pick active vendors that hold the role."
     },
     "statuses": {
       "title": "Statuses",
@@ -163,6 +164,18 @@
       "inheritedAll": "No set above this category: every active status, in system order.",
       "addLabel": "Status to add",
       "choose": "Choose a status",
+      "add": "Add",
+      "remove": "Remove"
+    },
+    "vendorTags": {
+      "title": "Vendors for assets in this category",
+      "hint": "Asset forms offer these vendors, plus the ones tagged to parent categories.",
+      "oem": "OEM vendors",
+      "om": "O&M vendors",
+      "inherited": "From {name}: {vendors}",
+      "none": "None yet.",
+      "choose": "Choose a vendor",
+      "addLabel": "{role} to add",
       "add": "Add",
       "remove": "Remove"
     }
@@ -334,6 +347,21 @@
       "format": "{name}: the value does not match the field's format.",
       "fieldPermission": "{name}: you do not have permission to change this field.",
       "generic": "Could not save. Try again."
+    },
+    "merge": {
+      "button": "Merge into another vendor",
+      "title": "Merge {name}",
+      "hint": "For duplicates. {name} is removed, and its contacts, category tags and asset links move to the vendor you pick. That vendor keeps its own details.",
+      "into": "Merge into",
+      "choose": "Choose a vendor",
+      "moves": "Moves {contacts} contacts, {categories} category tags and {assets} asset links.",
+      "roles": "Roles added: {roles}.",
+      "confirm": "Merge",
+      "cancel": "Cancel",
+      "errors": {
+        "inactive": "Pick an active vendor to merge into.",
+        "failed": "The merge did not go through. Try again."
+      }
     }
   },
   "pages": {
@@ -401,7 +429,9 @@
     "add": "Add asset",
     "errors": {
       "load": "Could not load assets. Try again."
-    }
+    },
+    "vendor": "Vendor",
+    "allVendors": "All vendors"
   },
   "assetForm": {
     "addTitle": "Add asset",
@@ -427,7 +457,7 @@
     "currency": "Currency",
     "oemVendor": "OEM vendor",
     "omVendor": "O&M vendor",
-    "vendorHint": "Vendors arrive in a later release.",
+    "vendorHint": "Vendors tagged to this category or a parent category.",
     "none": "—",
     "requiredHint": "* Required",
     "save": "Save asset",
@@ -454,8 +484,12 @@
       "categoryInactive": "Pick an active category.",
       "statusNotInSet": "This category does not offer that status. Pick another.",
       "locationInactive": "Pick an active location.",
-      "generic": "Could not save. Try again."
-    }
+      "generic": "Could not save. Try again.",
+      "vendorNotTagged": "This vendor is not tagged to the category. Pick another.",
+      "vendorInvalid": "Pick an active vendor with this role."
+    },
+    "notTagged": "not tagged",
+    "vendorInactive": "inactive"
   },
   "assetDetail": {
     "edit": "Edit",
@@ -543,6 +577,7 @@
       "none": "No history yet.",
       "more": "Load more",
       "error": "Could not load the history. Try again."
-    }
+    },
+    "formerVendor": "Former vendor"
   }
 }

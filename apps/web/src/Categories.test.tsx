@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { CategoriesPage, inheritedCode, parseOptions, validateField } from './Categories'
+import { CategoriesPage, errorMessage, inheritedCode, parseOptions, validateField } from './Categories'
 import { t } from './i18n'
 import { codeFrom, groupStatuses, inheritedSet } from './Statuses'
 import { buildTree } from './tree'
@@ -84,6 +84,8 @@ const cat = (id: string, name: string, parent_id: string | null = null, code: st
   code,
   is_active: true,
   status_ids,
+  oem_vendor_ids: [] as string[],
+  om_vendor_ids: [] as string[],
 })
 
 test('the tree builds from flat rows: parents before children, by name, orphans at the top', () => {
@@ -325,4 +327,32 @@ test('picker: a set with no start status is refused before the write; back to in
   expect(container.querySelector('#set-source')!.textContent).toBe(t.categories.statusSet.inheritedAll)
   await act(async () => container.querySelector('form')!.requestSubmit())
   expect(db.writes).toEqual([{ name: 'Pumps', parent_id: null, code: 'PMP', is_active: true, status_ids: null }])
+})
+
+test('4.1b vendor tags: the parent\'s tags show with their source; added tags save per role, only when changed', async () => {
+  const rows = (db.results.asset_category as { data: Record<string, unknown>[] }).data
+  Object.assign(rows[0]!, { oem_vendor_ids: ['v1'], om_vendor_ids: [] })
+  Object.assign(rows[1]!, { oem_vendor_ids: [], om_vendor_ids: [] })
+  db.results.vendor_view = {
+    data: [
+      { id: 'v1', name: 'Siemens', roles: ['oem', 'om'], is_active: true },
+      { id: 'v2', name: 'Atlas', roles: ['om'], is_active: true },
+      { id: 'v3', name: 'Old works', roles: ['om'], is_active: false },
+    ],
+    error: null,
+  }
+  db.results['asset_category:write'] = { data: [{ id: 'c2' }], error: null }
+  await render(true)
+  await click('Booster pumps')
+  await click(t.categories.editCategory)
+  const s = t.categories.vendorTags
+  expect(container.textContent).toContain(s.inherited.replace('{name}', 'Pumps').replace('{vendors}', 'Siemens'))
+  const om = [...container.querySelectorAll('select')].find((x) => x.getAttribute('aria-label') === s.addLabel.replace('{role}', s.om))!
+  // Active vendors holding the role only.
+  expect([...om.options].map((o) => o.textContent)).toEqual([s.choose, 'Siemens', 'Atlas'])
+  await act(async () => type(om, 'v2'))
+  await act(async () => [...container.querySelectorAll('button')].filter((b) => b.textContent === s.add)[1]!.click())
+  await act(async () => container.querySelector('form')!.requestSubmit())
+  expect(db.writes).toEqual([{ name: 'Booster pumps', parent_id: 'c1', code: null, is_active: true, status_ids: null, om_vendor_ids: ['v2'] }])
+  expect(errorMessage({ code: '23514', message: 'tagged vendor is unknown, inactive or not an om vendor' }, '')).toBe(t.categories.errors.vendorTag)
 })

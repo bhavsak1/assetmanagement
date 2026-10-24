@@ -6,7 +6,10 @@ import { supabase } from './supabase'
 import { buildTree, lineage } from './tree'
 import type { Json, Tables } from './types/database'
 
-type Category = Pick<Tables<'asset_category'>, 'id' | 'parent_id' | 'name' | 'code' | 'is_active' | 'status_ids'>
+type Category = Pick<Tables<'asset_category'>, 'id' | 'parent_id' | 'name' | 'code' | 'is_active' | 'status_ids' | 'oem_vendor_ids' | 'om_vendor_ids'>
+type Vendor = { id: string; name: string; roles: string[]; is_active: boolean }
+const vendorRoles = ['oem', 'om'] as const
+type VendorRole = (typeof vendorRoles)[number]
 type Field = Tables<'field_definition'>
 type Domain = { id: string; code: string }
 type Option = { code: string; label: string; is_active: boolean }
@@ -66,6 +69,7 @@ export function errorMessage(error: { code?: string; message?: string } | null, 
   if (error?.code === '23505')
     return message.includes('asset_category_code_uq') ? e.duplicateCode : message.includes('asset_status_label_uq') ? e.duplicateStatusLabel : duplicate
   // The 3.7 set trigger's messages all name the status set.
+  if (error?.code === '23514' && message.includes('tagged')) return e.vendorTag
   if (error?.code === '23514') return message.includes('status set') ? e.setInvalid : message.includes('asset_status') ? e.statusInvalid : e.invalid
   if (error?.code === '22023') return e.defaultStatus
   return e.generic
@@ -82,6 +86,7 @@ export function CategoriesPage({ tenantId, canManage }: { tenantId: string; canM
   const [fields, setFields] = useState<Field[]>([])
   const [domains, setDomains] = useState<Domain[]>([])
   const [statuses, setStatuses] = useState<Status[]>([])
+  const [vendors, setVendors] = useState<Vendor[]>([])
   const [selected, setSelected] = useState<string>()
   const [editing, setEditing] = useState<Editing>()
   const [error, setError] = useState<string>()
@@ -90,16 +95,18 @@ export function CategoriesPage({ tenantId, canManage }: { tenantId: string; canM
   useEffect(() => {
     let live = true
     void Promise.all([
-      supabase.from('asset_category').select('id, parent_id, name, code, is_active, status_ids').is('deleted_at', null),
+      supabase.from('asset_category').select('id, parent_id, name, code, is_active, status_ids, oem_vendor_ids, om_vendor_ids').is('deleted_at', null),
       supabase.from('field_definition').select('*').eq('entity', 'asset').is('deleted_at', null).order('sort_order'),
       supabase.rpc('field_domains', { p_entity: 'asset' }),
       loadStatuses(),
-    ]).then(([c, f, d, s]) => {
+      supabase.from('vendor_view').select('id, name, roles, is_active').order('name'),
+    ]).then(([c, f, d, s, vn]) => {
       if (!live) return
       setCategories(c.data ?? [])
       setFields(f.data ?? [])
       setDomains(d.data ?? [])
       setStatuses(s.data ?? [])
+      setVendors((vn.data ?? []).map((x) => ({ id: x.id ?? '', name: x.name ?? '', roles: x.roles ?? [], is_active: x.is_active ?? false })))
       if (c.error || f.error || s.error) setError(t.categories.errors.load)
     })
     return () => {
@@ -196,6 +203,7 @@ export function CategoriesPage({ tenantId, canManage }: { tenantId: string; canM
               row={editing.row}
               categories={categories}
               statuses={statuses}
+              vendors={vendors}
               onCancel={() => setEditing(undefined)}
               onError={setError}
               onSave={(v) =>
@@ -328,6 +336,7 @@ function CategoryForm({
   row,
   categories,
   statuses,
+  vendors,
   onSave,
   onCancel,
   onError,
@@ -335,7 +344,8 @@ function CategoryForm({
   row?: Category
   categories: Category[]
   statuses: Status[]
-  onSave: (v: { name: string; parent_id: string | null; code: string | null; is_active: boolean; status_ids: string[] | null }) => Promise<boolean>
+  vendors: Vendor[]
+  onSave: (v: { name: string; parent_id: string | null; code: string | null; is_active: boolean; status_ids: string[] | null; oem_vendor_ids?: string[]; om_vendor_ids?: string[] }) => Promise<boolean>
   onCancel: () => void
   onError: (message: string) => void
 }) {
@@ -344,6 +354,7 @@ function CategoryForm({
   const [parentId, setParentId] = useState(row?.parent_id ?? '')
   const [code, setCode] = useState(row?.code ?? '')
   const [statusIds, setStatusIds] = useState(row?.status_ids ?? null)
+  const [tags, setTags] = useState<Record<VendorRole, string[]>>({ oem: row?.oem_vendor_ids ?? [], om: row?.om_vendor_ids ?? [] })
   const inherited = inheritedCode(categories, parentId)
 
   function submit(e: FormEvent<HTMLFormElement>) {
@@ -359,6 +370,11 @@ function CategoryForm({
       code: value || null,
       is_active: form.get('active') === 'on',
       status_ids: statusIds,
+      // Sent only when changed: tags are checked on change, and most saves do not touch them.
+      ...vendorRoles.reduce((o, role) => {
+        const before = (role === 'oem' ? row?.oem_vendor_ids : row?.om_vendor_ids) ?? []
+        return JSON.stringify(tags[role]) === JSON.stringify(before) ? o : { ...o, [`${role}_vendor_ids`]: tags[role] }
+      }, {}),
     })
   }
 
@@ -395,8 +411,95 @@ function CategoryForm({
         {t.categories.active}
       </label>
       <StatusSetPicker categories={categories} statuses={statuses} parentId={parentId} value={statusIds} onChange={setStatusIds} />
+      <VendorTags categories={categories} vendors={vendors} parentId={parentId} value={tags} onChange={setTags} />
       <FormButtons onCancel={onCancel} />
     </form>
+  )
+}
+
+// Story 4.1b (B1, B2): vendors tagged per role. Tags of the parent and above also apply (union, as
+// private.allowed_vendor_ids); they show read-only with their source.
+function VendorTags({
+  categories,
+  vendors,
+  parentId,
+  value,
+  onChange,
+}: {
+  categories: Category[]
+  vendors: Vendor[]
+  parentId: string
+  value: Record<VendorRole, string[]>
+  onChange: (v: Record<VendorRole, string[]>) => void
+}) {
+  const s = t.categories.vendorTags
+  const [pick, setPick] = useState<Record<VendorRole, string>>({ oem: '', om: '' })
+  const nameOf = (id: string) => vendors.find((x) => x.id === id)?.name ?? '—'
+  const tagsOf = (c: Category, role: VendorRole) => (role === 'oem' ? c.oem_vendor_ids : c.om_vendor_ids) ?? []
+  const ancestors = parentId ? lineage(categories, parentId).map((id) => categories.find((c) => c.id === id)) : []
+  return (
+    <fieldset className="field set">
+      <legend>{s.title}</legend>
+      <span className="muted hint">{s.hint}</span>
+      {vendorRoles.map((role) => {
+        const label = role === 'oem' ? s.oem : s.om
+        const ids = value[role]
+        // Active vendors with the role; an id already tagged stays even when it no longer qualifies (B4).
+        const addable = vendors.filter((x) => x.is_active && x.roles.includes(role) && !ids.includes(x.id))
+        return (
+          <div key={role}>
+            <b>{label}</b>
+            {ancestors.map(
+              (c) =>
+                c &&
+                tagsOf(c, role).length > 0 && (
+                  <p key={c.id} className="muted hint">
+                    {s.inherited.replace('{name}', c.name).replace('{vendors}', tagsOf(c, role).map(nameOf).join(', '))}
+                  </p>
+                ),
+            )}
+            {ids.length === 0 ? (
+              <p className="muted hint">{s.none}</p>
+            ) : (
+              <ul className="set-list">
+                {ids.map((id) => (
+                  <li key={id}>
+                    {nameOf(id)}
+                    {vendors.find((x) => x.id === id)?.is_active === false && <span className="tag">{t.categories.inactive}</span>}
+                    <span className="actions">
+                      <button className="btn" type="button" onClick={() => onChange({ ...value, [role]: ids.filter((x) => x !== id) })} aria-label={`${s.remove} ${nameOf(id)}`}>
+                        {s.remove}
+                      </button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="page-head">
+              <select aria-label={s.addLabel.replace('{role}', label)} value={pick[role]} onChange={(e) => setPick({ ...pick, [role]: e.target.value })}>
+                <option value="">{s.choose}</option>
+                {addable.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="btn"
+                type="button"
+                disabled={!pick[role]}
+                onClick={() => {
+                  onChange({ ...value, [role]: [...ids, pick[role]] })
+                  setPick({ ...pick, [role]: '' })
+                }}
+              >
+                {s.add}
+              </button>
+            </div>
+          </div>
+        )
+      })}
+    </fieldset>
   )
 }
 

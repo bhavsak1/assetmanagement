@@ -231,3 +231,20 @@ test('create: status offers the category set narrowed to In Stock and Active one
   expect(status.value).toBe('s-run')
   expect(fieldErrors({ code: '23514', message: "status is inactive or not in the category's status set" })).toEqual({ status_id: t.assetForm.errors.statusNotInSet })
 })
+
+test('4.1b vendor pickers: tagged vendors plus the stored one marked, sent on save; rule errors show on the field', async () => {
+  db.results.category_vendors = { data: ['v1'], error: null }
+  db.results.vendor_view = { data: [{ id: 'v1', name: 'Siemens', is_active: true }, { id: 'v2', name: 'Old works', is_active: false }], error: null }
+  ;(db.results.asset_view as { data: Record<string, unknown>[] }).data[0]!.oem_vendor_id = 'v2'
+  await renderEdit()
+  const oem = container.querySelector<HTMLSelectElement>('[name="oem_vendor_id"]')!
+  expect([...oem.options].map((o) => o.textContent)).toEqual([t.assetForm.none, 'Siemens', `Old works (${t.assetForm.vendorInactive})`])
+  expect(oem.value).toBe('v2')
+  const om = container.querySelector<HTMLSelectElement>('[name="om_vendor_id"]')!
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(om, 'v1')
+  await act(async () => om.dispatchEvent(new Event('change', { bubbles: true })))
+  await submit()
+  expect(db.writes[0]).toMatchObject({ oem_vendor_id: 'v2', om_vendor_id: 'v1' })
+  expect(fieldErrors({ code: '23514', message: 'om_vendor_id: vendor is not tagged to this category' })).toEqual({ om_vendor_id: t.assetForm.errors.vendorNotTagged })
+  expect(fieldErrors({ code: '23514', message: 'oem_vendor_id: vendor is inactive or not an oem vendor' })).toEqual({ oem_vendor_id: t.assetForm.errors.vendorInvalid })
+})

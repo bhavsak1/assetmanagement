@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { t } from './i18n'
 import { searchFilter, taxField, vendorError, VendorsPage } from './Vendors'
@@ -15,7 +16,7 @@ vi.mock('./supabase', () => {
   const chain = (table: string) => {
     let key = table
     const q: Record<string, unknown> = {}
-    for (const m of ['select', 'eq', 'is', 'order', 'or', 'contains', 'limit', 'in', 'insert', 'update'])
+    for (const m of ['select', 'eq', 'neq', 'is', 'order', 'or', 'contains', 'limit', 'in', 'insert', 'update'])
       q[m] = (...args: unknown[]) => {
         db.calls.push({ table, m, args })
         if (m === 'insert' || m === 'update') key = `${table}:write`
@@ -24,7 +25,10 @@ vi.mock('./supabase', () => {
     q.then = (resolve: (v: unknown) => void) => resolve(db.results[key] ?? { data: [], error: null })
     return q
   }
-  const rpc = (fn: string) => Promise.resolve(db.results[fn] ?? { data: [], error: null })
+  const rpc = (fn: string, args?: unknown) => {
+    db.calls.push({ table: 'rpc', m: fn, args: [args] })
+    return Promise.resolve(db.results[fn] ?? { data: [], error: null })
+  }
   return { supabase: { from: chain, rpc } }
 })
 
@@ -95,7 +99,7 @@ afterEach(() => {
 
 async function render(grants: string[]) {
   const can = (d: string, o: string) => grants.includes(`${d}.${o}`)
-  await act(async () => root.render(<VendorsPage tenantId="ta" can={can} />))
+  await act(async () => root.render(<MemoryRouter><VendorsPage tenantId="ta" can={can} /></MemoryRouter>))
 }
 const button = (text: string) => [...container.querySelectorAll('button')].find((b) => b.textContent === text)
 const all = ['vendor_core.view', 'vendor_core.create', 'vendor_core.update', 'vendor_tax_ids.view', 'vendor_tax_ids.update', 'category_config.manage']
@@ -170,4 +174,30 @@ test('adding a contact inserts it for the open vendor', async () => {
   await act(async () => contactForm.requestSubmit())
   const insert = db.calls.find((c) => c.table === 'vendor_contact' && c.m === 'insert')!.args[0] as Record<string, unknown>
   expect(insert).toMatchObject({ name: 'R. Kulkarni', vendor_id: 'v1', tenant_id: 'ta', is_primary: false })
+})
+
+test('4.1b merge: only with vendor_core.delete; shows what moves, then calls merge_vendor', async () => {
+  const atlas = { ...vendor, id: 'v2', name: 'Atlas', code: null, roles: ['om'] }
+  db.results.vendor_view = { data: [vendor, atlas], error: null }
+  db.results.asset_category = { data: null, count: 2, error: null }
+  db.results.asset_view = { data: null, count: 3, error: null }
+  const m = t.vendors.merge
+  await render(['vendor_core.view', 'vendor_core.update'])
+  await act(async () => button('Siemens India')!.click())
+  expect(button(m.button)).toBeUndefined()
+
+  act(() => root.unmount())
+  root = createRoot(container)
+  await render(['vendor_core.view', 'vendor_core.update', 'vendor_core.delete'])
+  await act(async () => button('Siemens India')!.click())
+  await act(async () => button(m.button)!.click())
+  expect(button(m.confirm)!.disabled).toBe(true)
+  const into = [...container.querySelectorAll('select')].find((x) => x.closest('label')?.textContent?.startsWith(m.into))!
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(into, 'v2')
+  await act(async () => into.dispatchEvent(new Event('change', { bubbles: true })))
+  expect(container.querySelector('[role="status"]')!.textContent).toBe(
+    `${m.moves.replace('{contacts}', '0').replace('{categories}', '2').replace('{assets}', '3')} ${m.roles.replace('{roles}', t.vendors.roles.oem)}`,
+  )
+  await act(async () => button(m.confirm)!.click())
+  expect(db.calls.find((c) => c.table === 'rpc' && c.m === 'merge_vendor')!.args[0]).toEqual({ p_from_id: 'v1', p_into_id: 'v2' })
 })
