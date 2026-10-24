@@ -159,7 +159,7 @@ Coverage (4.2), "has active coverage" filter and column (4.2), category tagging,
 
 # Story 4.1b: vendor links (category tags, asset OEM and O&M, merge)
 
-**Status:** design, 24 Oct 2026. Waiting for the owner on B1 to B10. Nothing built yet.
+**Status:** in review, 24 Oct 2026. Owner accepted every lean on 24 Oct 2026 except B6: the Assets list gets a vendor filter (B6 b). Built in the `4_1b_*` migrations.
 
 **Open items used (lean):** OQ-06: the OEM and O&M pickers offer only vendors tagged to the asset's category line. Admin override later (not built).
 
@@ -192,7 +192,7 @@ Coverage (4.2), "has active coverage" filter and column (4.2), category tagging,
 |---|---|
 | `asset_view` | Appends `oem_vendor_id`, `om_vendor_id` (ids only, lean B5 a). No join, so the list plan stays the same |
 | Names | The app reads `vendor_view?id=in.(...)`, so `vendor_core.view` applies; without it the overview shows "Hidden" |
-| `list_assets`, `count_assets` | No vendor filter (lean B6 a). Signatures unchanged |
+| `list_assets`, `count_assets` | New last argument `p_vendor_id uuid default null` (owner chose B6 b): `v.oem_vendor_id = X or v.om_vendor_id = X`. Dropped and recreated (signature change, as 3.7). Assets list gets a Vendor filter select; saved views keep `vendor_id` in `filters` |
 | 3.3 form | OEM and O&M selects: ids from `category_vendors(category, role)`, names from `vendor_view`, plus "None". Refreshed when the category changes; the current value is kept and marked (B4) |
 | 3.4 overview | Vendor names linked to the Vendors screen (opens that vendor's drawer). "Inactive" tag when inactive |
 | Audit tab | `oem_vendor_id` and `om_vendor_id` lines show vendor names; an id not in `vendor_view` shows "Former vendor" |
@@ -231,7 +231,7 @@ Coverage (4.2), "has active coverage" filter and column (4.2), category tagging,
 | B3 | Roles per column | **a)** OEM column needs `oem`, O&M column needs `om`. **b)** Any role in either | a. That is what the roles are for (V3) | Low |
 | B4 | Category change, tag removed, vendor deactivated, role dropped | **a)** Keep the link; the form marks it. **b)** Refuse the change while linked. **c)** Clear the link | a. Edits never fail on an old link; history stays true; same as G4 | Low (no links on staging yet) |
 | B5 | Vendor name in `asset_view` | **a)** Ids only; the app reads names from `vendor_view`. **b)** Names joined in the view | a. List plan unchanged; names stay under `vendor_core.view` | Low |
-| B6 | Vendor filter on the Assets list | **a)** Not now. **b)** `p_vendor_id` in `list_assets` | a. Not asked; 4.4 adds the coverage column | Low (additive argument) |
+| B6 (chose b) | Vendor filter on the Assets list | **a)** Not now. **b)** `p_vendor_id` in `list_assets` | a. Not asked; 4.4 adds the coverage column | Low (additive argument) |
 | B7 | Who may merge | **a)** `vendor_core.delete`. **b)** New operation `vendor_core.merge`, Tenant Admin | a. Merge ends in a soft delete; same people | Low (seed row plus one check) |
 | B8 | Values on merge | **a)** `into` keeps its own; `from`'s stay on the soft-deleted row. **b)** Fill `into`'s empty fields and custom keys from `from` | a. No guessing which value is right; nothing lost | Low |
 | B9 | Who tags | **a)** `category_config.manage`. **b)** `vendor_core.update` | a. Tags sit on the category row, like statuses | Low (policy) |
@@ -250,4 +250,4 @@ Web: category form Vendors section, asset form pickers, overview names and links
 
 ## 17. Not in 4.1b
 
-Admin override of the tag rule (OQ-06 later), vendor filter on the list (B6), supplier column on asset, mandatory vendor fields, a "tagged in" list on the Vendors screen, coverage (4.2).
+Admin override of the tag rule (OQ-06 later), supplier column on asset, mandatory vendor fields, a "tagged in" list on the Vendors screen, coverage (4.2).
