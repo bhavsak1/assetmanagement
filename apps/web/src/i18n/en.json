@@ -75,6 +75,8 @@
     "unit": "Unit",
     "options": "Options",
     "optionsHint": "One per line, as code = Label. A removed option is kept as inactive.",
+    "pattern": "Format (optional)",
+    "patternHint": "A regular expression the value must match, for example ^[A-Z]{5}[0-9]{4}[A-Z]$. Leave empty for any text.",
     "domain": "Security domain",
     "required": "Required",
     "yes": "Yes",
@@ -99,7 +101,9 @@
     },
     "domains": {
       "asset_core": "Asset core",
-      "asset_financials": "Asset financials"
+      "asset_financials": "Asset financials",
+      "vendor_core": "Vendor core",
+      "vendor_tax_ids": "Vendor tax and statutory IDs"
     },
     "errors": {
       "load": "Could not load categories. Refresh to try again.",
@@ -117,6 +121,7 @@
       "optionCode": "Option codes must start with a lowercase letter and use only lowercase letters, digits and _.",
       "optionDuplicate": "Each option code can be used once.",
       "domain": "Pick a security domain.",
+      "pattern": "The format is not a valid regular expression.",
       "duplicateStatusCode": "A status with this code already exists. Codes are never reused, even for inactive statuses.",
       "duplicateStatusLabel": "A status with this label already exists. Labels ignore case.",
       "statusLabel": "Enter a label (60 characters at most).",
@@ -256,6 +261,81 @@
       }
     }
   },
+  "vendors": {
+    "subtitle": "Manufacturers, service providers and suppliers",
+    "add": "Add vendor",
+    "edit": "Edit vendor",
+    "view": "Vendor",
+    "filter": "Search vendors",
+    "allRoles": "All roles",
+    "allStates": "Active and inactive",
+    "activeOnly": "Active",
+    "inactiveOnly": "Inactive",
+    "inactive": "Inactive",
+    "loading": "Loading vendors…",
+    "none": "No vendors yet.",
+    "noMatch": "No vendors match these filters.",
+    "more": "Show more",
+    "hidden": "Hidden",
+    "roles": {
+      "oem": "OEM",
+      "om": "O&M",
+      "supplier": "Supplier"
+    },
+    "col": {
+      "vendor": "Vendor",
+      "roles": "Roles",
+      "contact": "Primary contact"
+    },
+    "name": "Name",
+    "code": "Code",
+    "codeHint": "Optional short code, for imports and ERP. Letters, digits and . _ - (20 at most).",
+    "rolesLabel": "Roles",
+    "phone": "Phone",
+    "email": "Email",
+    "website": "Website",
+    "address": "Address",
+    "notes": "Notes",
+    "active": "Active",
+    "activeHint": "An inactive vendor is kept with its history and can be made active again.",
+    "save": "Save",
+    "close": "Close",
+    "cancel": "Cancel",
+    "contacts": {
+      "title": "Contacts",
+      "add": "Add contact",
+      "edit": "Edit",
+      "remove": "Remove",
+      "makePrimary": "Make primary",
+      "primary": "Primary",
+      "none": "No contacts yet.",
+      "name": "Name",
+      "role": "Role or note",
+      "phone": "Phone",
+      "email": "Email"
+    },
+    "fields": {
+      "title": "Vendor fields",
+      "intro": "Extra fields on every vendor, such as GSTIN or PAN. Put tax IDs in the Vendor tax and statutory IDs domain so only allowed users see them.",
+      "add": "Add field",
+      "edit": "Edit",
+      "none": "No vendor fields yet."
+    },
+    "errors": {
+      "load": "Could not load vendors. Refresh to try again.",
+      "noPermission": "You do not have permission to make this change.",
+      "duplicateName": "A vendor with this name already exists. Names ignore case, and inactive vendors keep theirs.",
+      "duplicateCode": "Another vendor already uses this code.",
+      "code": "Code can use letters, digits and . _ - only, 20 at most.",
+      "email": "Enter a valid email address.",
+      "name": "Enter a name.",
+      "required": "Fill in the required fields: {names}.",
+      "field": "{name}: this value is not valid.",
+      "format": "{name}: the value does not match the field's format.",
+      "fieldPermission": "{name}: you do not have permission to change this field.",
+      "generic": "Could not save. Try again."
+    }
+  },
   "pages": {
     "login": "Sign in",
     "dashboard": "Dashboard",
@@ -358,6 +438,7 @@
       "required": "This field is required.",
       "number": "Enter a number.",
       "invalid": "This value is not valid for the field.",
+      "format": "This value does not match the field's format.",
       "quantity": "Quantity must be a whole number, 1 or more.",
       "money": "Enter an amount of 0 or more.",
       "noPermission": "You do not have permission to make this change.",

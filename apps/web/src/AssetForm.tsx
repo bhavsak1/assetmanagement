@@ -96,6 +96,7 @@ export function fieldErrors(error: { code?: string; message?: string }): Errors 
     if (error.code === '42501') return { [`custom.${custom}`]: e.noPermissionField }
     if (m.includes('does not apply')) return { [`custom.${custom}`]: e.notInCategory }
     if (m.includes('inactive')) return { [`custom.${custom}`]: e.fieldInactive }
+    if (m.includes('format')) return { [`custom.${custom}`]: e.format }
     return { [`custom.${custom}`]: e.invalid }
   }
   if (m.includes('purchase value') || m.includes('purchase_value')) return { purchase_value: error.code === '42501' ? e.noPermissionField : e.money }
@@ -407,7 +408,7 @@ function Labeled({ name, text, hint, error, children }: { name: string; text: st
   )
 }
 
-function CustomInput({ field: f, name, text, value, disabled, error, onChange }: { field: Field; name: string; text: string; value: string; disabled: boolean; error: ReactNode; onChange: (name: string, v: string) => void }) {
+export function CustomInput({ field: f, name, text, value, disabled, error, onChange }: { field: Field; name: string; text: string; value: string; disabled: boolean; error: ReactNode; onChange: (name: string, v: string) => void }) {
   const change = (ev: { target: { value: string } }) => onChange(name, ev.target.value)
   if (f.type === 'list' || f.type === 'boolean') {
     const options =

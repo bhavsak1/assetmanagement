@@ -44,6 +44,7 @@ const field = (key: string, over: Partial<Field> = {}): Field => ({
   type: 'text',
   options: [],
   unit: null,
+  pattern: null,
   is_required: false,
   sort_order: 0,
   security_domain_id: 'd-core',

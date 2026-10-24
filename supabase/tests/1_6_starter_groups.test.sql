@@ -144,6 +144,10 @@ select 'attachments', a.tenant_id || '/asset/' || a.id || '/' || a.id, '{"size":
 from public.asset a where a.name in ('a-row', 'b-row');
 insert into public.asset_attachment (id, tenant_id, asset_id, file_name)
 select a.id, a.tenant_id, a.id, 'row' from public.asset a where a.name in ('a-row', 'b-row');
+insert into public.vendor (tenant_id, name) values
+  ('00000000-0000-0000-0000-00000000000a', 'a-row'), ('00000000-0000-0000-0000-00000000000b', 'b-row');
+insert into public.vendor_contact (tenant_id, vendor_id, name)
+select v.tenant_id, v.id, 'row' from public.vendor v where v.name in ('a-row', 'b-row');
 select is(array(select name from tenant_table where pg_temp.count_rows(name, $$tenant_id = '00000000-0000-0000-0000-00000000000b'$$) = 0 order by 1),
           '{}', 'every public tenant_id table holds tenant B rows to hide');
 -- One test per tenant A user, each acting as that user over every table. Plain queries, so RLS decides.
