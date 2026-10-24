@@ -231,6 +231,118 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"coverage": {
+                  Row: {
+                    "contract_currency": string | null,"contract_value": number | null,"coverage_type": string,"created_at": string,"created_by": string | null,"deleted_at": string | null,"end_date": string,"id": string,"notes": string | null,"reference": string | null,"renews_coverage_id": string | null,"start_date": string,"tenant_id": string,"updated_at": string,"updated_by": string | null,"vendor_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "contract_currency"?: string | null,"contract_value"?: number | null,"coverage_type": string,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"end_date": string,"id"?: string,"notes"?: string | null,"reference"?: string | null,"renews_coverage_id"?: string | null,"start_date": string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null,"vendor_id": string
+                  }
+                  Update: {
+                    "contract_currency"?: string | null,"contract_value"?: number | null,"coverage_type"?: string,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"end_date"?: string,"id"?: string,"notes"?: string | null,"reference"?: string | null,"renews_coverage_id"?: string | null,"start_date"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null,"vendor_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "coverage_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "coverage_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "coverage_tenant_id_renews_coverage_id_fkey"
+      columns: ["tenant_id","renews_coverage_id"]
+isOneToOne: false
+      referencedRelation: "coverage"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "coverage_tenant_id_renews_coverage_id_fkey"
+      columns: ["tenant_id","renews_coverage_id"]
+isOneToOne: false
+      referencedRelation: "coverage_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "coverage_tenant_id_vendor_id_fkey"
+      columns: ["tenant_id","vendor_id"]
+isOneToOne: false
+      referencedRelation: "vendor"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "coverage_tenant_id_vendor_id_fkey"
+      columns: ["tenant_id","vendor_id"]
+isOneToOne: false
+      referencedRelation: "vendor_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "coverage_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"coverage_asset": {
+                  Row: {
+                    "asset_id": string,"coverage_id": string,"created_at": string,"created_by": string | null,"deleted_at": string | null,"id": string,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "asset_id": string,"coverage_id": string,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"id"?: string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "asset_id"?: string,"coverage_id"?: string,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"id"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "coverage_asset_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "coverage_asset_tenant_id_asset_id_fkey"
+      columns: ["tenant_id","asset_id"]
+isOneToOne: false
+      referencedRelation: "asset"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "coverage_asset_tenant_id_asset_id_fkey"
+      columns: ["tenant_id","asset_id"]
+isOneToOne: false
+      referencedRelation: "asset_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "coverage_asset_tenant_id_coverage_id_fkey"
+      columns: ["tenant_id","coverage_id"]
+isOneToOne: false
+      referencedRelation: "coverage"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "coverage_asset_tenant_id_coverage_id_fkey"
+      columns: ["tenant_id","coverage_id"]
+isOneToOne: false
+      referencedRelation: "coverage_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "coverage_asset_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "coverage_asset_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"domain_operation": {
                   Row: {
                     "code": string,"created_at": string,"id": string,"security_domain_id": string,"sort_order": number,"updated_at": string
@@ -501,14 +613,14 @@ isOneToOne: false
                   ]
                 },"tenant": {
                   Row: {
-                    "asset_tag_pattern": string,"created_at": string,"created_by": string | null,"currency_code": string,"date_format": string,"deleted_at": string | null,"fiscal_year_start_month": number,"id": string,"locale": string,"name": string,"required_asset_fields": (string)[],"slug": string,"status": string,"time_zone": string,"updated_at": string,"updated_by": string | null
+                    "asset_tag_pattern": string,"coverage_expiring_days": number,"created_at": string,"created_by": string | null,"currency_code": string,"date_format": string,"deleted_at": string | null,"fiscal_year_start_month": number,"id": string,"locale": string,"name": string,"required_asset_fields": (string)[],"slug": string,"status": string,"time_zone": string,"updated_at": string,"updated_by": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "asset_tag_pattern"?: string,"created_at"?: string,"created_by"?: string | null,"currency_code": string,"date_format": string,"deleted_at"?: string | null,"fiscal_year_start_month": number,"id"?: string,"locale": string,"name": string,"required_asset_fields"?: (string)[],"slug": string,"status"?: string,"time_zone": string,"updated_at"?: string,"updated_by"?: string | null
+                    "asset_tag_pattern"?: string,"coverage_expiring_days"?: number,"created_at"?: string,"created_by"?: string | null,"currency_code": string,"date_format": string,"deleted_at"?: string | null,"fiscal_year_start_month": number,"id"?: string,"locale": string,"name": string,"required_asset_fields"?: (string)[],"slug": string,"status"?: string,"time_zone": string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Update: {
-                    "asset_tag_pattern"?: string,"created_at"?: string,"created_by"?: string | null,"currency_code"?: string,"date_format"?: string,"deleted_at"?: string | null,"fiscal_year_start_month"?: number,"id"?: string,"locale"?: string,"name"?: string,"required_asset_fields"?: (string)[],"slug"?: string,"status"?: string,"time_zone"?: string,"updated_at"?: string,"updated_by"?: string | null
+                    "asset_tag_pattern"?: string,"coverage_expiring_days"?: number,"created_at"?: string,"created_by"?: string | null,"currency_code"?: string,"date_format"?: string,"deleted_at"?: string | null,"fiscal_year_start_month"?: number,"id"?: string,"locale"?: string,"name"?: string,"required_asset_fields"?: (string)[],"slug"?: string,"status"?: string,"time_zone"?: string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Relationships: [
                     {
@@ -830,6 +942,62 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"coverage_view": {
+                  Row: {
+                    "contract_currency": string | null,"contract_value": number | null,"coverage_type": string | null,"created_at": string | null,"created_by": string | null,"end_date": string | null,"id": string | null,"notes": string | null,"reference": string | null,"renews_coverage_id": string | null,"start_date": string | null,"status": string | null,"tenant_id": string | null,"updated_at": string | null,"updated_by": string | null,"vendor_id": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                           "contract_currency"?: never,"contract_value"?: never,"coverage_type"?: string | null,"created_at"?: string | null,"created_by"?: string | null,"end_date"?: string | null,"id"?: string | null,"notes"?: string | null,"reference"?: string | null,"renews_coverage_id"?: string | null,"start_date"?: string | null,"status"?: never,"tenant_id"?: string | null,"updated_at"?: string | null,"updated_by"?: string | null,"vendor_id"?: string | null
+                         }
+                        Update: {
+                           "contract_currency"?: never,"contract_value"?: never,"coverage_type"?: string | null,"created_at"?: string | null,"created_by"?: string | null,"end_date"?: string | null,"id"?: string | null,"notes"?: string | null,"reference"?: string | null,"renews_coverage_id"?: string | null,"start_date"?: string | null,"status"?: never,"tenant_id"?: string | null,"updated_at"?: string | null,"updated_by"?: string | null,"vendor_id"?: string | null
+                         }
+                        Relationships: [
+                    {
+      foreignKeyName: "coverage_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "coverage_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "coverage_tenant_id_renews_coverage_id_fkey"
+      columns: ["tenant_id","renews_coverage_id"]
+isOneToOne: false
+      referencedRelation: "coverage"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "coverage_tenant_id_renews_coverage_id_fkey"
+      columns: ["tenant_id","renews_coverage_id"]
+isOneToOne: false
+      referencedRelation: "coverage_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "coverage_tenant_id_vendor_id_fkey"
+      columns: ["tenant_id","vendor_id"]
+isOneToOne: false
+      referencedRelation: "vendor"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "coverage_tenant_id_vendor_id_fkey"
+      columns: ["tenant_id","vendor_id"]
+isOneToOne: false
+      referencedRelation: "vendor_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "coverage_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"my_permission": {
                   Row: {
                     "domain": string | null,"operation": string | null
@@ -879,6 +1047,11 @@ isOneToOne: false
 "asset_attachments":
 { Args: { "p_asset_id": string }; Returns: {
               "created_at": string,"file_name": string,"id": string,"mime_type": string,"size_bytes": number,"uploaded_by": string
+            }[]
+                           },
+"asset_coverage":
+{ Args: { "p_asset_ids": (string)[] }; Returns: {
+              "asset_id": string,"coverage_group": string,"coverage_id": string,"end_date": string,"start_date": string,"status": string,"vendor_id": string
             }[]
                            },
 "asset_history":
@@ -959,7 +1132,7 @@ isOneToOne: false
 { Args: { "p_asset_id": string,"p_reason": string,"p_to_location_id": string }; Returns: undefined
                            },
 "update_tenant_settings":
-{ Args: { "p_currency_code": string,"p_date_format": string,"p_fiscal_year_start_month": number,"p_locale": string,"p_required_asset_fields": (string)[],"p_time_zone": string }; Returns: undefined
+{ Args: { "p_coverage_expiring_days"?: number,"p_currency_code": string,"p_date_format": string,"p_fiscal_year_start_month": number,"p_locale": string,"p_required_asset_fields": (string)[],"p_time_zone": string }; Returns: undefined
                            }
           }
           Enums: {
