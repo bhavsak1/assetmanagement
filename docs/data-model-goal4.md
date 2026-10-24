@@ -263,7 +263,13 @@ Admin override of the tag rule (OQ-06 later), supplier column on asset, mandator
 
 # Story 4.2: coverage table and status derivation
 
-**Status:** design, 24 Oct 2026. Waiting for the owner on C1 to C10. No migration yet.
+**Status:** in review, 24 Oct 2026. Owner accepted every lean, C1 to C10, on 24 Oct 2026. Built in the `4_2_*` migrations, tests in `4_2_coverage.test.sql`.
+
+**As built (differences from the design below):**
+- The OQ-26 rule lives in one definer helper, `private.coverage_visible(coverage_id)`, used by the `coverage` select and update policies, the `coverage_asset` insert policy and `coverage_view`. Definer because the "no assets yet" half must count links the user cannot see. It runs per contract row (one or two index probes); inline it in `coverage_view` if the Coverage page counts get slow.
+- `asset_coverage()` starts from a materialized list of the page's links (asset index), then reads `coverage_view` by id, so it never walks every contract of the tenant. It has no `set search_path` so Postgres can inline it (4.4 joins it into the list); every name is schema-qualified.
+- `coverage_asset` rows are insert and soft delete only (update grant: `deleted_at`, `updated_by`). A link needs a live asset and a live contract (trigger, every writer).
+- **C3 makes open-items §5 out of date:** "contracts have scope lines ... with no per-asset rows" no longer holds for Phase 1.
 
 **Reads with:** KB §2 (glossary: "out of warranty" = no active warranty-type coverage today), §5 (coverage as its own entity), §6.6, §12; `security-model.md` §4; OQ-05, OQ-26, OQ-27, doc changes #5 and #8; [data-model-goal3.md](data-model-goal3.md) §5, §6, §13, §17; spike §6; §13 above (merge).
 

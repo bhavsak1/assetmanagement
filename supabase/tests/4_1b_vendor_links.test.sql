@@ -206,7 +206,7 @@ select is((select count(*)::int from public.asset where '00000000-0000-0000-0000
   'merge: no asset left on the source');
 select results_eq($$select actor_user_id, new_data from public.audit_log where action = 'merge' and record_id = '00000000-0000-0000-0000-0000041be006'$$,
   $$values ('00000000-0000-0000-0000-0000000000a1'::uuid,
-            '{"into_id": "00000000-0000-0000-0000-0000041be001", "contacts": 2, "categories": 1, "assets": 1}'::jsonb)$$,
+            '{"into_id": "00000000-0000-0000-0000-0000041be001", "contacts": 2, "categories": 1, "assets": 1, "coverages": 0}'::jsonb)$$,
   'merge: one merge audit entry');
 select is((select count(*)::int from private.outbox_event where event_type = 'vendor.merged'
            and aggregate_id = '00000000-0000-0000-0000-0000041be006'), 1, 'merge: outbox event');
