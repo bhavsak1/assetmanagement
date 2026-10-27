@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
 import { AttachmentsTab } from './Attachments'
+import { CoverageCard, CoverageTab } from './Coverage'
 import { lineFields } from './AssetForm'
 import { loadStatuses, statusName, StatusTag, type Status } from './Assets'
 import { t } from './i18n'
@@ -101,7 +102,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
   const [vendors, setVendors] = useState<{ id: string; name: string; is_active: boolean }[]>([])
   // Change status offers what the database allows now (allowed_asset_statuses, 3.7).
   const [targets, setTargets] = useState<string[]>([])
-  const [tab, setTab] = useState<'overview' | 'attachments' | 'audit'>('overview')
+  const [tab, setTab] = useState<'overview' | 'coverage' | 'attachments' | 'audit'>('overview')
   const [dialog, setDialog] = useState<'transfer' | 'retire' | 'status'>()
   // Bumped after an action: reloads the asset and the Audit tab.
   const [version, setVersion] = useState(0)
@@ -229,7 +230,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
       </div>
       <div className="tabs" role="tablist">
         {tabs.map((k) =>
-          k === 'overview' || k === 'audit' || (k === 'attachments' && can('asset_attachment', 'view')) ? (
+          k === 'overview' || k === 'audit' || (k === 'coverage' && can('coverage_contract', 'view')) || (k === 'attachments' && can('asset_attachment', 'view')) ? (
             <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
               {d.tabs[k]}
             </button>
@@ -298,6 +299,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
               })}
             </dl>
           </section>
+          {can('coverage_contract', 'view') && <CoverageCard assetId={id} can={can} />}
           {line.length > 0 && (
             <section className="card">
               <h2>{t.assetForm.fields}</h2>
@@ -311,6 +313,8 @@ export function AssetDetailPage({ can }: { can: Can }) {
             </section>
           )}
         </div>
+      ) : tab === 'coverage' ? (
+        <CoverageTab assetId={id} can={can} />
       ) : tab === 'attachments' ? (
         <AttachmentsTab tenantId={asset.tenant_id ?? ''} assetId={id} can={can} timeZone={timeZone} />
       ) : (

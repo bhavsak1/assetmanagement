@@ -832,3 +832,41 @@ fieldset.plain {
 fieldset.plain legend {
   padding: 0;
 }
+
+/* Coverage (4.3): summary cards from the Coverage screen. */
+.kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+  margin-top: var(--space-6);
+}
+
+.kpi {
+  flex: 1 1 160px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.kpi span {
+  color: var(--color-text-muted);
+}
+
+.kpi b {
+  font-size: var(--text-kpi);
+  font-weight: var(--weight-semibold);
+}
+
+.kpi b.warn {
+  color: var(--tag-warn-text);
+}
+
+.kpi b.error {
+  color: var(--tag-error-text);
+}
+
+.plain-list {
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}

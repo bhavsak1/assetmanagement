@@ -226,6 +226,8 @@
     "timeZone": "Time zone",
     "dateFormat": "Date format",
     "fiscalMonth": "Fiscal year starts in",
+    "expiringDays": "Coverage expiring window (days)",
+    "expiringDaysHint": "Warranties and AMCs ending within this many days show as Expiring. 1 to 365.",
     "mandatory": "Mandatory asset fields",
     "mandatoryHint": "Name, category and status are always required. Turn on the other fields your company must fill in. Custom fields are set on the Categories screen.",
     "assetFields": {
@@ -362,6 +364,102 @@
         "inactive": "Pick an active vendor to merge into.",
         "failed": "The merge did not go through. Try again."
       }
+    }
+  },
+  "coverage": {
+    "title": "Coverage",
+    "subtitle": "Warranties and AMCs",
+    "add": "Add coverage",
+    "edit": "Edit coverage",
+    "view": "Coverage",
+    "renew": "Renew",
+    "renewTitle": "Renew coverage",
+    "renews": "Renews:",
+    "previous": "Previous coverage",
+    "renewedBy": "Renewed by:",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this coverage? Its assets lose it from today.",
+    "close": "Close",
+    "cancel": "Cancel",
+    "save": "Save coverage",
+    "loading": "Loading…",
+    "none": "No coverage yet.",
+    "noMatch": "No coverage in this tab.",
+    "noneForAsset": "This asset has no coverage.",
+    "more": "Load more",
+    "hidden": "Hidden",
+    "formerVendor": "Former vendor",
+    "cards": {
+      "active": "Active",
+      "expiring": "Expiring in {n} days",
+      "expired": "Expired"
+    },
+    "tabs": {
+      "all": "All",
+      "warranty": "Warranty",
+      "amc": "AMC",
+      "expiring": "Expiring"
+    },
+    "col": {
+      "type": "Type",
+      "asset": "Asset",
+      "scope": "Scope",
+      "vendor": "Vendor",
+      "start": "Start",
+      "end": "End",
+      "status": "Status"
+    },
+    "types": {
+      "warranty": "Warranty",
+      "extended_warranty": "Extended warranty",
+      "amc": "AMC",
+      "other": "Other"
+    },
+    "groups": {
+      "warranty": "Warranty",
+      "amc": "AMC",
+      "other": "Other"
+    },
+    "status": {
+      "active": "Active",
+      "expiring": "Expiring",
+      "expired": "Expired",
+      "future": "Not started",
+      "none": "None",
+      "expiresIn": "Expires in {n} d",
+      "expiresToday": "Expires today",
+      "expiredAgo": "Expired {n} d ago",
+      "startsIn": "Starts in {n} d"
+    },
+    "plus": "+{n}",
+    "scope": "{n} assets",
+    "scopeOne": "1 asset",
+    "noAssets": "No assets yet",
+    "to": "to {date}",
+    "type": "Type",
+    "vendor": "Vendor",
+    "chooseVendor": "Choose a vendor",
+    "reference": "Reference",
+    "start": "Start date",
+    "end": "End date",
+    "value": "Contract value",
+    "currency": "Currency",
+    "notes": "Notes",
+    "assets": "Covered assets",
+    "findAsset": "Find an asset by name, tag or serial number",
+    "addAsset": "Add",
+    "removeAsset": "Remove",
+    "activeCount": "Active coverages",
+    "errors": {
+      "load": "Could not load coverage. Try again.",
+      "noPermission": "You do not have permission to do this.",
+      "vendor": "That vendor is inactive or deleted. Choose another.",
+      "vendorRequired": "Choose a vendor.",
+      "dates": "Enter a start date and an end date on or after it.",
+      "value": "Enter a contract value of zero or more.",
+      "duplicateAsset": "That asset is already on this coverage.",
+      "assetGone": "An asset was deleted. Reload and try again.",
+      "generic": "Could not save. Try again."
     }
   },
   "pages": {

@@ -419,9 +419,32 @@ function VendorPanel({
           </div>
         )}
       </form>
+      {row?.id && can('coverage_contract', 'view') && <ActiveCoverages vendorId={row.id} />}
       {row?.id && <Contacts tenantId={tenantId} vendorId={row.id} canEdit={can('vendor_core', 'update')} onChange={onContacts} />}
       {row?.id && can('vendor_core', 'delete') && <MergeVendor from={row} onDone={onMerged} />}
     </div>
+  )
+}
+
+// Story 4.3 (§26): how many live contracts (active or expiring today) this vendor is responsible for.
+function ActiveCoverages({ vendorId }: { vendorId: string }) {
+  const [count, setCount] = useState<number>()
+  useEffect(() => {
+    let live = true
+    void supabase
+      .from('coverage_view')
+      .select('id', { count: 'exact', head: true })
+      .eq('vendor_id', vendorId)
+      .in('status', ['active', 'expiring'])
+      .then(({ count }) => live && setCount(count ?? 0))
+    return () => {
+      live = false
+    }
+  }, [vendorId])
+  return (
+    <p className="muted">
+      {t.coverage.activeCount}: {count ?? '—'}
+    </p>
   )
 }
 

@@ -6,6 +6,7 @@ import { AssetFormPage } from './AssetForm'
 import { AssetLabelPage, ScanPage } from './AssetLabel'
 import { AssetsPage } from './Assets'
 import { CategoriesPage } from './Categories'
+import { CoveragePage } from './Coverage'
 import { LocationsPage } from './Locations'
 import { SettingsPage } from './Settings'
 import { VendorsPage } from './Vendors'
@@ -324,7 +325,7 @@ export function App() {
       <Route element={session ? signedIn : <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />}>
         {navGroups.flatMap(({ items }) =>
           items
-            .filter((key) => key !== 'assets' && key !== 'categories' && key !== 'locations' && key !== 'settings' && key !== 'vendors')
+            .filter((key) => key !== 'assets' && key !== 'categories' && key !== 'locations' && key !== 'settings' && key !== 'vendors' && key !== 'coverage')
             .map((key) => <Route key={key} path={`/${key}`} element={<EmptyPage page={key} />} />),
         )}
         <Route
@@ -341,6 +342,7 @@ export function App() {
         <Route path="/assets/:assetId/edit" element={<AssetFormPage tenantId={tenantId ?? ''} can={can} />} />
         <Route path="/categories" element={<CategoriesPage tenantId={tenantId ?? ''} canManage={can('category_config', 'manage')} />} />
         <Route path="/vendors" element={<VendorsPage tenantId={tenantId ?? ''} can={can} />} />
+        <Route path="/coverage" element={<CoveragePage tenantId={tenantId ?? ''} can={can} />} />
         <Route path="/locations" element={<LocationsPage tenantId={tenantId ?? ''} canManage={can('location_hierarchy', 'manage')} />} />
         <Route
           path="/settings"
