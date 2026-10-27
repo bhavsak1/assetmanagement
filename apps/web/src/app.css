@@ -870,3 +870,81 @@ fieldset.plain legend {
   padding: 0;
   list-style: none;
 }
+
+/* Assets filter panel (4.4): closed by default; chips show what filters the list. A bottom sheet on a phone. */
+.filter-chips {
+  margin-top: var(--space-5);
+  align-items: center;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 5px 6px 5px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+}
+
+.chip button,
+.btn-link {
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--color-primary-dark);
+  cursor: pointer;
+}
+
+.filter-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  align-items: center;
+  margin-top: var(--space-5);
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+}
+
+.panel-actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgb(0 0 0 / 0.4);
+}
+
+.filter-panel.sheet {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 51;
+  flex-direction: column;
+  align-items: stretch;
+  max-height: 80vh;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-6);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+
+.filter-panel.sheet .filter {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.filter-panel.sheet .panel-actions {
+  margin-left: 0;
+}
+
+.filter-panel.sheet .panel-actions .btn {
+  flex: 1;
+}

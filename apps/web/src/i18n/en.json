@@ -533,7 +533,30 @@
       "load": "Could not load assets. Try again."
     },
     "vendor": "Vendor",
-    "allVendors": "All vendors"
+    "allVendors": "All vendors",
+    "coverage": {
+      "label": "Coverage",
+      "all": "All coverage",
+      "values": {
+        "active": "Active",
+        "expiring": "Expiring",
+        "out": "Out of coverage",
+        "none": "Never covered"
+      },
+      "cell": {
+        "days": "{n} d",
+        "months": "{n} mo",
+        "today": "today",
+        "out": "Out of coverage",
+        "none": "None"
+      }
+    },
+    "panel": {
+      "filters": "Filters",
+      "remove": "Remove filter {filter}",
+      "clearAll": "Clear all",
+      "apply": "Apply"
+    }
   },
   "assetForm": {
     "addTitle": "Add asset",

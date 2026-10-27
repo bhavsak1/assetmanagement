@@ -1,20 +1,55 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
+import { daysBetween, groups, tenantToday, useTenant } from './Coverage'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import { buildTree } from './tree'
 import type { Database, Tables } from './types/database'
 
 type Asset = Tables<'asset_view'>
+type Line = Database['public']['Functions']['asset_coverage']['Returns'][number]
 type Option = { id: string; parent_id: string | null; name: string }
 type SavedView = Pick<Tables<'saved_view'>, 'id' | 'name' | 'filters' | 'sort'>
 export type Sort = 'name' | 'tag' | 'updated'
-export type Filters = { q: string; status: string; status_id: string; category_id: string; location_id: string; vendor_id: string }
+export type Filters = { q: string; status: string; status_id: string; category_id: string; location_id: string; vendor_id: string; coverage: string }
 export type Status = Pick<Tables<'asset_status'>, 'id' | 'code' | 'label' | 'system_status' | 'tone' | 'is_active' | 'deleted_at'>
 export type Cursor = { value: string; id: string }
 
 const PAGE = 50
-const emptyFilters: Filters = { q: '', status: '', status_id: '', category_id: '', location_id: '', vendor_id: '' }
+const emptyFilters: Filters = { q: '', status: '', status_id: '', category_id: '', location_id: '', vendor_id: '', coverage: '' }
+// Coverage filter values (data-model-goal4 §33), one overall value per asset, as the column shows it.
+export const coverageValues = ['active', 'expiring', 'out', 'none'] as const
+const OPEN_KEY = 'assetly.assets.filtersOpen'
+// Storage can be blocked (private mode, policy): the panel then starts closed and is not remembered.
+const readOpen = () => {
+  try {
+    return localStorage.getItem(OPEN_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+// shortcut: read on each render, not on resize; enough because any click re-renders.
+const isPhone = () => window.matchMedia?.('(max-width: 767px)').matches ?? false
+
+// The Coverage cell: of the groups covering today, the one that ends first (the most urgent; ties go
+// warranty, AMC, other). "Out of coverage" when contracts exist but none covers today; "None" when never covered.
+export function coverageCell(lines: Line[], today: string): { text: string; tone: string } {
+  const cc = t.assets.coverage.cell
+  const order = groups as readonly string[]
+  const best = lines
+    .filter((l) => l.status === 'active' || l.status === 'expiring')
+    .sort((a, b) => a.end_date.localeCompare(b.end_date) || order.indexOf(a.coverage_group) - order.indexOf(b.coverage_group))[0]
+  if (!best) return lines.length ? { text: cc.out, tone: 'error' } : { text: cc.none, tone: 'neutral' }
+  const days = daysBetween(today, best.end_date)
+  const left =
+    best.status === 'expiring'
+      ? days === 0
+        ? cc.today
+        : cc.days.replace('{n}', String(days))
+      : cc.months.replace('{n}', String(Math.max(1, Math.round(days / 30.44))))
+  const group = (t.coverage.groups as Record<string, string>)[best.coverage_group] ?? best.coverage_group
+  return { text: `${group} · ${left}`, tone: best.status === 'expiring' ? 'warn' : 'ok' }
+}
 // System statuses (data-model-goal3 §3) and their tag colours from tokens.css.
 export const statuses = ['in_stock', 'active', 'under_maintenance', 'inactive', 'disposed'] as const
 export const statusTone: Record<string, string> = {
@@ -57,6 +92,7 @@ export function countArgs(f: Filters): Database['public']['Functions']['count_as
     ...(f.category_id && { p_category_id: f.category_id }),
     ...(f.location_id && { p_location_id: f.location_id }),
     ...(f.vendor_id && { p_vendor_id: f.vendor_id }),
+    ...(f.coverage && { p_coverage: f.coverage }),
   }
 }
 
@@ -81,6 +117,7 @@ export function viewFilters(saved: SavedView['filters'], categories: Option[], l
     category_id: known(s.category_id, categories),
     location_id: known(s.location_id, locations),
     vendor_id: vendors.some((r) => r.id === s.vendor_id) ? str(s.vendor_id) : '',
+    coverage: (coverageValues as readonly string[]).includes(str(s.coverage)) ? str(s.coverage) : '',
   }
 }
 
@@ -91,8 +128,14 @@ export function savedFilters(f: Filters): Record<string, string> {
 
 const isSort = (v: string): v is Sort => v === 'name' || v === 'tag' || v === 'updated'
 
-export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: string; canSaveViews: boolean; canCreate: boolean }) {
+export function AssetsPage({ tenantId, canSaveViews, canCreate, canCoverage }: { tenantId: string; canSaveViews: boolean; canCreate: boolean; canCoverage: boolean }) {
   const [filters, setFilters] = useState<Filters>(emptyFilters)
+  // Filter panel (4.4): closed by default, remembered per browser. A phone never reopens it as a sheet on load.
+  const [open, setOpen] = useState(() => readOpen() && !isPhone())
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const focusPanel = useRef(false)
+  const tenant = useTenant()
   const [sort, setSort] = useState<Sort>('name')
   // The search box applies after a short pause, not on every key.
   const [typed, setTyped] = useState('')
@@ -100,7 +143,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
   const [pages, setPages] = useState<Cursor[]>([])
   const [after, setAfter] = useState<Cursor>()
   // Keyed by the request, so a new filter or page shows Loading until its own rows arrive.
-  const [loaded, setLoaded] = useState<{ key: string; rows: Asset[] }>()
+  const [loaded, setLoaded] = useState<{ key: string; rows: Asset[]; lines: Line[] }>()
   const [total, setTotal] = useState<number>()
   const [categories, setCategories] = useState<Option[]>([])
   const [locations, setLocations] = useState<Option[]>([])
@@ -161,18 +204,31 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
   const key = JSON.stringify(args)
   useEffect(() => {
     let live = true
-    void supabase.rpc('list_assets', args).then(({ data, error }) => {
+    void supabase.rpc('list_assets', args).then(async ({ data, error }) => {
+      const rows = data ?? []
+      // Coverage column: one asset_coverage() call with the page's ids (data-model-goal4 §21).
+      const ids = rows.slice(0, PAGE).flatMap((r) => (r.id ? [r.id] : []))
+      const lines = canCoverage && ids.length ? ((await supabase.rpc('asset_coverage', { p_asset_ids: ids })).data ?? []) : []
       if (!live) return
-      setLoaded({ key, rows: data ?? [] })
+      setLoaded({ key, rows, lines })
       setError(error ? t.assets.errors.load : undefined)
     })
     return () => {
       live = false
     }
-    // key holds every argument; args itself is a new object each render.
+    // key holds every argument; args itself is a new object each render. Permissions can arrive after
+    // the first load, so a change of canCoverage loads the page again with its coverage lines.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
+  }, [key, canCoverage])
   const rows = loaded?.key === key ? loaded.rows : undefined
+  const lines = loaded?.key === key ? loaded.lines : []
+
+  // Focus moves into the panel when the user opens it, not when it opens restored on load.
+  useEffect(() => {
+    if (!open || !focusPanel.current) return
+    focusPanel.current = false
+    panelRef.current?.querySelector<HTMLElement>('select, button')?.focus()
+  }, [open])
 
   // The count only changes with the filters, not with the page or sort.
   useEffect(() => {
@@ -226,6 +282,17 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
     setReloadViews((n) => n + 1)
   }
 
+  function setPanel(o: boolean) {
+    setOpen(o)
+    try {
+      localStorage.setItem(OPEN_KEY, o ? '1' : '0')
+    } catch {
+      // Storage blocked: the panel still works, it is just not remembered.
+    }
+    if (o) focusPanel.current = true
+    else toggleRef.current?.focus()
+  }
+
   const shown = rows?.slice(0, PAGE) ?? []
   const next = rows && nextCursor(rows, sort)
   const first = pages.length * PAGE + 1
@@ -237,6 +304,23 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
   }
   const tenantStatuses = statusRows.filter((s) => s.code !== s.system_status && !s.deleted_at)
   const count = total === undefined ? '' : total > 10000 ? t.assets.manyCount : total.toLocaleString()
+  const p = t.assets.panel
+  // The active filters (all but the search box, which stays visible), as removable chips.
+  const chips = (
+    [
+      ['location_id', t.assets.location, nameOf(locations, filters.location_id)?.name],
+      ['category_id', t.assets.category, nameOf(categories, filters.category_id)?.name],
+      ['status', t.assets.status, filters.status && systemLabel(filters.status)],
+      ['status_id', t.assets.status, statusRows.find((s) => s.id === filters.status_id)?.label],
+      ['vendor_id', t.assets.vendor, vendors.find((x) => x.id === filters.vendor_id)?.name],
+      ['coverage', t.assets.coverage.label, (t.assets.coverage.values as Record<string, string>)[filters.coverage]],
+    ] as const
+  ).flatMap(([k, label, value]) => (filters[k] ? [{ key: k, text: `${label}: ${value ?? filters[k]}` }] : []))
+  const clearAll = () => {
+    setViewId('')
+    apply({ ...emptyFilters, q: typed })
+  }
+  const sheet = open && isPhone()
 
   return (
     <>
@@ -265,62 +349,10 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
             setTyped(e.target.value)
           }}
         />
-        <TreeSelect label={t.assets.location} all={t.assets.allLocations} rows={locations} value={filters.location_id} onChange={(v) => pick('location_id', v)} />
-        <TreeSelect label={t.assets.category} all={t.assets.allCategories} rows={categories} value={filters.category_id} onChange={(v) => pick('category_id', v)} />
-        {/* System statuses filter on status; tenant statuses (not the default rows) on status_id. */}
-        <select
-          className="filter"
-          aria-label={t.assets.status}
-          value={filters.status || filters.status_id}
-          onChange={(e) => {
-            const v = e.target.value
-            const system = (statuses as readonly string[]).includes(v)
-            setViewId('')
-            apply({ ...filters, q: typed, status: system ? v : '', status_id: system ? '' : v })
-          }}
-        >
-          <option value="">{t.assets.allStatuses}</option>
-          {statuses.map((s) => (
-            <option key={s} value={s}>
-              {t.assets.statuses[s]}
-            </option>
-          ))}
-          {tenantStatuses.length > 0 && (
-            <optgroup label={t.assets.tenantStatuses}>
-              {tenantStatuses.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
-        {vendors.length > 0 && (
-          <select className="filter" aria-label={t.assets.vendor} value={filters.vendor_id} onChange={(e) => pick('vendor_id', e.target.value)}>
-            <option value="">{t.assets.allVendors}</option>
-            {vendors.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.name}
-              </option>
-            ))}
-          </select>
-        )}
-        <select
-          className="filter"
-          aria-label={t.assets.sort}
-          value={sort}
-          onChange={(e) => {
-            setViewId('')
-            if (isSort(e.target.value)) apply({ ...filters, q: typed }, e.target.value)
-          }}
-        >
-          {(['name', 'tag', 'updated'] as const).map((s) => (
-            <option key={s} value={s}>
-              {t.assets.sorts[s]}
-            </option>
-          ))}
-        </select>
-        <div className="spacer" />
+        <button ref={toggleRef} className="btn" type="button" aria-expanded={open} aria-controls="asset-filters" onClick={() => setPanel(!open)}>
+          {p.filters}
+          {chips.length > 0 && ` · ${chips.length}`} <span aria-hidden="true">{open ? '▴' : '▾'}</span>
+        </button>
         <select className="filter" aria-label={t.assets.views.label} value={viewId} onChange={(e) => openView(e.target.value)}>
           <option value="">{t.assets.views.label}</option>
           {views.map((v) => (
@@ -340,6 +372,111 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
           </button>
         )}
       </div>
+      {!open && chips.length > 0 && (
+        <div className="chips filter-chips">
+          {chips.map((c) => (
+            <span key={c.key} className="chip">
+              {c.text}
+              <button type="button" aria-label={p.remove.replace('{filter}', c.text)} onClick={() => pick(c.key, '')}>
+                ×
+              </button>
+            </span>
+          ))}
+          <button className="btn-link" type="button" onClick={clearAll}>
+            {p.clearAll}
+          </button>
+        </div>
+      )}
+      {sheet && <div className="sheet-backdrop" onClick={() => setPanel(false)} />}
+      {open && (
+        <div
+          id="asset-filters"
+          ref={panelRef}
+          className={`filter-panel${sheet ? ' sheet' : ''}`}
+          role={sheet ? 'dialog' : 'group'}
+          aria-modal={sheet || undefined}
+          aria-label={p.filters}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setPanel(false)
+          }}
+        >
+          <TreeSelect label={t.assets.location} all={t.assets.allLocations} rows={locations} value={filters.location_id} onChange={(v) => pick('location_id', v)} />
+          <TreeSelect label={t.assets.category} all={t.assets.allCategories} rows={categories} value={filters.category_id} onChange={(v) => pick('category_id', v)} />
+          {/* System statuses filter on status; tenant statuses (not the default rows) on status_id. */}
+          <select
+            className="filter"
+            aria-label={t.assets.status}
+            value={filters.status || filters.status_id}
+            onChange={(e) => {
+              const v = e.target.value
+              const system = (statuses as readonly string[]).includes(v)
+              setViewId('')
+              apply({ ...filters, q: typed, status: system ? v : '', status_id: system ? '' : v })
+            }}
+          >
+            <option value="">{t.assets.allStatuses}</option>
+            {statuses.map((s) => (
+              <option key={s} value={s}>
+                {t.assets.statuses[s]}
+              </option>
+            ))}
+            {tenantStatuses.length > 0 && (
+              <optgroup label={t.assets.tenantStatuses}>
+                {tenantStatuses.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+          {canCoverage && (
+            <select className="filter" aria-label={t.assets.coverage.label} value={filters.coverage} onChange={(e) => pick('coverage', e.target.value)}>
+              <option value="">{t.assets.coverage.all}</option>
+              {coverageValues.map((v) => (
+                <option key={v} value={v}>
+                  {t.assets.coverage.values[v]}
+                </option>
+              ))}
+            </select>
+          )}
+          {vendors.length > 0 && (
+            <select className="filter" aria-label={t.assets.vendor} value={filters.vendor_id} onChange={(e) => pick('vendor_id', e.target.value)}>
+              <option value="">{t.assets.allVendors}</option>
+              {vendors.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <select
+            className="filter"
+            aria-label={t.assets.sort}
+            value={sort}
+            onChange={(e) => {
+              setViewId('')
+              if (isSort(e.target.value)) apply({ ...filters, q: typed }, e.target.value)
+            }}
+          >
+            {(['name', 'tag', 'updated'] as const).map((s) => (
+              <option key={s} value={s}>
+                {t.assets.sorts[s]}
+              </option>
+            ))}
+          </select>
+          <div className="panel-actions">
+            <button className="btn" type="button" onClick={clearAll} disabled={chips.length === 0}>
+              {p.clearAll}
+            </button>
+            {sheet && (
+              <button className="btn btn-main" type="button" onClick={() => setPanel(false)}>
+                {p.apply}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {error && (
         <p className="login-error" role="alert">
           {error}
@@ -361,6 +498,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
                 <th>{t.assets.col.category}</th>
                 <th>{t.assets.col.location}</th>
                 <th>{t.assets.col.status}</th>
+                {canCoverage && <th>{t.assets.coverage.label}</th>}
               </tr>
             </thead>
             <tbody>
@@ -377,6 +515,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
                   <td>
                     <StatusTag statuses={statusRows} id={a.status_id} system={a.status} />
                   </td>
+                  {canCoverage && <td>{tenant && <CoverageTag lines={lines.filter((l) => l.asset_id === a.id)} today={tenantToday(tenant.time_zone)} />}</td>}
                 </tr>
               ))}
             </tbody>
@@ -419,6 +558,11 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate }: { tenantId: st
       </div>
     </>
   )
+}
+
+function CoverageTag({ lines, today }: { lines: Line[]; today: string }) {
+  const c = coverageCell(lines, today)
+  return <span className={`tag status ${c.tone}`}>{c.text}</span>
 }
 
 function TreeSelect({ label, all, rows, value, onChange }: { label: string; all: string; rows: Option[]; value: string; onChange: (v: string) => void }) {
