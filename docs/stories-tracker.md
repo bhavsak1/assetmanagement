@@ -102,8 +102,8 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | 4.1 | Vendor, roles (OEM, O&M, supplier), contacts, optional GSTIN and PAN fields, Vendors screen | OQ-06 | Done |
 | 4.1b | Category vendor tagging tab, asset OEM and O&M columns with write rules, form pickers and overview, `merge_vendor` | OQ-06 | Done |
 | 4.2 | Coverage table, status derivation (active, expiring, expired, never covered) | OQ-05, OQ-26 | Done |
-| 4.3 | Coverage screen and Coverage tab on asset detail | | In review |
-| 4.4 | Coverage column and filter on the Assets list; collapsible filter panel on the Assets list (Filters button with count, active-filter chips, bottom sheet at phone width) | | In review |
+| 4.3 | Coverage screen and Coverage tab on asset detail | | Done |
+| 4.4 | Coverage column and filter on the Assets list; collapsible filter panel on the Assets list (Filters button with count, active-filter chips, bottom sheet at phone width) | | Done |
 | 4.5 | Coverage term dropdown (months) that fills the End date, with override; optional Warranty block on Add asset that creates the asset and its warranty coverage in one save | | Done |
 
 ### Goal 5: Obligations and dashboard (first pilot-style demo)
