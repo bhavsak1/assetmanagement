@@ -263,7 +263,7 @@ Admin override of the tag rule (OQ-06 later), supplier column on asset, mandator
 
 # Story 4.2: coverage table and status derivation
 
-**Status:** in review, 24 Oct 2026. Owner accepted every lean, C1 to C10, on 24 Oct 2026. Built in the `4_2_*` migrations, tests in `4_2_coverage.test.sql`.
+**Status:** done (owner accepted, 27 Oct 2026). Owner accepted every lean, C1 to C10, on 24 Oct 2026. Built in the `4_2_*` migrations, tests in `4_2_coverage.test.sql`.
 
 **As built (differences from the design below):**
 - The OQ-26 rule lives in one definer helper, `private.coverage_visible(coverage_id)`, used by the `coverage` select and update policies, the `coverage_asset` insert policy and `coverage_view`. Definer because the "no assets yet" half must count links the user cannot see. It runs per contract row (one or two index probes); inline it in `coverage_view` if the Coverage page counts get slow.

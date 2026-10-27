@@ -5,7 +5,7 @@ import type { Tables } from './types/database'
 
 type Settings = Pick<
   Tables<'tenant'>,
-  'currency_code' | 'locale' | 'time_zone' | 'date_format' | 'fiscal_year_start_month' | 'required_asset_fields' | 'asset_tag_pattern'
+  'currency_code' | 'locale' | 'time_zone' | 'date_format' | 'fiscal_year_start_month' | 'required_asset_fields' | 'asset_tag_pattern' | 'coverage_expiring_days'
 >
 type DbError = { code?: string; message?: string }
 
@@ -217,7 +217,7 @@ export function SettingsPage({ tenantId, canView, canManage }: { tenantId: strin
     let live = true
     void supabase
       .from('tenant')
-      .select('currency_code, locale, time_zone, date_format, fiscal_year_start_month, required_asset_fields, asset_tag_pattern')
+      .select('currency_code, locale, time_zone, date_format, fiscal_year_start_month, required_asset_fields, asset_tag_pattern, coverage_expiring_days')
       .eq('id', tenantId)
       .then(({ data, error }) => {
         if (!live) return
@@ -242,6 +242,7 @@ export function SettingsPage({ tenantId, canView, canManage }: { tenantId: strin
       fiscal_year_start_month: Number(form.get('fiscalMonth')),
       required_asset_fields: optionalAssetFields.filter((f) => form.get(f) === 'on'),
       asset_tag_pattern: settings?.asset_tag_pattern ?? '',
+      coverage_expiring_days: Number(form.get('expiringDays')),
     }
     setSaving(true)
     const { error } = await supabase.rpc('update_tenant_settings', {
@@ -251,6 +252,7 @@ export function SettingsPage({ tenantId, canView, canManage }: { tenantId: strin
       p_date_format: values.date_format,
       p_fiscal_year_start_month: values.fiscal_year_start_month,
       p_required_asset_fields: values.required_asset_fields,
+      p_coverage_expiring_days: values.coverage_expiring_days,
     })
     setSaving(false)
     if (error) return setSaveError(errorMessage(error))
@@ -327,6 +329,13 @@ export function SettingsPage({ tenantId, canView, canManage }: { tenantId: strin
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="field">
+              {t.settings.expiringDays}
+              <input name="expiringDays" type="number" min={1} max={365} step={1} required defaultValue={s.coverage_expiring_days} aria-describedby="expiring-hint" />
+              <span id="expiring-hint" className="muted hint">
+                {t.settings.expiringDaysHint}
+              </span>
             </label>
           </fieldset>
           <fieldset className="card" disabled={!canManage}>

@@ -31,6 +31,7 @@ const tenant = {
   fiscal_year_start_month: 4,
   required_asset_fields: ['model'],
   asset_tag_pattern: 'AST-{SEQ:5}',
+  coverage_expiring_days: 60,
 }
 
 let root: Root
@@ -89,6 +90,7 @@ test('manage: save sends every setting to update_tenant_settings', async () => {
     p_date_format: 'dd-MM-yyyy',
     p_fiscal_year_start_month: 4,
     p_required_asset_fields: ['serial_number', 'model'],
+    p_coverage_expiring_days: 60,
   })
   // Shown in the button row, and gone once the user edits again.
   expect(container.querySelector('button[type="submit"]')!.parentElement!.querySelector('[role="status"]')?.textContent).toContain(t.settings.saved)
