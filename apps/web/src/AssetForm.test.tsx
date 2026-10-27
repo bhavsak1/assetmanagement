@@ -3,13 +3,14 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { AssetFormPage, customPayload, fieldErrors, lineFields, requiredNames, validate } from './AssetForm'
+import { AssetFormPage, customPayload, fieldErrors, lineFields, requiredNames, validate, validateLines, warrantyError } from './AssetForm'
 import { t } from './i18n'
 import type { Tables } from './types/database'
 
 const db = vi.hoisted(() => ({
   results: {} as Record<string, unknown>,
   writes: [] as unknown[],
+  rpcs: [] as [string, unknown][],
 }))
 
 // Same chain mock as Assets.test: awaiting gives the table's result; writes record their payload.
@@ -27,7 +28,10 @@ vi.mock('./supabase', () => {
     q.then = (resolve: (v: unknown) => void) => resolve(db.results[key] ?? { data: [], error: null })
     return q
   }
-  const rpc = (fn: string) => Promise.resolve(db.results[fn] ?? { data: [], error: null })
+  const rpc = (fn: string, args: unknown) => {
+    db.rpcs.push([fn, args])
+    return Promise.resolve(db.results[fn] ?? { data: [], error: null })
+  }
   return { supabase: { from: chain, rpc } }
 })
 
@@ -130,6 +134,7 @@ beforeEach(() => {
   document.body.append(container)
   root = createRoot(container)
   db.writes = []
+  db.rpcs = []
   db.results = {
     tenant: { data: [{ currency_code: 'INR', required_asset_fields: ['location'] }], error: null },
     asset_category: { data: categories, error: null },
@@ -247,4 +252,131 @@ test('4.1b vendor pickers: tagged vendors plus the stored one marked, sent on sa
   expect(db.writes[0]).toMatchObject({ oem_vendor_id: 'v2', om_vendor_id: 'v1' })
   expect(fieldErrors({ code: '23514', message: 'om_vendor_id: vendor is not tagged to this category' })).toEqual({ om_vendor_id: t.assetForm.errors.vendorNotTagged })
   expect(fieldErrors({ code: '23514', message: 'oem_vendor_id: vendor is inactive or not an oem vendor' })).toEqual({ oem_vendor_id: t.assetForm.errors.vendorInvalid })
+})
+
+async function renderCreate(canDo: (d: string, o: string) => boolean) {
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={['/assets/new']}>
+        <Routes>
+          <Route path="/assets/new" element={<AssetFormPage tenantId="ta" can={canDo} />} />
+          <Route path="/assets" element={<p>list</p>} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  )
+}
+async function pick(name: string, value: string) {
+  const el = container.querySelector<HTMLSelectElement>(`[name="${name}"]`)!
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(el, value)
+  await act(async () => el.dispatchEvent(new Event('change', { bubbles: true })))
+}
+const valueOf = (name: string) => container.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${name}"]`)?.value
+const tick = (i = 0) => act(async () => container.querySelectorAll<HTMLInputElement>('.check input[type="checkbox"]')[i]!.click())
+const createOnly = (d: string, o: string) => ['asset_core.view', 'asset_core.create'].includes(`${d}.${o}`)
+const planner = (d: string, o: string) => createOnly(d, o) || ['coverage_contract.view', 'coverage_contract.create', 'coverage_contract.update'].includes(`${d}.${o}`)
+
+test('4.5 warranty block: hidden without coverage_contract.create; the asset saves as a plain insert', async () => {
+  await renderCreate(createOnly)
+  expect(container.textContent).not.toContain(t.assetForm.addWarranty)
+  await type('name', 'Pump 45')
+  await pick('category_id', 'c3')
+  await pick('location_id', 'l1')
+  await submit()
+  expect(db.rpcs.some(([fn]) => fn === 'create_asset_with_warranty')).toBe(false)
+  expect(db.writes).toHaveLength(1)
+})
+
+test('4.5 warranty block: Start from the purchase date, vendor from the OEM, term fills End, one call saves both', async () => {
+  db.results.category_vendors = { data: ['v1'], error: null }
+  db.results.vendor_view = { data: [{ id: 'v1', name: 'Kirloskar', is_active: true }, { id: 'v2', name: 'Old works', is_active: false }], error: null }
+  await renderCreate(planner)
+  await tick()
+  await type('name', 'Pump 45')
+  await pick('category_id', 'c3')
+  await pick('location_id', 'l1')
+  await type('purchase_date', '2026-03-15')
+  await pick('oem_vendor_id', 'v1')
+  expect(valueOf('w.start_date')).toBe('2026-03-15')
+  expect(valueOf('w.vendor_id')).toBe('v1')
+  // Inactive vendors are not offered (C2).
+  expect([...container.querySelector<HTMLSelectElement>('[name="w.vendor_id"]')!.options].map((o) => o.value)).toEqual(['', 'v1'])
+  await pick('w.term', '24')
+  expect(valueOf('w.end_date')).toBe('2028-03-14')
+  await type('w.reference', 'WC-1')
+  await submit()
+  const calls = db.rpcs.filter(([fn]) => fn === 'create_asset_with_warranty')
+  expect(calls).toHaveLength(1)
+  expect(calls[0]![1]).toMatchObject({
+    p_asset: { name: 'Pump 45', category_id: 'c3', location_id: 'l1', purchase_date: '2026-03-15', oem_vendor_id: 'v1', tenant_id: 'ta' },
+    p_coverages: [{ coverage_type: 'warranty', vendor_id: 'v1', reference: 'WC-1', start_date: '2026-03-15', end_date: '2028-03-14' }],
+  })
+  expect(db.writes).toHaveLength(0)
+  expect(container.textContent).toBe('list')
+})
+
+test('4.5 extended warranty: starts the day after the warranty ends, own term; a typed End survives a new Start', async () => {
+  db.results.vendor_view = { data: [{ id: 'v1', name: 'Kirloskar', is_active: true }], error: null }
+  await renderCreate(planner)
+  await tick()
+  await type('purchase_date', '2026-03-15')
+  await pick('w.term', '12')
+  await tick(1)
+  expect(valueOf('x.start_date')).toBe('2027-03-15')
+  await pick('x.term', '24')
+  expect(valueOf('x.end_date')).toBe('2029-03-14')
+  await type('w.end_date', '2027-06-30')
+  expect(valueOf('x.start_date')).toBe('2027-07-01')
+  await type('purchase_date', '2026-04-01')
+  expect(valueOf('w.start_date')).toBe('2026-04-01')
+  // Warranty End was typed, so it stays.
+  expect(valueOf('w.end_date')).toBe('2027-06-30')
+})
+
+test('4.5 warranty errors: client checks and the database messages land on the block', async () => {
+  const line = { coverage_type: 'warranty', vendor_id: 'v1', reference: null, start_date: '2026-03-15', end_date: '2028-03-14' }
+  expect(validateLines([line])).toEqual({})
+  expect(validateLines([{ ...line, vendor_id: '' }])).toEqual({ warranty: t.coverage.errors.vendorRequired })
+  expect(validateLines([line, { ...line, end_date: '2026-01-01' }])).toEqual({ extended: t.coverage.errors.dates })
+  expect(warrantyError({ message: 'vendor_id: vendor is inactive or not found' })).toEqual({ warranty: t.assetForm.errors.warrantyVendor })
+  expect(warrantyError({ message: 'new row for relation "coverage" violates check constraint "coverage_check"' })).toEqual({ warranty: t.coverage.errors.dates })
+  expect(warrantyError({ message: 'new row violates row-level security policy for table "coverage_asset"' })).toEqual({ warranty: t.assetForm.errors.warrantyNoPermission })
+  // The asset's own errors still go to their fields.
+  expect(warrantyError({ message: 'oem_vendor_id: vendor is not tagged to this category' })).toBeUndefined()
+  expect(warrantyError({ message: 'missing mandatory fields: serial_number' })).toBeUndefined()
+
+  db.results.create_asset_with_warranty = { data: null, error: { code: '23514', message: 'vendor_id: vendor is inactive or not found' } }
+  db.results.vendor_view = { data: [{ id: 'v1', name: 'Kirloskar', is_active: true }], error: null }
+  await renderCreate(planner)
+  await tick()
+  await type('name', 'Pump 45')
+  await pick('category_id', 'c3')
+  await pick('location_id', 'l1')
+  await type('purchase_date', '2026-03-15')
+  await pick('w.vendor_id', 'v1')
+  await pick('w.term', '24')
+  await submit()
+  expect(container.textContent).toContain(t.assetForm.errors.warrantyVendor)
+})
+
+test('4.5 edit: the current warranty line with a link, no warranty inputs', async () => {
+  db.results.asset_coverage = {
+    data: [{ asset_id: 'a1', coverage_group: 'warranty', status: 'active', coverage_id: 'k1', vendor_id: 'v1', start_date: '2026-03-15', end_date: '2028-03-14' }],
+    error: null,
+  }
+  // The tenant row also feeds the line's date format (one mock per table).
+  db.results.tenant = { data: [{ currency_code: 'INR', required_asset_fields: [], time_zone: 'Asia/Kolkata', date_format: 'dd MMM yyyy', locale: 'en-IN' }], error: null }
+  const viewer = (d: string, o: string) => can(d, o) || `${d}.${o}` === 'coverage_contract.view'
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={['/assets/a1/edit']}>
+        <Routes>
+          <Route path="/assets/:assetId/edit" element={<AssetFormPage tenantId="ta" can={viewer} />} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  )
+  expect(fieldEl('warranty')?.querySelector('a')?.getAttribute('href')).toBe('/coverage?id=k1')
+  expect(container.querySelector('[name="w.term"]')).toBeNull()
+  expect(container.textContent).not.toContain(t.assetForm.addWarranty)
 })

@@ -380,7 +380,12 @@ Coverage screen, asset Coverage tab, settings field, "Active coverages" on Vendo
 
 # Story 4.5: coverage term and warranty on Add asset
 
-**Status:** design, 27 Oct 2026. Waiting for the owner on W1 to W6. No migration before the answers.
+**Status:** in review, 27 Oct 2026. Owner accepted the leans W1 to W4 and W6 on 27 Oct 2026, and chose **W5 b**: the block has an optional extended warranty line, with the same term select and End override. Built in migration `4_5_create_asset_with_warranty`, tests in `4_5_asset_warranty.test.sql`.
+
+**As built (differences from the design below):**
+- The RPC is `create_asset_with_warranty(p_asset jsonb, p_coverages jsonb)`: `p_coverages` is an array of one or two lines, each `{coverage_type, vendor_id, reference, start_date, end_date}`. Type must be `warranty` or `extended_warranty`; any other key is refused (`22023`), so a contract value cannot slip in.
+- The extended line starts the day after the warranty End, and follows it until the user edits its Start. Its vendor defaults to the warranty vendor.
+- The term select keeps two flags, `startByHand` and `endByHand` (§27). `startByHand` is what stops a follow (purchase date, warranty End) once the user typed a Start.
 
 **Why:** owner UX request after the 4.3 review. Add asset asks for purchase date and OEM, then the coverage form asks again for start and end dates.
 

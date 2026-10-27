@@ -104,7 +104,7 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | 4.2 | Coverage table, status derivation (active, expiring, expired, never covered) | OQ-05, OQ-26 | Done |
 | 4.3 | Coverage screen and Coverage tab on asset detail | | In review |
 | 4.4 | Coverage column and filter on the Assets list | | Todo |
-| 4.5 | Coverage term dropdown (months) that fills the End date, with override; optional Warranty block on Add asset that creates the asset and its warranty coverage in one save | | In progress |
+| 4.5 | Coverage term dropdown (months) that fills the End date, with override; optional Warranty block on Add asset that creates the asset and its warranty coverage in one save | | In review |
 
 ### Goal 5: Obligations and dashboard (first pilot-style demo)
 **Review point:** a seeded demo tenant with a populated dashboard and maintenance view.

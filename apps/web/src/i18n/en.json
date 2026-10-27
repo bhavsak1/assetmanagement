@@ -460,7 +460,11 @@
       "duplicateAsset": "That asset is already on this coverage.",
       "assetGone": "An asset was deleted. Reload and try again.",
       "generic": "Could not save. Try again."
-    }
+    },
+    "term": "Term",
+    "custom": "Custom",
+    "months": "{n} months",
+    "open": "Open"
   },
   "pages": {
     "login": "Sign in",
@@ -584,10 +588,18 @@
       "locationInactive": "Pick an active location.",
       "generic": "Could not save. Try again.",
       "vendorNotTagged": "This vendor is not tagged to the category. Pick another.",
-      "vendorInvalid": "Pick an active vendor with this role."
+      "vendorInvalid": "Pick an active vendor with this role.",
+      "warrantyVendor": "That vendor is inactive or deleted. Choose another.",
+      "warrantyNoPermission": "You do not have permission to add coverage."
     },
     "notTagged": "not tagged",
-    "vendorInactive": "inactive"
+    "vendorInactive": "inactive",
+    "warranty": "Warranty",
+    "addWarranty": "Add warranty",
+    "addExtended": "Add extended warranty",
+    "extended": "Extended warranty",
+    "warrantyHint": "Start follows the purchase date. Pick a term to fill End, or type End.",
+    "extendedHint": "Starts the day after the warranty ends."
   },
   "assetDetail": {
     "edit": "Edit",

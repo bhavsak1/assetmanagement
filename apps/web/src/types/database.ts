@@ -1073,6 +1073,9 @@ isOneToOne: false
 "count_assets":
 { Args: { "p_category_id"?: string,"p_location_id"?: string,"p_status"?: string,"p_status_id"?: string,"p_term"?: string,"p_vendor_id"?: string }; Returns: number
                            },
+"create_asset_with_warranty":
+{ Args: { "p_asset": Json,"p_coverages": Json }; Returns: string
+                           },
 "field_domains":
 { Args: { "p_entity": string }; Returns: {
               "code": string,"id": string
