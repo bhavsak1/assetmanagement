@@ -104,6 +104,7 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | 4.2 | Coverage table, status derivation (active, expiring, expired, never covered) | OQ-05, OQ-26 | Done |
 | 4.3 | Coverage screen and Coverage tab on asset detail | | In review |
 | 4.4 | Coverage column and filter on the Assets list | | Todo |
+| 4.5 | Coverage term dropdown (months) that fills the End date, with override; optional Warranty block on Add asset that creates the asset and its warranty coverage in one save | | In progress |
 
 ### Goal 5: Obligations and dashboard (first pilot-style demo)
 **Review point:** a seeded demo tenant with a populated dashboard and maintenance view.
@@ -206,3 +207,4 @@ Open items: OQ-11, OQ-21.
 | 22 Oct 2026 | Story 3.6 split: 3.6 attachments, 3.6b QR label and scan-to-open. Two owner-review features; CLAUDE.md §5.4 one feature per session. Owner chose Z1 a |
 | 22 Oct 2026 | Story 3.7 split: 3.7 database, seed, backfill and the asset screens that read statuses; 3.7b the management screens. Owner chose R0 a |
 | 24 Oct 2026 | Story 4.1 split: 4.1 vendor, roles, contacts, tax-ID fields and masking, Vendors screen; 4.1b category tagging, asset OEM and O&M links, merge. Owner chose V6 a (docs/data-model-goal4.md) |
+| 27 Oct 2026 | Story 4.5 added: owner UX request after the 4.3 review (Add asset asks for purchase date and OEM, then coverage asks again for dates). A default warranty term per category was considered and parked by the owner: not yet decided whether a category default or another mechanism is right |
