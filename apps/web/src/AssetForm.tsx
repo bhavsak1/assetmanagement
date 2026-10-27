@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { t } from './i18n'
 import { loadStatuses, statusName, type Status } from './Assets'
+import { addDays, termDates, termStep, TermFields, WarrantyLine, type TermChange } from './Coverage'
 import { supabase } from './supabase'
 import { buildTree, lineage } from './tree'
 import type { Json, Tables, TablesInsert } from './types/database'
@@ -118,6 +119,27 @@ export function fieldErrors(error: { code?: string; message?: string }): Errors 
   return { '': e.generic }
 }
 
+// 4.5: an error from the warranty part of the one-call save (on the block); undefined for the asset's own.
+export function warrantyError(error: { message?: string }): Errors | undefined {
+  const m = error.message ?? ''
+  if (m.startsWith('vendor_id:')) return { warranty: e.warrantyVendor }
+  if (m.includes('relation "coverage"')) return { warranty: t.coverage.errors.dates }
+  if (m.includes('table "coverage')) return { warranty: e.warrantyNoPermission }
+  return undefined
+}
+
+export type WarrantyLineIn = { coverage_type: string; vendor_id: string; reference: string | null; start_date: string; end_date: string }
+
+// Fast feedback on the warranty lines, keyed by block ('warranty', 'extended').
+export function validateLines(lines: WarrantyLineIn[]): Errors {
+  const out: Errors = {}
+  lines.forEach((l, i) => {
+    const msg = !l.vendor_id ? t.coverage.errors.vendorRequired : !l.start_date || !l.end_date || l.end_date < l.start_date ? t.coverage.errors.dates : ''
+    if (msg) out[i ? 'extended' : 'warranty'] = msg
+  })
+  return out
+}
+
 export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can }) {
   const { assetId } = useParams()
   const editing = !!assetId
@@ -138,6 +160,11 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
   const [allowed, setAllowed] = useState<Record<string, string[]>>({})
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [saving, setSaving] = useState(false)
+  // 4.5, create only: the optional warranty and extended warranty, saved with the asset in one call.
+  const [warranty, setWarranty] = useState(false)
+  const [extended, setExtended] = useState(false)
+  const [w, setW] = useState(termDates())
+  const [x, setX] = useState(termDates())
 
   useEffect(() => {
     let live = true
@@ -229,16 +256,40 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
   const line = values ? lineFields(fields, categories, values.category_id ?? '').filter(canSee) : []
   const required = requiredNames({ line, tenantRequired: tenant?.required_asset_fields ?? [], editing, canWrite, canMoney })
   const title = editing ? t.assetForm.editTitle : t.assetForm.addTitle
+  // The link row needs coverage_contract.update (4.2 policy); every starter group with create has it.
+  const canWarranty = !editing && can('coverage_contract', 'create') && can('coverage_contract', 'update')
+  // Untouched vendor selects follow: warranty the OEM, extended the warranty vendor.
+  const wVendor = values?.['w.vendor_id'] ?? values?.oem_vendor_id ?? ''
+  const xVendor = values?.['x.vendor_id'] ?? wVendor
+
+  // Warranty Start follows the purchase date (else in-service date); extended Start the day after warranty End.
+  function changeW(ch: TermChange) {
+    const n = termStep(w, ch)
+    setW(n)
+    setX(termStep(x, { follow: n.end ? addDays(n.end, 1) : '' }))
+  }
 
   function set(name: string, value: string) {
     setValues((v) => ({ ...v, [name]: value }))
     setErrors((er) => Object.fromEntries(Object.entries(er).filter(([k]) => k !== name)))
+    if (name === 'purchase_date' || name === 'in_service_date') {
+      const next = { ...values, [name]: value }
+      changeW({ follow: next.purchase_date || next.in_service_date || '' })
+    }
   }
 
   async function submit(ev: FormEvent<HTMLFormElement>) {
     ev.preventDefault()
     if (!values) return
-    const found = validate(values, required, line)
+    const text = (name: string) => values[name]?.trim() || null
+    const lines: WarrantyLineIn[] =
+      canWarranty && warranty
+        ? [
+            { coverage_type: 'warranty', vendor_id: wVendor, reference: text('w.reference'), start_date: w.start, end_date: w.end },
+            ...(extended ? [{ coverage_type: 'extended_warranty', vendor_id: xVendor, reference: text('x.reference'), start_date: x.start, end_date: x.end }] : []),
+          ]
+        : []
+    const found = { ...validate(values, required, line), ...validateLines(lines) }
     if (Object.keys(found).length) return setErrors(found)
     setSaving(true)
     const tagText = values.parent?.trim().toUpperCase() ?? ''
@@ -250,7 +301,6 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
         return setErrors({ parent: e.parentNotFound })
       }
     }
-    const text = (name: string) => values[name]?.trim() || null
     // Empty means generated (insert) or unchanged (update), so it is left out.
     const tag = canTag ? text('tag')?.toUpperCase() : undefined
     const row = {
@@ -271,18 +321,22 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
       ...(canMoney && { purchase_value: text('purchase_value') === null ? null : Number(values.purchase_value), purchase_currency: values.purchase_value?.trim() ? text('purchase_currency') : null }),
       ...(tag && { tag }),
     }
+    const insert = {
+      ...row,
+      id: crypto.randomUUID(),
+      tenant_id: tenantId,
+      location_id: text('location_id'),
+      status_id: values.status_id ?? '',
+      // tag may be left out: the assign_asset_tag trigger fills it (A1).
+    }
     const { error } = assetId
       ? await supabase.from('asset').update(row).eq('id', assetId)
-      : await supabase.from('asset').insert({
-          ...row,
-          id: crypto.randomUUID(),
-          tenant_id: tenantId,
-          location_id: text('location_id'),
-          status_id: values.status_id ?? '',
-          // tag may be left out: the assign_asset_tag trigger fills it (A1).
-        } as TablesInsert<'asset'>)
+      : lines.length
+        ? // The same insert payload plus the lines, in one transaction (4.5).
+          await supabase.rpc('create_asset_with_warranty', { p_asset: insert, p_coverages: lines })
+        : await supabase.from('asset').insert(insert as TablesInsert<'asset'>)
     setSaving(false)
-    if (error) return setErrors(fieldErrors(error))
+    if (error) return setErrors((lines.length && warrantyError(error)) || fieldErrors(error))
     void navigate('/assets')
   }
 
@@ -315,6 +369,21 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
             {`${'— '.repeat(depth)}${row.name}`}
           </option>
         ))}
+      </select>
+    </Labeled>
+  )
+  // Coverage vendor (C2 a): any active vendor, no role or tag rule.
+  const vendorSelect = (name: string, value: string) => (
+    <Labeled name={name} text={t.coverage.vendor}>
+      <select name={name} value={value} onChange={(ev) => set(name, ev.target.value)}>
+        <option value="">{t.coverage.chooseVendor}</option>
+        {vendors
+          .filter((v) => v.is_active)
+          .map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.name}
+            </option>
+          ))}
       </select>
     </Labeled>
   )
@@ -409,8 +478,45 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
                   </Labeled>
                 )
               })}
+              {editing && assetId && can('coverage_contract', 'view') && <WarrantyLine assetId={assetId} />}
             </div>
           </fieldset>
+          {canWarranty && (
+            <fieldset className="card">
+              <h2>{t.assetForm.warranty}</h2>
+              <label className="check">
+                <input type="checkbox" checked={warranty} onChange={(ev) => setWarranty(ev.target.checked)} />
+                {t.assetForm.addWarranty}
+              </label>
+              {warranty && (
+                <>
+                  <div className="form-grid">
+                    <TermFields value={w} prefix="w." onChange={changeW} />
+                    {vendorSelect('w.vendor_id', wVendor)}
+                    {input('w.reference', t.coverage.reference)}
+                  </div>
+                  <span className="muted hint">{t.assetForm.warrantyHint}</span>
+                  {err('warranty')}
+                  <label className="check">
+                    <input type="checkbox" checked={extended} onChange={(ev) => setExtended(ev.target.checked)} />
+                    {t.assetForm.addExtended}
+                  </label>
+                  {extended && (
+                    <>
+                      <h3>{t.assetForm.extended}</h3>
+                      <div className="form-grid">
+                        <TermFields value={x} prefix="x." onChange={(ch) => setX((s) => termStep(s, ch))} />
+                        {vendorSelect('x.vendor_id', xVendor)}
+                        {input('x.reference', t.coverage.reference)}
+                      </div>
+                      <span className="muted hint">{t.assetForm.extendedHint}</span>
+                      {err('extended')}
+                    </>
+                  )}
+                </>
+              )}
+            </fieldset>
+          )}
           {line.length > 0 && (
             <fieldset className="card">
               <h2>{t.assetForm.fields}</h2>

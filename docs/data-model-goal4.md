@@ -375,3 +375,76 @@ pgTAP `4_2_coverage.test.sql`: permission steps on both tables; `tests.cross_ten
 ## 26. Not in 4.2
 
 Coverage screen, asset Coverage tab, settings field, "Active coverages" on Vendors (4.3); list column and filter (4.4); scope lines and exclusions (C3, OQ-05); OQ-27 precedence; expiry events and job; contract PDFs; coverage custom fields.
+
+---
+
+# Story 4.5: coverage term and warranty on Add asset
+
+**Status:** in review, 27 Oct 2026. Owner accepted the leans W1 to W4 and W6 on 27 Oct 2026, and chose **W5 b**: the block has an optional extended warranty line, with the same term select and End override. Built in migration `4_5_create_asset_with_warranty`, tests in `4_5_asset_warranty.test.sql`.
+
+**As built (differences from the design below):**
+- The RPC is `create_asset_with_warranty(p_asset jsonb, p_coverages jsonb)`: `p_coverages` is an array of one or two lines, each `{coverage_type, vendor_id, reference, start_date, end_date}`. Type must be `warranty` or `extended_warranty`; any other key is refused (`22023`), so a contract value cannot slip in.
+- The extended line starts the day after the warranty End, and follows it until the user edits its Start. Its vendor defaults to the warranty vendor.
+- The term select keeps two flags, `startByHand` and `endByHand` (§27). `startByHand` is what stops a follow (purchase date, warranty End) once the user typed a Start.
+
+**Why:** owner UX request after the 4.3 review. Add asset asks for purchase date and OEM, then the coverage form asks again for start and end dates.
+
+**Reads with:** §11 (OEM rules), §18 to §21 (coverage, C2, `coverage_asset`, visibility, `asset_coverage`), [data-model-goal3.md](data-model-goal3.md) §14 (3.3 write path: direct insert under RLS, column grants, `check_asset_values`), §2 (tag A1), §18 (create statuses), the fiscal-year lock (`3_1_fiscal_year_lock`).
+
+**Open items used (lean):** none new. C2 a (vendor live and active, no role rule) still holds for the warranty vendor.
+
+**Screen:** `assetly-screens.html` has no Add asset or coverage form. The block follows the 3.3 card style.
+
+## 27. Term select (coverage form: add, edit, renew)
+
+- A **Term** select next to Start and End: blank ("Custom"), then the months in W2. Every coverage type.
+- Picking a term sets End from Start by the W1 rule. Picking blank leaves End as it is.
+- **Override:** End stays an editable date. The form keeps one flag, `endByHand`: set when the user types in End, cleared when the user picks a term again.
+- **Start changes:** when a term is picked and `endByHand` is false, End is recomputed. Otherwise End stays.
+- **Edit:** the term is not stored (W3), so the select starts blank and End shows the stored date. **Renew:** End is prefilled with the old length (4.3, C5), select blank; picking a term recomputes it.
+- The term lives only in the form. The database keeps checking `end_date >= start_date`.
+
+## 28. Warranty block on Add asset
+
+- Shown on **create only**, and only with `coverage_contract.create` **and** `coverage_contract.update` (the `coverage_asset` insert policy needs `update`; every starter group with create also has update, so this matches the grid: Tenant Admin, Plant Manager, Planner yes; Technician and Auditor no). Without them the block is hidden and the asset saves as today.
+- Closed by default (an "Add warranty" checkbox opens it), so the form stays as short as today.
+- Fields: **Term** (same select), **Start** (defaults to the purchase date; when that is empty, the in-service date; follows those fields until the user edits Start), **End** (W1, override as §27), **Vendor** (defaults to the OEM picked above while the user has not changed it; any live active vendor, C2 a), **Reference** (warranty card number, optional).
+- Type is always `warranty`. No contract value (W4). Extended warranty: W5.
+- Save with the block open calls one RPC (§29). Block closed: the plain insert as today.
+- **Edit asset:** no warranty inputs. A read-only line from `asset_coverage([id])`, group `warranty`: "Warranty: Active to 14 Mar 2028 · Open" (link `/coverage?id=<coverage_id>`), or "None". Changing the purchase date later does **not** move coverage dates.
+
+## 29. `public.create_asset_with_warranty(p_asset jsonb, p_warranty jsonb) returns uuid` [W6]
+
+Lean: **security invoker**, plpgsql, `search_path = ''`. One call from the app, so one transaction:
+
+1. `insert into public.asset` with exactly the keys the app sends today (the same payload object as the 3.3 plain insert): `format('insert into public.asset (%s) select %s from jsonb_populate_record(null::public.asset, $1)', cols, cols)`, `cols` = the payload keys through `quote_ident`. An unknown key fails as an unknown column.
+2. `insert into public.coverage` (`coverage_type = 'warranty'`, `vendor_id`, `reference`, `start_date`, `end_date`; no value columns).
+3. `insert into public.coverage_asset` (the new coverage, the new asset).
+4. Returns the asset id.
+
+**Why invoker:** every check is the one the plain inserts already run, so nothing can drift from 3.3 or 4.2: RLS (tenant, `asset_core.create`, `coverage_contract.create`, the link needs `update`, `tenant_can_write()`), the column grants (tag only with `set_tag`, no value columns), `check_asset_values` (mandatory fields, hidden values, create status Active or In Stock), the tag trigger (A1), `check_asset_vendors` (OEM role and tag), `check_coverage` (C2), `check_coverage_asset`. The fiscal-year lock needs nothing: it reads the tenant's assets at the next settings save. Any error rolls back all three inserts. A definer function would bypass RLS and grants and have to repeat these checks by hand.
+
+**Audit and outbox:** the existing row triggers write three audit rows and three outbox events (asset, coverage, coverage_asset created) with one `transaction_id`. No new event.
+
+**Errors:** raised as today, so the 3.3 mapping keeps working. New mappings on the block: a message that **starts** with `vendor_id:` (C2; `oem_vendor_id:` also contains it) → Vendor; the coverage end check → End; RLS on `coverage` or `coverage_asset` → a block message.
+
+## 30. DECIDE
+
+| # | Question | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| W1 | End-date rule for N months | **a)** Day before the same date N months later: 15 Mar 2026 + 24 → **14 Mar 2028**. When that date does not exist, the last day of that month: 31 Jan 2027 + 1 → 28 Feb 2027; 29 Feb 2028 + 12 → 28 Feb 2029. **b)** Same date N months later (15 Mar 2028), clamped to month end | a. Common OEM practice; both days are covered (§18, inclusive), so b gives one day extra | Low: app only, stored ends unchanged |
+| W2 | Months in the list | **a)** 3, 6, 12, 18, 24, 36, 48, 60. **b)** 6, 12, 18, 24, 36, 48, 60 | a. Short AMCs and spares warranties of 3 months exist | None: one constant |
+| W3 | Store the term | **a)** No; End is the truth. **b)** `coverage.term_months smallint null` | a. End may be overridden, so a stored term can disagree with it; renew already copies the length | Low (nullable column later) |
+| W4 | Contract value on the block | **a)** Not shown. **b)** Shown with `coverage_values.update` | a. Keeps the block light; value can be added on the Coverage page | None |
+| W5 | Extended warranty | **a)** Standard warranty only. **b)** A second optional line (type `extended_warranty`, start defaults to the day after the warranty ends) | **Owner to choose.** Lean a: often bought later or from another vendor; the Coverage page has it | Low (UI and one more insert) |
+| W6 | Write path | **a)** Invoker RPC doing the plain inserts (§29). **b)** Definer RPC repeating every check. **c)** Two app calls (asset, then coverage) with cleanup on failure | a. One transaction, no copied checks, no drift. c can leave a half save | Low: function body |
+
+## 31. Build plan (after answers)
+
+1. Migration `4_5_create_asset_with_warranty`: the function, `grant execute ... to authenticated`.
+2. pgTAP `4_5_asset_warranty.test.sql`: asset, coverage and link created together; inactive vendor and missing mandatory field each roll back both; without `coverage_contract.create` refused while the plain asset insert works; cross-tenant vendor and category refused; end before start refused; three audit and outbox rows with one `transaction_id`; tag generated; a value key in the warranty refused; tenancy guard green.
+3. Web: term select and `endByHand` in the coverage form; `addTerm(start, months)` helper with tests (W1, month end, leap year); Warranty block on Add asset (gating, start default, OEM vendor default, one RPC call, error mapping); warranty line on Edit asset; i18n. Types regenerated.
+
+## 32. Not in 4.5
+
+AMC on the asset form (AMCs cover many assets: Coverage page), default warranty term per category (parked by the owner), contract value on the block (W4), moving coverage when the purchase date changes.

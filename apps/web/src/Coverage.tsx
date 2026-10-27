@@ -32,6 +32,59 @@ const utc = (d: string) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7))
 export const daysBetween = (from: string, to: string) => Math.round((utc(to) - utc(from)) / 86400000)
 export const addDays = (d: string, n: number) => new Date(utc(d) + n * 86400000).toISOString().slice(0, 10)
 
+// Term choices in months (data-model-goal4 W2).
+export const terms = [3, 6, 12, 18, 24, 36, 48, 60]
+
+// W1: the day before the same date N months later; when that date does not exist, the last day of that month.
+export function addTerm(start: string, months: number): string {
+  const y = Number(start.slice(0, 4))
+  const m = Number(start.slice(5, 7)) - 1 + months
+  const d = Number(start.slice(8, 10))
+  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate()
+  const same = new Date(Date.UTC(y, m, Math.min(d, last))).toISOString().slice(0, 10)
+  return d > last ? same : addDays(same, -1)
+}
+
+// Term, Start and End on a coverage form (§27). A typed End is kept until a term is picked again;
+// `follow` is a default Start (purchase date, warranty end) that stops once the user typed a Start.
+export type TermDates = { term: string; start: string; end: string; startByHand: boolean; endByHand: boolean }
+export type TermChange = { term?: string; start?: string; end?: string; follow?: string }
+export const termDates = (start = '', end = ''): TermDates => ({ term: '', start, end, startByHand: false, endByHand: false })
+
+export function termStep(s: TermDates, ch: TermChange): TermDates {
+  if (ch.end !== undefined) return { ...s, end: ch.end, endByHand: true }
+  if (ch.term !== undefined) return { ...s, term: ch.term, endByHand: false, end: ch.term && s.start ? addTerm(s.start, Number(ch.term)) : s.end }
+  if (ch.follow !== undefined && s.startByHand) return s
+  const start = ch.start ?? ch.follow ?? s.start
+  return { ...s, start, startByHand: s.startByHand || ch.start !== undefined, end: s.term && !s.endByHand && start ? addTerm(start, Number(s.term)) : s.end }
+}
+
+export function TermFields({ value, onChange, prefix = '' }: { value: TermDates; onChange: (ch: TermChange) => void; prefix?: string }) {
+  return (
+    <>
+      <label className="field">
+        {c.term}
+        <select name={`${prefix}term`} value={value.term} onChange={(e) => onChange({ term: e.target.value })}>
+          <option value="">{c.custom}</option>
+          {terms.map((n) => (
+            <option key={n} value={n}>
+              {c.months.replace('{n}', String(n))}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        {c.start}
+        <input name={`${prefix}start_date`} type="date" value={value.start} required onChange={(e) => onChange({ start: e.target.value })} />
+      </label>
+      <label className="field">
+        {c.end}
+        <input name={`${prefix}end_date`} type="date" value={value.end} required onChange={(e) => onChange({ end: e.target.value })} />
+      </label>
+    </>
+  )
+}
+
 // The status tag text: "Active", "Expires in 24 d", "Expires today", "Expired 3 d ago", "Starts in 5 d".
 export function statusText(status: string | null, start: string | null, end: string | null, today: string): string {
   if (status === 'future' && start) return c.status.startsIn.replace('{n}', String(daysBetween(today, start)))
@@ -361,6 +414,7 @@ function CoveragePanel(props: {
   // The trigger needs both to change the value (as purchase value, 3.3).
   const seeMoney = can('coverage_values', 'view')
   const canMoney = editable && seeMoney && can('coverage_values', 'update')
+  const [dates, setDates] = useState(termDates(start, end))
   const [links, setLinks] = useState<Linked[]>(props.assets ?? [])
   const [initial, setInitial] = useState<Linked[]>([])
   const [renewedBy, setRenewedBy] = useState<Coverage[]>([])
@@ -503,14 +557,7 @@ function CoveragePanel(props: {
             {c.reference}
             <input name="reference" defaultValue={row?.reference ?? ''} maxLength={100} />
           </label>
-          <label className="field">
-            {c.start}
-            <input name="start_date" type="date" defaultValue={start} required />
-          </label>
-          <label className="field">
-            {c.end}
-            <input name="end_date" type="date" defaultValue={end} required />
-          </label>
+          <TermFields value={dates} onChange={(ch) => setDates((d) => termStep(d, ch))} />
           {seeMoney ? (
             <>
               <label className="field">
@@ -689,6 +736,39 @@ export function CoverageCard({ assetId, can }: { assetId: string; can: Can }) {
 }
 
 // Asset detail Coverage tab: every live contract of the asset, linked to the Coverage page.
+// Edit asset (4.5): the current warranty, read-only, with a link to it. Coverage dates never follow the asset's.
+export function WarrantyLine({ assetId }: { assetId: string }) {
+  const tenant = useTenant()
+  const [line, setLine] = useState<Line | null>()
+
+  useEffect(() => {
+    let live = true
+    void supabase.rpc('asset_coverage', { p_asset_ids: [assetId] }).then(({ data }) => live && setLine((data ?? []).find((l) => l.coverage_group === 'warranty') ?? null))
+    return () => {
+      live = false
+    }
+  }, [assetId])
+
+  if (line === undefined || !tenant) return null
+  return (
+    <div className="field" data-field="warranty">
+      {c.groups.warranty}
+      <span>
+        {line ? (
+          <>
+            <StatusTag row={line} today={tenantToday(tenant.time_zone)} /> <span className="muted">{c.to.replace('{date}', showDate(line.end_date, tenant))}</span>{' '}
+            <Link className="row-link" to={`/coverage?id=${line.coverage_id}`}>
+              {c.open}
+            </Link>
+          </>
+        ) : (
+          <span className="tag status neutral">{c.status.none}</span>
+        )}
+      </span>
+    </div>
+  )
+}
+
 export function CoverageTab({ assetId, can }: { assetId: string; can: Can }) {
   const tenant = useTenant()
   const [rows, setRows] = useState<Coverage[]>()

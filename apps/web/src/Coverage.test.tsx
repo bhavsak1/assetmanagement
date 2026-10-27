@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { t } from './i18n'
-import { addDays, bestLine, CoverageCard, CoveragePage, nextCursor, statusText, tabFilter, tenantToday } from './Coverage'
+import { addDays, addTerm, bestLine, CoverageCard, CoveragePage, nextCursor, statusText, tabFilter, tenantToday, termDates, termStep } from './Coverage'
 
 const db = vi.hoisted(() => ({
   results: {} as Record<string, unknown>,
@@ -198,4 +198,32 @@ test('the asset detail card shows each group, None when never covered, and the r
   expect(text).toContain(`${t.coverage.groups.amc}${t.coverage.status.none}`)
   expect(text).not.toContain(t.coverage.groups.other)
   expect(text).toContain(`${t.coverage.vendor}Siemens India`)
+})
+
+test('4.5 term: the day before the same date N months later; month end when that date does not exist', () => {
+  expect(addTerm('2026-03-15', 24)).toBe('2028-03-14')
+  expect(addTerm('2026-03-01', 1)).toBe('2026-03-31')
+  expect(addTerm('2026-01-01', 12)).toBe('2026-12-31')
+  expect(addTerm('2027-01-31', 1)).toBe('2027-02-28')
+  expect(addTerm('2028-01-31', 1)).toBe('2028-02-29')
+  expect(addTerm('2028-02-29', 12)).toBe('2029-02-28')
+  expect(addTerm('2026-11-30', 3)).toBe('2027-02-28')
+})
+
+test('4.5 term: End follows Start and the term until typed; a term pick takes End back', () => {
+  let s = termStep(termDates('2026-03-15'), { term: '12' })
+  expect(s.end).toBe('2027-03-14')
+  s = termStep(s, { start: '2026-04-01' })
+  expect(s.end).toBe('2027-03-31')
+  s = termStep(s, { end: '2027-04-10' })
+  s = termStep(s, { start: '2026-05-01' })
+  expect(s.end).toBe('2027-04-10')
+  s = termStep(s, { term: '6' })
+  expect(s.end).toBe('2026-10-31')
+  // A default Start follows until the user types one.
+  s = termStep(s, { follow: '2026-06-01' })
+  expect(s.start).toBe('2026-05-01')
+  const f = termStep(termStep(termDates(), { term: '24' }), { follow: '2026-03-15' })
+  expect([f.start, f.end]).toEqual(['2026-03-15', '2028-03-14'])
+  expect(termStep(termDates('2026-03-15', '2026-12-31'), { term: '' }).end).toBe('2026-12-31')
 })
