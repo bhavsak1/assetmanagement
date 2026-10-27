@@ -102,8 +102,8 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | 4.1 | Vendor, roles (OEM, O&M, supplier), contacts, optional GSTIN and PAN fields, Vendors screen | OQ-06 | Done |
 | 4.1b | Category vendor tagging tab, asset OEM and O&M columns with write rules, form pickers and overview, `merge_vendor` | OQ-06 | Done |
 | 4.2 | Coverage table, status derivation (active, expiring, expired, never covered) | OQ-05, OQ-26 | Done |
-| 4.3 | Coverage screen and Coverage tab on asset detail | | In review |
-| 4.4 | Coverage column and filter on the Assets list; collapsible filter panel on the Assets list (Filters button with count, active-filter chips, bottom sheet at phone width) | | In review |
+| 4.3 | Coverage screen and Coverage tab on asset detail | | Done |
+| 4.4 | Coverage column and filter on the Assets list; collapsible filter panel on the Assets list (Filters button with count, active-filter chips, bottom sheet at phone width) | | Done |
 | 4.5 | Coverage term dropdown (months) that fills the End date, with override; optional Warranty block on Add asset that creates the asset and its warranty coverage in one save | | Done |
 
 ### Goal 5: Obligations and dashboard (first pilot-style demo)
@@ -166,6 +166,13 @@ Stories to be written once Goal 8 is done. Planned order: AI gateway (entitlemen
 
 Open items: OQ-11, OQ-21.
 
+### Backlog (unscheduled)
+Owner ideas with no goal yet. Revisit when the goal named in the last column is planned.
+
+| ID | Story | Revisit with | Status |
+|---|---|---|---|
+| BL-1 | Background jobs monitor: a `job_run` log (job, tenant, start, end, status, rows, error) written by every background job; a "Background jobs" page for a platform admin (like Workday's background process monitor); a `job.failed` outbox event for alerts. Needs a platform-admin role, which does not exist yet | Goal 9 (notifications, API) and Goal 10 (AI gateway) | Backlog |
+
 ---
 
 ## 2. Goal progress
@@ -209,3 +216,4 @@ Open items: OQ-11, OQ-21.
 | 24 Oct 2026 | Story 4.1 split: 4.1 vendor, roles, contacts, tax-ID fields and masking, Vendors screen; 4.1b category tagging, asset OEM and O&M links, merge. Owner chose V6 a (docs/data-model-goal4.md) |
 | 27 Oct 2026 | Story 4.5 added: owner UX request after the 4.3 review (Add asset asks for purchase date and OEM, then coverage asks again for dates). A default warranty term per category was considered and parked by the owner: not yet decided whether a category default or another mechanism is right |
 | 27 Oct 2026 | Story 4.4 widened: owner asked to declutter the Assets list filters, so the same story adds a collapsible filter panel (Filters button with a count, active-filter chips, bottom sheet at phone width) |
+| 27 Oct 2026 | Backlog item BL-1 added (background jobs monitor), after the first `pg_cron` job (4.4). Not in Goal 4; owner will plan it with the other technical work (API, notifications, AI) |
