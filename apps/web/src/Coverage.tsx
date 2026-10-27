@@ -143,7 +143,7 @@ async function loadLinks(coverageIds: string[]): Promise<Record<string, Linked[]
   return out
 }
 
-function useTenant() {
+export function useTenant() {
   const [tenant, setTenant] = useState<Tenant>()
   useEffect(() => {
     let live = true

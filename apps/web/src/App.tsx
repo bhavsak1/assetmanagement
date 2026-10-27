@@ -335,6 +335,7 @@ export function App() {
               tenantId={tenantId ?? ''}
               canSaveViews={can('asset_core', 'view') && writable}
               canCreate={can('asset_core', 'create')}
+              canCoverage={can('coverage_contract', 'view')}
             />
           }
         />

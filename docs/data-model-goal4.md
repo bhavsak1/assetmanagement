@@ -380,7 +380,7 @@ Coverage screen, asset Coverage tab, settings field, "Active coverages" on Vendo
 
 # Story 4.5: coverage term and warranty on Add asset
 
-**Status:** in review, 27 Oct 2026. Owner accepted the leans W1 to W4 and W6 on 27 Oct 2026, and chose **W5 b**: the block has an optional extended warranty line, with the same term select and End override. Built in migration `4_5_create_asset_with_warranty`, tests in `4_5_asset_warranty.test.sql`.
+**Status:** done (owner accepted, 27 Oct 2026). Owner accepted the leans W1 to W4 and W6 on 27 Oct 2026, and chose **W5 b**: the block has an optional extended warranty line, with the same term select and End override. Built in migration `4_5_create_asset_with_warranty`, tests in `4_5_asset_warranty.test.sql`.
 
 **As built (differences from the design below):**
 - The RPC is `create_asset_with_warranty(p_asset jsonb, p_coverages jsonb)`: `p_coverages` is an array of one or two lines, each `{coverage_type, vendor_id, reference, start_date, end_date}`. Type must be `warranty` or `extended_warranty`; any other key is refused (`22023`), so a contract value cannot slip in.
@@ -448,3 +448,176 @@ Lean: **security invoker**, plpgsql, `search_path = ''`. One call from the app, 
 ## 32. Not in 4.5
 
 AMC on the asset form (AMCs cover many assets: Coverage page), default warranty term per category (parked by the owner), contract value on the block (W4), moving coverage when the purchase date changes.
+
+---
+
+# Story 4.4: coverage column, coverage filter and filter panel on the Assets list
+
+**Status:** in review, 27 Oct 2026. On 27 Oct 2026 the owner widened the story to add a collapsible filter panel. After the measurements in §34, the owner asked for a **stored coverage state per asset** in place of the live filter that §21 planned. C7 a (live status) still holds everywhere else. The owner accepted every lean, C11 to C17, on 27 Oct 2026. Built in migration `4_4_asset_coverage_state`, tests in `4_4_asset_coverage_state.test.sql`.
+
+**As built (differences from the design below):**
+- The queue for a change of N or time zone (C15) is a cursor, `tenant.coverage_refresh_after uuid`, not a boolean. The job walks the tenant's assets by id from it, and null means nothing is queued. That lets a large tenant finish over several runs.
+- Contract insert has no trigger: a new contract has no links yet, and the link insert refreshes the asset. The triggers are statement level with transition tables, so linking an AMC to many assets in one statement makes one refresh call.
+- `check_asset_values` and `audit` are split into an insert trigger (no guard, since there is no OLD row) and a guarded update trigger (`check_asset_values_update`, `audit_update`). `set_updated_at` keeps its name and gets the guard.
+- The job runs for at most 4 minutes per call (`p_budget`). It stops early on a batch that changes nothing.
+- **Write cost:** a state change rewrites every asset index, because the state is indexed, so the update cannot be HOT. That is about 1 ms per changed asset at 200k. The job only writes assets whose state or until changes; see §34 for the numbers.
+
+**Reads with:** §17 (screen), §18 to §21 (coverage, `asset_coverage`, live status, `coverage_expiring_days`), §27 to §32 (4.5); [data-model-goal3.md](data-model-goal3.md) §8 (keyset indexes), §13 (`list_assets`, `asset_list_where`, saved views), §14 (column grants); spike 1.7 §3 and §6.
+
+**Open items used (lean):** none new. OQ-26 (contract visibility) shapes C13.
+
+## 33. What the list shows and filters (no choice left; follows §17 and §21)
+
+- **Column "Coverage"** (screens file): of the groups that cover the asset today, the one that ends first, so the most urgent of warranty, AMC and other. Ties go warranty, then AMC, then other. Texts:
+  - "Warranty · 8 mo" when active: whole months left, at least 1.
+  - "AMC · 24 d" or "AMC · today" when expiring.
+  - "Out of coverage": contracts exist, but none covers today (all expired, or only future ones).
+  - "None": never covered (doc change #8).
+
+  Tones: active ok, expiring warn, out error, none neutral. The column reads `asset_coverage(page ids)` once per page (§21). It is live, so it is exact. It shows only with `coverage_contract.view`.
+- **Filter "Coverage"**: one overall value per asset, by the same rule as the column. It shows only with `coverage_contract.view`. Values:
+  - **Active**: covered, and the group that ends first ends on or after today + N.
+  - **Expiring**: that group ends before today + N.
+  - **Out of coverage.**
+  - **Never covered.**
+
+  Saved views store the value as `filters.coverage`. Views saved before 4.4 have no such key and load as before. An unknown value is dropped when a view loads.
+- **Filter panel** (owner request, 27 Oct 2026; built; UI only, no schema):
+  - Closed by default. The search box stays visible.
+  - A "Filters · 2" button (`aria-expanded`, `aria-controls`) opens and closes the panel. Focus moves into the panel when it opens and back to the button when it closes.
+  - While the panel is closed, the active filters show as chips with ×, plus "Clear all".
+  - Open or closed is kept per browser in `localStorage`, inside try/catch, so the page works with storage blocked.
+  - At phone width (< 768 px) the panel is a bottom sheet (`role="dialog"`). Esc, the backdrop and Apply close it.
+  - Saved views sit next to the Filters button.
+
+  **Clash with the screens file:** the screen shows the filter chips always open, in one row. The owner's request wins.
+
+  **Choices made in the build, for the owner to confirm:**
+  - Sort moved into the panel.
+  - "Clear all" clears the panel filters and keeps the search text.
+  - On a phone, filters apply as they are picked, so Apply only closes the sheet.
+  - A phone never reopens the sheet when the page loads.
+
+## 34. Measurements: the live filter of §21 does not scale (local Docker, p50, planner.a)
+
+**Data:** tenant A with N assets. 60% have a warranty, with ends spread over 1,000 days. 20% are in AMCs of 100 assets each. That makes 0.8 links per asset.
+
+**A** is §21 as planned: a set-form id helper, `private.coverage_asset_ids()`, computed once per statement and probed by a hashed subplan. The list still walks `asset_name_idx` with no sort. **B** is a prototype stored state: a column on `asset` with index `(tenant_id, coverage_state, name, id)`.
+
+| Query | A, 200k | A, 1M | B, 200k | B, 1M | Target (spike §2) |
+|---|---|---|---|---|---|
+| List page, coverage filter | 270–915 ms | 1,400–2,360 ms | 1.5–2 ms | 2–4 ms | 100 ms |
+| Count (capped 10,001), coverage filter | 250–500 ms | 1,700–2,540 ms | 5–30 ms | 11–160 ms | 200 ms |
+| List page, no coverage filter | 1.4 ms | 1.1 ms | | | |
+| Column, `asset_coverage` for 50 ids | 31 ms | 28 ms | | | |
+
+**As built** (`4_4_asset_coverage_state`, same data, same machine, p50):
+
+| Query | 200k | 1M |
+|---|---|---|
+| List page, coverage filter (any sort, page 1 or deep) | 2.0–4.5 ms | 1.2–2.4 ms |
+| Count (capped 10,001), coverage filter | 5.5–11.5 ms | 4.4–5.3 ms |
+| Column, `asset_coverage` for 50 ids | 31–160 ms (noisy) | 42 ms |
+| Trigger: link one AMC to 100 assets in one statement | 666 ms | 373 ms |
+| Job, nothing due | 1 ms | 1 ms |
+| Job, next day (assets whose state or until changes) | 800 assets, 4.9 s | 3,800 assets, 14.5 s |
+| Job, 30 days at once (catch-up) | 15,532 assets, 28 s | 72,328 assets, 150 s |
+| Job, whole tenant after a change of N (C15) | 64,688 written, 53 s | 327,052 written, 370 s (two runs at the 4-minute budget) |
+| Backfill of a whole tenant (the migration) | 175 s | 731 s |
+
+Writes cost about 1 to 4 ms per changed asset. The update rewrites every asset index, the 64 MB trigram index included. Reads meet the targets with a wide margin at 1M. A tenant that arrives with 1M assets after this migration does not pay the backfill: imports link assets through the triggers.
+
+A reads every link of the tenant on every call, so its cost grows with the tenant. It meets the targets up to about 20k assets (measured: list 40 to 95 ms, count 100 to 190 ms). A naive full recompute of B took 41 s at 200k and 368 s at 1M. So B must refresh only the assets whose state changes (§36), and never the whole tenant each night.
+
+## 35. Stored state on `asset` [C11] [C12] [C13]
+
+New columns, added in a new migration (the `asset` migration is never edited in place):
+
+| Column | Type | Notes |
+|---|---|---|
+| `coverage_state` | text not null default `'none'` | `check in ('active', 'expiring', 'out', 'none')`. The §33 overall value |
+| `coverage_state_until` | date null | The first tenant date on which the calendar alone can change the state. Null when no date can change it (never covered, or only expired contracts) |
+
+- **`coverage_state_until`** is the earliest of these dates, taken over the asset's live contracts:
+  - a future contract's `start_date`;
+  - a covering contract's `end_date + 1`;
+  - a covering contract's `end_date - N + 1` (the day it becomes expiring), when that day is after today.
+
+  Expired contracts add nothing.
+- **Indexes:** partial `where deleted_at is null`, tenant first (goal 3 §8), one per list sort, so a filtered page is still a keyset walk with no sort:
+  - `(tenant_id, coverage_state, name, id)`
+  - `(tenant_id, coverage_state, tag)`
+  - `(tenant_id, coverage_state, updated_at desc, id)`
+
+  The job (§36) gets one more: `(coverage_state_until) where coverage_state_until is not null and deleted_at is null`.
+- **Writes:** only `private.refresh_coverage_state(p_asset_ids uuid[])` writes the two columns (definer, `search_path = ''`). Users cannot, because the asset column grants (goal 3 §14) do not include them. The function computes the state and `until` set-wise for the given ids, in each asset's tenant time zone and N. It updates only the rows whose values change.
+- **No noise from system writes** [C12]: today `set_updated_at`, `check_asset_values` and `audit` fire on every asset update. They are recreated on `asset` with this guard:
+  `when ((to_jsonb(old) - '{coverage_state,coverage_state_until}'::text[]) is distinct from (to_jsonb(new) - '{coverage_state,coverage_state_until}'::text[]))`.
+  A state refresh then does not move `updated_at` (the "Recently updated" sort), writes no audit row and no `asset.updated` outbox event, and skips the value checks. Every other change fires them as before. The coverage row events (§22) still record what changed.
+- **Reads** [C13]:
+  - `asset_view` gets `coverage_state`.
+  - `list_assets` and `count_assets` add `v.coverage_state = %L` for `p_coverage`. It is a new last argument, default null; the functions are dropped and recreated, as 4.1b did.
+  - Without `coverage_contract.view`, the list functions treat a coverage filter as matching nothing, and the UI hides the column and the filter.
+
+## 36. Keeping it right [C14] [C15]
+
+**Event-driven.** Row triggers call `refresh_coverage_state` in the same transaction as the change. So they work for every writer: the Coverage page, the 4.5 RPC, merge, and imports later.
+
+| Change | Assets refreshed |
+|---|---|
+| `coverage_asset` insert or soft delete | That asset |
+| `coverage` insert, soft delete, or change of `start_date`, `end_date` or `coverage_type` | The contract's live linked assets (an AMC: up to hundreds, in one set-wise statement) |
+| `asset` insert | None. The default `'none'` is right; the 4.5 RPC links after the insert, and that refreshes |
+| `tenant.coverage_expiring_days` or `time_zone` change | The whole tenant, by the job (marked; see below) |
+
+**Calendar-driven: the delta job** [C14]. `pg_cron` runs `private.refresh_due_coverage_states()` every 15 minutes.
+- It picks live assets whose `coverage_state_until` is on or before their tenant's today, using the `until` index joined to `tenant` for the time zone.
+- It refreshes them in batches of 10,000 per tenant per run.
+- It touches only the assets whose state changes that day. With the bench data that is about 0.1% of a tenant per day.
+
+A settings change of N or time zone sets `tenant.coverage_state_dirty = true` [C15]. The job then refreshes that tenant in batches until it is done, and clears the flag.
+
+- **Staleness:** after the tenant's midnight, the filter can lag the column by up to one job interval. For example, an asset that became expiring at 00:00 still filters as active until about 00:15. After a change of N or time zone, a large tenant lags somewhat longer. The column, the detail card and the Coverage page stay live (C7 a) and exact.
+- **Backfill** in the migration: every live asset goes through `refresh_coverage_state`, tenant by tenant.
+- **Portability:** `pg_cron` is plain Postgres (RDS has it). The job is a definer function, so a future worker can call it instead. It is system work, not user work (CLAUDE.md §6.4).
+- **`pg_cron` is new to the project:** the migration runs `create extension pg_cron`. Supabase and the local stack both ship it. The job runs as `postgres` and reads no token, so it passes each tenant explicitly.
+
+## 37. DECIDE
+
+| # | Question | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| C11 | Where the state lives | **a)** Two columns on `asset`, with one index per sort (§35). **b)** A side table `asset_coverage_state`, keyed by asset. **c)** The live set form §21 planned (A in §34) | a. Only a column can share an index with the sort columns, so a filtered page stays a 2 ms keyset walk at 1M. b must either join and sort (100+ ms at 1M) or copy the sort keys. c measured 1.4 to 2.4 s at 1M | Medium: columns, indexes, backfill |
+| C12 | System writes and the asset triggers | **a)** `when` guards on `set_updated_at`, `check_asset_values` and `audit` that ignore the two columns (§35). **b)** Let them fire: every refresh moves `updated_at` and writes an audit row and an outbox event | a. b floods the audit log and the future webhooks with machine changes, and breaks "Recently updated". The guard is generic (`to_jsonb` minus two keys), so new asset columns need no change. Owner review: it touches the audit trigger | Low |
+| C13 | Who sees the state | **a)** In `asset_view` for `asset_core.view`; the list filter and the UI column only with `coverage_contract.view`. **b)** Masked in the view, like a value field | a. It is one word per asset: no contract, vendor, dates or value. Masking it in the view stops the index being used (the filter would compare a `case` expression), which brings back the slow path | Low |
+| C14 | Calendar refresh | **a)** `pg_cron` every 15 minutes, delta by `coverage_state_until`, batches of 10,000. **b)** Once a night per time zone. **c)** Every hour | a. A run with nothing due is one index probe. 15 minutes keeps the lag after midnight short in every time zone | None: schedule only |
+| C15 | Settings change of N or time zone | **a)** Mark the tenant; the job refreshes it in batches. **b)** Refresh the whole tenant inside the settings save | a. b would hold the settings save for many seconds at 1M assets | Low |
+| C16 | The column | **a)** Live from `asset_coverage()` per page (exact, 30 ms). **b)** From the stored state | a. The column needs the group and the days left, which the state does not hold. One call per page | None |
+| C17 | Split | **a)** One story: state, triggers, job, list filter, column, panel. **b)** 4.4 for the column and panel (UI, live column, no filter); 4.4b for the stored state, job and filter | a. The filter is in the story's name and the review point asks for it. The column and the panel are already built and tested | None |
+
+## 38. Build plan (after answers)
+
+1. **Migration `4_4_asset_coverage_state`.** It replaces the unpushed draft `4_4_asset_list_coverage`, which was never applied to staging. Contents:
+   - `pg_cron`;
+   - the columns, checks and indexes, and `tenant.coverage_state_dirty`;
+   - `refresh_coverage_state`, `refresh_due_coverage_states`, and the `coverage` and `coverage_asset` triggers;
+   - the guarded asset triggers;
+   - `asset_view` with the column;
+   - `list_assets` and `count_assets` with `p_coverage`;
+   - the backfill and the cron schedule.
+2. **pgTAP `4_4_asset_coverage_state.test.sql`:**
+   - each state: active, expiring at the N boundary, end today, ended yesterday, only future, never covered, soft-deleted contract, AMC active with warranty expired, extended warranty in the warranty group;
+   - every trigger path: link, unlink, contract dates, type, soft delete, an AMC with many assets;
+   - the job with a given "now": the state flips at the tenant's midnight in two time zones; nothing due does nothing; batch size;
+   - a change of N marks the tenant and refreshes it;
+   - a refresh does not move `updated_at` and writes no audit row, while a normal edit still does both;
+   - users cannot write the columns;
+   - the filter without `coverage_contract.view` matches nothing;
+   - cross-tenant;
+   - EXPLAIN: for each sort, a filtered page walks its `(tenant_id, coverage_state, ...)` index with no sort;
+   - the tenancy guard stays green.
+3. **Bench:** re-run the §34 bench at 200k and 1M on the build, and record the numbers here.
+4. **Web** (built, kept): column, filter, panel, saved views. Its 19 tests in `Assets.test.tsx` already pass.
+
+## 39. Not in 4.4
+
+Filters per group ("out of warranty" only, AMC only), coverage on the vendor filter, notifications on expiry (C9), a stored state per group.
