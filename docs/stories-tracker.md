@@ -111,11 +111,11 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 
 | ID | Story | Open items | Status |
 |---|---|---|---|
-| 5.1 | Obligation rule table, next-due calculation, category default intervals | OQ-03 | Todo |
+| 5.1 | Obligation rule table, next-due calculation, category default intervals | OQ-03 | In progress |
 | 5.2 | Service completion record (date, notes, cost, attachment) that advances next due | | Todo |
 | 5.3 | Maintenance screen: overdue, due soon, scheduled, completed | | Todo |
 | 5.4 | Dashboard KPIs, upcoming list, assets by location | | Todo |
-| 5.5 | Locations status counts, optional BOM tab, demo seed data | | Todo |
+| 5.5 | Locations status counts, demo seed data | | Todo |
 
 ### Goal 6: Security admin UI and scope
 **Review point:** you create a Pune-only Plant Manager and verify through the UI that Mumbai assets disappear.
@@ -172,6 +172,7 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 | ID | Story | Revisit with | Status |
 |---|---|---|---|
 | BL-1 | Background jobs monitor: a `job_run` log (job, tenant, start, end, status, rows, error) written by every background job; a "Background jobs" page for a platform admin (like Workday's background process monitor); a `job.failed` outbox event for alerts. Needs a platform-admin role, which does not exist yet | Goal 9 (notifications, API) and Goal 10 (AI gateway) | Backlog |
+| BL-2 | Optional BOM per asset (reference parts list, no inventory). Parked from 5.5 by the owner | Later | Backlog |
 
 ---
 
@@ -217,3 +218,4 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 | 27 Oct 2026 | Story 4.5 added: owner UX request after the 4.3 review (Add asset asks for purchase date and OEM, then coverage asks again for dates). A default warranty term per category was considered and parked by the owner: not yet decided whether a category default or another mechanism is right |
 | 27 Oct 2026 | Story 4.4 widened: owner asked to declutter the Assets list filters, so the same story adds a collapsible filter panel (Filters button with a count, active-filter chips, bottom sheet at phone width) |
 | 27 Oct 2026 | Backlog item BL-1 added (background jobs monitor), after the first `pg_cron` job (4.4). Not in Goal 4; owner will plan it with the other technical work (API, notifications, AI) |
+| 27 Oct 2026 | Goal 5 owner decisions before 5.1: OQ-03 decided (both anchors per rule; new rules from last completion, statutory items fixed dates); category defaults with asset override for service intervals and the warranty term, one mechanism (settles the 4.5 parked item; the default prefills the Warranty block on Add asset); BOM parked, removed from 5.5, added as BL-2 |
