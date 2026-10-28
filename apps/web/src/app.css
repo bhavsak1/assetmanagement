@@ -890,6 +890,63 @@ fieldset.plain legend {
   color: var(--tag-error-text);
 }
 
+/* Dashboard (5.4): KPI tiles are links; upcoming list beside the location bars, stacked on a phone. */
+a.kpi {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.kpi:hover,
+a.kpi:focus-visible {
+  border-color: var(--color-primary);
+}
+
+.dash {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+  align-items: stretch;
+  margin-top: var(--space-6);
+}
+
+.dash .upcoming {
+  flex: 2 1 420px;
+  min-width: 0;
+}
+
+.dash .by-location {
+  flex: 1 1 260px;
+}
+
+.bars li {
+  display: grid;
+  grid-template-columns: minmax(0, 120px) 1fr;
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+
+.bars li > .muted {
+  grid-column: 2;
+}
+
+.bar {
+  height: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-track);
+}
+
+.bar i {
+  display: block;
+  height: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+}
+
+.bars .error {
+  color: var(--tag-error-text);
+}
+
 .plain-list {
   margin: var(--space-3) 0 0;
   padding: 0;

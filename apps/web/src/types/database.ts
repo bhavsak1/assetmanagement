@@ -1362,6 +1362,11 @@ isOneToOne: false
               "anchor": string,"asset_id": string,"asset_name": string,"category_id": string,"due_state": string,"id": string,"in_service_date": string,"interval_count": number,"interval_unit": string,"last_done_date": string,"location_id": string,"name": string,"next_due_date": string,"obligation_type": string,"purchase_currency": string,"purchase_date": string,"purchase_value": number,"tag": string
             }[]
                            },
+"location_asset_counts":
+{ Args: Record<PropertyKey, never>; Returns: {
+              "assets": number,"location_id": string,"overdue": number
+            }[]
+                           },
 "maintenance_counts":
 { Args: { "p_category_id"?: string,"p_coverage"?: string,"p_location_id"?: string,"p_term"?: string,"p_type"?: string,"p_vendor_id"?: string }; Returns: {
               "completed": number,"due_soon": number,"next_30": number,"next_7": number,"overdue": number,"scheduled": number

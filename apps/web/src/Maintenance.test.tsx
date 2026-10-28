@@ -64,11 +64,11 @@ afterEach(() => {
   container.remove()
 })
 
-async function render(perms: string[]) {
+async function render(perms: string[], url = '/maintenance') {
   const can = (d: string, o: string) => perms.includes(`${d}.${o}`)
   await act(async () =>
     root.render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[url]}>
         <MaintenancePage tenantId="t1" can={can} />
       </MemoryRouter>,
     ),
@@ -180,4 +180,13 @@ test('Record completion from a row opens the 5.2 dialog; saving reloads the rows
 test('loading, then empty', async () => {
   await render(all)
   expect(container.textContent).toContain(m.none)
+})
+
+test('?tab= from a Dashboard link opens that tab; a tab the user cannot see falls back', async () => {
+  await render(all, '/maintenance?tab=due_soon')
+  expect(lastRpc('list_obligations')).toEqual({ p_bucket: 'due_soon', p_limit: 51 })
+  act(() => root.unmount())
+  root = createRoot(container)
+  await render(['obligation.view', 'asset_core.view'], '/maintenance?tab=completed')
+  expect(lastRpc('list_obligations')).toEqual({ p_bucket: 'overdue', p_limit: 51 })
 })

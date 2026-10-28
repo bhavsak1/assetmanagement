@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { AssetsPage, coverageCell, listArgs, nextCursor, savedFilters, viewFilters, type Filters } from './Assets'
+import { AssetsPage, coverageCell, listArgs, nextCursor, savedFilters, urlFilters, viewFilters, type Filters } from './Assets'
 import { t } from './i18n'
 
 const db = vi.hoisted(() => ({
@@ -361,4 +361,13 @@ test('a saved view loads into the chips, coverage included', async () => {
   await choose(t.assets.views.label, 'v1')
   expect(lastList()).toEqual({ p_location_id: 'l1', p_coverage: 'expiring', p_sort: 'name', p_limit: 51 })
   expect(chipTexts()).toEqual(['Location: Pune', 'Coverage: Expiring'])
+})
+test('filters from a Dashboard link: status, coverage and a location id shape; anything else dropped', () => {
+  const id = '00000000-0000-0000-0000-00000054d001'
+  expect(urlFilters(new URLSearchParams(`coverage=expiring&location_id=${id}&status=active`))).toEqual(
+    expect.objectContaining({ coverage: 'expiring', location_id: id, status: 'active', category_id: '' }),
+  )
+  expect(urlFilters(new URLSearchParams('coverage=bad&location_id=x;drop&status=nope'))).toEqual(
+    expect.objectContaining({ coverage: '', location_id: '', status: '' }),
+  )
 })

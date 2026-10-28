@@ -903,5 +903,23 @@
     "errors": {
       "load": "Could not load maintenance."
     }
+  },
+  "dashboard": {
+    "subtitle": "All locations",
+    "tiles": {
+      "total": "Total assets",
+      "due30": "Due in 30 days",
+      "overdue": "Overdue service",
+      "expiring": "Coverage expiring ({n}d)"
+    },
+    "tileLink": "{label}: {value}",
+    "upcoming": "Upcoming and overdue service",
+    "viewAll": "View all",
+    "noUpcoming": "No open service is due.",
+    "byLocation": "Assets by location",
+    "noAssets": "No assets yet.",
+    "noLocation": "No location",
+    "barOverdue": "{n} overdue",
+    "loading": "Loading…"
   }
 }
