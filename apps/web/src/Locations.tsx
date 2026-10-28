@@ -1,11 +1,37 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router'
+import { statuses } from './Assets'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import { buildTree, lineage } from './tree'
-import type { Tables } from './types/database'
+import type { Database, Tables } from './types/database'
 
 type Location = Pick<Tables<'location'>, 'id' | 'parent_id' | 'name' | 'code' | 'location_type' | 'active'>
 type DbError = { code?: string; message?: string }
+type Can = (domain: string, operation: string) => boolean
+type StatusCount = Database['public']['Functions']['location_status_counts']['Returns'][number]
+export type Counts = Record<(typeof statuses)[number] | 'overdue' | 'total', number>
+
+const empty = (): Counts => ({ in_stock: 0, active: 0, under_maintenance: 0, inactive: 0, disposed: 0, overdue: 0, total: 0 })
+
+// Story 5.5: a node's counts are its own plus every descendant's. location_status_counts is per asset
+// location; the closure table is private, so the web rolls up the tree it already holds (5.4 pattern).
+// location_id is null for assets with no location; the generated type cannot say so.
+export function rollUp(rows: Location[], counts: (Omit<StatusCount, 'location_id'> & { location_id: string | null })[]): Map<string, Counts> {
+  const out = new Map<string, Counts>()
+  for (const c of counts) {
+    if (!c.location_id) continue
+    for (const id of lineage(rows, c.location_id)) {
+      const n = out.get(id) ?? out.set(id, empty()).get(id)!
+      for (const s of statuses) n[s] += c[s]
+      n.overdue += c.overdue
+      n.total += c.in_stock + c.active + c.under_maintenance + c.inactive + c.disposed
+    }
+  }
+  return out
+}
+
+const num = (n?: number) => (n === undefined ? '…' : n > 10000 ? t.assets.manyCount : n.toLocaleString())
 
 // Where a location may move, in tree order: not under itself or its own descendants (the database
 // also refuses a cycle), and an active location not under an inactive one (2.3 rule L2).
@@ -37,8 +63,12 @@ function errorMessage(error: DbError): string {
 
 type Editing = { kind: 'add'; parentId: string | null } | { kind: 'edit' } | { kind: 'move' }
 
-export function LocationsPage({ tenantId, canManage }: { tenantId: string; canManage: boolean }) {
+export function LocationsPage({ tenantId, canManage, can }: { tenantId: string; canManage: boolean; can: Can }) {
   const [rows, setRows] = useState<Location[]>([])
+  const [counts, setCounts] = useState<StatusCount[]>()
+  // Counts read asset_view, so they need asset_core.view; overdue also obligation.view.
+  const seeAssets = can('asset_core', 'view')
+  const seeDue = seeAssets && can('obligation', 'view')
   const [selected, setSelected] = useState<string>()
   const [editing, setEditing] = useState<Editing>()
   const [error, setError] = useState<string>()
@@ -62,6 +92,16 @@ export function LocationsPage({ tenantId, canManage }: { tenantId: string; canMa
     }
   }, [reload])
 
+  useEffect(() => {
+    if (!seeAssets) return
+    let live = true
+    void supabase.rpc('location_status_counts').then(({ data }) => live && setCounts(data ?? []))
+    return () => {
+      live = false
+    }
+  }, [seeAssets])
+
+  const sums = counts && rollUp(rows, counts)
   const tree = buildTree(rows)
   const hasChildren = new Set(rows.map((r) => r.parent_id))
   // Skip every node below a collapsed one: tree order puts a subtree right after its root.
@@ -152,6 +192,11 @@ export function LocationsPage({ tenantId, canManage }: { tenantId: string; canMa
               >
                 {row.name}
                 {!row.active && <span className="tag">{t.locations.inactive}</span>}
+                {sums && (
+                  <span className="node-count" aria-label={t.locations.counts.assets.replace('{n}', num(sums.get(row.id)?.total ?? 0))}>
+                    {num(sums.get(row.id)?.total ?? 0)}
+                  </span>
+                )}
               </button>
             </div>
           ))}
@@ -218,6 +263,22 @@ export function LocationsPage({ tenantId, canManage }: { tenantId: string; canMa
                 <dt>{t.locations.status}</dt>
                 <dd>{current.active ? t.locations.active : t.locations.inactive}</dd>
               </dl>
+            </div>
+          )}
+          {current && seeAssets && (
+            <div className="kpis" aria-label={t.locations.counts.title}>
+              {[
+                ...statuses.map((s) => ({ label: t.assets.statuses[s], value: s, to: `/assets?location_id=${current.id}&status=${s}`, tone: '' })),
+                ...(seeDue ? [{ label: t.locations.counts.overdue, value: 'overdue' as const, to: `/maintenance?tab=overdue&location_id=${current.id}`, tone: 'error' }] : []),
+              ].map((k) => {
+                const v = num(sums && (sums.get(current.id) ?? empty())[k.value])
+                return (
+                  <Link key={k.value} className="card kpi" to={k.to} aria-label={t.dashboard.tileLink.replace('{label}', k.label).replace('{value}', v)}>
+                    <span>{k.label}</span>
+                    <b className={k.tone}>{v}</b>
+                  </Link>
+                )
+              })}
             </div>
           )}
         </div>

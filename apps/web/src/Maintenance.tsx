@@ -87,7 +87,11 @@ export function MaintenancePage({ tenantId, can }: { tenantId: string; can: Can 
   const [params] = useSearchParams()
   const [picked, setPicked] = useState(() => (params.get('tab') ?? undefined) as Bucket | undefined)
   const tab = picked && tabs.includes(picked) ? picked : tabs[0]
-  const [filters, setFilters] = useState<Filters>(emptyFilters)
+  // ?location_id= from a Locations tile (5.5), checked by its shape as on Assets.
+  const [filters, setFilters] = useState<Filters>(() => {
+    const id = params.get('location_id') ?? ''
+    return { ...emptyFilters, location_id: /^[0-9a-f-]{36}$/i.test(id) ? id : '' }
+  })
   const [typed, setTyped] = useState('')
   const [open, setOpen] = useState(() => readOpen() && !isPhone())
   const toggleRef = useRef<HTMLButtonElement>(null)

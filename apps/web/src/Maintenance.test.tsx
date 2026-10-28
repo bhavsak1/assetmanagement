@@ -190,3 +190,14 @@ test('?tab= from a Dashboard link opens that tab; a tab the user cannot see fall
   await render(['obligation.view', 'asset_core.view'], '/maintenance?tab=completed')
   expect(lastRpc('list_obligations')).toEqual({ p_bucket: 'overdue', p_limit: 51 })
 })
+
+test('?location_id= from a Locations tile filters the list and counts; a bad id is dropped', async () => {
+  const id = '00000000-0000-0000-0000-0000000000a2'
+  await render(all, `/maintenance?tab=overdue&location_id=${id}`)
+  expect(lastRpc('list_obligations')).toEqual({ p_bucket: 'overdue', p_location_id: id, p_limit: 51 })
+  expect(lastRpc('maintenance_counts')).toMatchObject({ p_location_id: id })
+  act(() => root.unmount())
+  root = createRoot(container)
+  await render(all, '/maintenance?location_id=x')
+  expect(lastRpc('list_obligations')).toEqual({ p_bucket: 'overdue', p_limit: 51 })
+})

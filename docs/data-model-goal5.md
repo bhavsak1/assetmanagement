@@ -493,7 +493,9 @@ Export, the AI card, totals by status (D1 a), an exact 30-day link (D4 b), a cha
 
 ## 15. Story 5.5: Locations status counts, demo seed
 
-**Status:** design, 28 Oct 2026. Waiting for the owner's answers (L1 to L6, B1 to B7). Nothing built yet.
+**Status:** in review, 28 Oct 2026. The owner accepted the leans L1 to L6 on 28 Oct 2026. Part B (the demo tenant, §15.2) is parked as BL-3: the owner checks Goal 5 on staging first. B1 to B7 stay open.
+
+**As built (Part A):** migration `5_5_location_status_counts`; tests `5_5_location_status_counts.test.sql` (11); web `Locations.tsx` (`rollUp`, tiles, row totals; 3 new tests) and `Maintenance.tsx` (`?location_id=`, 1 new test). The 200k EXPLAIN was not rerun: the read is the 5.4 `location_asset_counts` query with five `filter` counts in the same single pass (5.4 bench about 210 ms).
 
 **Goal 5 review point:** a seeded demo tenant with a populated dashboard and maintenance view, the first pilot-style demo.
 
