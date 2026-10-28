@@ -158,6 +158,12 @@ insert into public.obligation (tenant_id, asset_id, name, obligation_type, inter
 select a.tenant_id, a.id, 'row', 'service', 3, 'month', 'completion', '2026-12-31' from public.asset a where a.name in ('a-row', 'b-row');
 insert into public.service_record (tenant_id, obligation_id, asset_id, done_on, advanced)
 select o.tenant_id, o.id, o.asset_id, '2026-10-01', true from public.obligation o where o.name = 'row';
+-- 5.2b: a service record file, stored first like 3.6.
+insert into storage.objects (bucket_id, name, metadata)
+select 'attachments', r.tenant_id || '/service_record/' || r.id || '/' || r.id, '{"size": 1, "mimetype": "text/plain"}'
+from public.service_record r;
+insert into public.service_record_attachment (id, tenant_id, service_record_id, file_name)
+select r.id, r.tenant_id, r.id, 'row' from public.service_record r;
 select is(array(select name from tenant_table where pg_temp.count_rows(name, $$tenant_id = '00000000-0000-0000-0000-00000000000b'$$) = 0 order by 1),
           '{}', 'every public tenant_id table holds tenant B rows to hide');
 -- One test per tenant A user, each acting as that user over every table. Plain queries, so RLS decides.

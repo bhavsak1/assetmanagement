@@ -723,6 +723,50 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"service_record_attachment": {
+                  Row: {
+                    "created_at": string,"created_by": string | null,"deleted_at": string | null,"file_name": string,"id": string,"mime_type": string,"object_path": string | null,"service_record_id": string,"size_bytes": number,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"file_name": string,"id"?: string,"mime_type": string,"object_path"?: never,"service_record_id": string,"size_bytes": number,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"file_name"?: string,"id"?: string,"mime_type"?: string,"object_path"?: never,"service_record_id"?: string,"size_bytes"?: number,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "service_record_attachment_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "service_record_attachment_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "service_record_attachment_tenant_id_service_record_id_fkey"
+      columns: ["tenant_id","service_record_id"]
+isOneToOne: false
+      referencedRelation: "service_record"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "service_record_attachment_tenant_id_service_record_id_fkey"
+      columns: ["tenant_id","service_record_id"]
+isOneToOne: false
+      referencedRelation: "service_record_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "service_record_attachment_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"tenant": {
                   Row: {
                     "asset_tag_pattern": string,"coverage_expiring_days": number,"coverage_refresh_after": string | null,"created_at": string,"created_by": string | null,"currency_code": string,"date_format": string,"deleted_at": string | null,"fiscal_year_start_month": number,"id": string,"locale": string,"name": string,"obligation_due_soon_days": number,"obligation_refresh_after": string | null,"required_asset_fields": (string)[],"slug": string,"status": string,"time_zone": string,"updated_at": string,"updated_by": string | null
@@ -1320,6 +1364,11 @@ isOneToOne: false
 "service_history":
 { Args: { "p_asset_id": string,"p_obligation_id"?: string }; Returns: {
               "advanced": boolean,"certificate_expiry": string,"cost_amount": number,"cost_currency": string,"done_by_name": string,"done_by_user_id": string,"done_on": string,"id": string,"notes": string,"obligation_id": string,"obligation_name": string,"outcome": string,"vendor_id": string,"vendor_name": string
+            }[]
+                           },
+"service_record_attachments":
+{ Args: { "p_service_record_id": string }; Returns: {
+              "created_at": string,"file_name": string,"id": string,"mime_type": string,"size_bytes": number,"uploaded_by": string
             }[]
                            },
 "set_asset_tag_pattern":

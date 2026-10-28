@@ -46,17 +46,44 @@ function put(path: string, file: File, token: string, onProgress: (p: number) =>
   })
 }
 
-export function AttachmentsTab({ tenantId, assetId, can, timeZone }: { tenantId: string; assetId: string; can: Can; timeZone?: string }) {
+// 5.2b: files on an asset (3.6) or on a service record. The path's entity segment and the permissions differ.
+export type Entity = 'asset' | 'service_record'
+const KIND = {
+  asset: { domain: 'asset_attachment', remove: 'delete' },
+  service_record: { domain: 'service_record', remove: 'update' },
+} as const
+const pathOf = (tenantId: string, entity: Entity, entityId: string, id: string) => `${tenantId}/${entity}/${entityId}/${id}`
+
+// Z6: the file first, then its row. A failed row leaves an unreadable orphan, never a row without a file.
+// mime_type and size_bytes are not in the insert grant: the database trigger copies them from the stored file.
+export async function uploadAttachment(tenantId: string, entity: Entity, entityId: string, file: File, onProgress: (p: number) => void): Promise<boolean> {
+  const token = (await supabase.auth.getSession()).data.session?.access_token ?? ''
+  const id = crypto.randomUUID()
+  if (!(await put(pathOf(tenantId, entity, entityId, id), file, token, onProgress))) return false
+  const row = { id, tenant_id: tenantId, file_name: file.name.slice(-255) }
+  const { error } =
+    entity === 'asset'
+      ? await supabase.from('asset_attachment').insert({ ...row, asset_id: entityId } as TablesInsert<'asset_attachment'>)
+      : await supabase.from('service_record_attachment').insert({ ...row, service_record_id: entityId } as TablesInsert<'service_record_attachment'>)
+  return !error
+}
+
+export function AttachmentsTab({ tenantId, entity = 'asset', entityId, can, timeZone }: { tenantId: string; entity?: Entity; entityId: string; can: Can; timeZone?: string }) {
   const [rows, setRows] = useState<Attachment[]>()
   const [error, setError] = useState<string>()
   const [progress, setProgress] = useState<number>()
   const [version, setVersion] = useState(0)
   const input = useRef<HTMLInputElement>(null)
-  const path = (id: string) => `${tenantId}/asset/${assetId}/${id}`
+  const k = KIND[entity]
+  const path = (id: string) => pathOf(tenantId, entity, entityId, id)
 
   useEffect(() => {
     let live = true
-    void supabase.rpc('asset_attachments', { p_asset_id: assetId }).then(({ data, error }) => {
+    const list =
+      entity === 'asset'
+        ? supabase.rpc('asset_attachments', { p_asset_id: entityId })
+        : supabase.rpc('service_record_attachments', { p_service_record_id: entityId })
+    void list.then(({ data, error }) => {
       if (!live) return
       setRows(data ?? [])
       if (error) setError(x.loadError)
@@ -64,7 +91,7 @@ export function AttachmentsTab({ tenantId, assetId, can, timeZone }: { tenantId:
     return () => {
       live = false
     }
-  }, [assetId, version])
+  }, [entity, entityId, version])
 
   async function upload(ev: ChangeEvent<HTMLInputElement>) {
     const file = ev.target.files?.[0]
@@ -73,13 +100,8 @@ export function AttachmentsTab({ tenantId, assetId, can, timeZone }: { tenantId:
     const bad = checkFile(file)
     setError(bad)
     if (bad) return
-    const token = (await supabase.auth.getSession()).data.session?.access_token ?? ''
-    const id = crypto.randomUUID()
     setProgress(0)
-    // Z6: the file first, then its row. A failed row leaves an unreadable orphan, never a row without a file.
-    // mime_type and size_bytes are not in the insert grant: the database trigger copies them from the stored file.
-    const row = { id, tenant_id: tenantId, asset_id: assetId, file_name: file.name.slice(-255) } as TablesInsert<'asset_attachment'>
-    const ok = (await put(path(id), file, token, setProgress)) && !(await supabase.from('asset_attachment').insert(row)).error
+    const ok = await uploadAttachment(tenantId, entity, entityId, file, setProgress)
     setProgress(undefined)
     if (!ok) setError(x.uploadError)
     setVersion((v) => v + 1)
@@ -101,7 +123,7 @@ export function AttachmentsTab({ tenantId, assetId, can, timeZone }: { tenantId:
 
   async function remove(r: Attachment) {
     if (!window.confirm(x.deleteConfirm.replace('{name}', r.file_name))) return
-    const { error } = await supabase.from('asset_attachment').update({ deleted_at: new Date().toISOString() }).eq('id', r.id)
+    const { error } = await supabase.from(entity === 'asset' ? 'asset_attachment' : 'service_record_attachment').update({ deleted_at: new Date().toISOString() }).eq('id', r.id)
     if (error) setError(x.deleteError)
     setVersion((v) => v + 1)
   }
@@ -115,7 +137,7 @@ export function AttachmentsTab({ tenantId, assetId, can, timeZone }: { tenantId:
           {error}
         </p>
       )}
-      {can('asset_attachment', 'create') && (
+      {can(k.domain, 'create') && (
         <div className="page-head">
           <span className="muted">{x.limits}</span>
           <div className="spacer" />
@@ -152,7 +174,7 @@ export function AttachmentsTab({ tenantId, assetId, can, timeZone }: { tenantId:
                   <td>{r.uploaded_by ?? t.assetDetail.history.formerMember}</td>
                   <td>{when(r.created_at)}</td>
                   <td className="actions">
-                    {can('asset_attachment', 'delete') && (
+                    {can(k.domain, k.remove) && (
                       <button className="btn" type="button" onClick={() => void remove(r)}>
                         {x.delete}
                       </button>

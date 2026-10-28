@@ -2,21 +2,32 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { AttachmentsTab, checkFile, fileSize, MAX_BYTES } from './Attachments'
+import { AttachmentsTab, checkFile, fileSize, MAX_BYTES, type Entity } from './Attachments'
 import { t } from './i18n'
 
 const x = t.assetDetail.attachments
-const db = vi.hoisted(() => ({ inserts: [] as unknown[], insertError: null as unknown, list: [] as unknown[] }))
+const db = vi.hoisted(() => ({ inserts: [] as unknown[], insertError: null as unknown, list: [] as unknown[], rpcs: [] as unknown[], signed: [] as unknown[] }))
 
 vi.mock('./supabase', () => ({
   supabase: {
-    rpc: () => Promise.resolve({ data: db.list, error: null }),
-    from: () => ({
+    rpc: (fn: string, args: unknown) => {
+      db.rpcs.push({ fn, args })
+      return Promise.resolve({ data: db.list, error: null })
+    },
+    from: (table: string) => ({
       insert: (row: unknown) => {
-        db.inserts.push(row)
+        db.inserts.push({ table, row })
         return Promise.resolve({ error: db.insertError })
       },
     }),
+    storage: {
+      from: (bucket: string) => ({
+        createSignedUrl: (...args: unknown[]) => {
+          db.signed.push([bucket, ...args])
+          return Promise.resolve({ data: { signedUrl: 'https://signed/x' }, error: null })
+        },
+      }),
+    },
     auth: { getSession: () => Promise.resolve({ data: { session: { access_token: 'tok' } } }) },
   },
 }))
@@ -66,6 +77,8 @@ let root: Root
 
 beforeEach(() => {
   db.inserts = []
+  db.rpcs = []
+  db.signed = []
   db.insertError = null
   db.list = [{ id: 'f1', file_name: 'Manual.pdf', mime_type: 'application/pdf', size_bytes: 2048, created_at: '2026-10-22T10:00:00Z', uploaded_by: 'Test User' }]
   sent.length = 0
@@ -79,9 +92,9 @@ afterEach(() => {
   container.remove()
 })
 
-async function render(grants: string[]) {
+async function render(grants: string[], entity: Entity = 'asset', entityId = 'a1') {
   const can = (domain: string, op: string) => grants.includes(`${domain}.${op}`)
-  await act(async () => root.render(<AttachmentsTab tenantId="ta" assetId="a1" can={can} timeZone="Asia/Kolkata" />))
+  await act(async () => root.render(<AttachmentsTab tenantId="ta" entity={entity} entityId={entityId} can={can} timeZone="Asia/Kolkata" />))
 }
 const buttons = () => [...container.querySelectorAll('button')].map((b) => b.textContent)
 
@@ -113,10 +126,10 @@ test('upload: file to the tenant path first, then its row', async () => {
   expect(buttons()).toContain(x.delete)
   await pick(new File(['%PDF'], 'Manual v2.pdf', { type: 'application/pdf' }))
   expect(sent).toHaveLength(1)
-  const id = (db.inserts[0] as { id: string }).id
+  const id = (db.inserts[0] as { row: { id: string } }).row.id
   expect(sent[0]!.url).toMatch(new RegExp(`/storage/v1/object/attachments/ta/asset/a1/${id}$`))
   expect(sent[0]!.headers).toMatchObject({ Authorization: 'Bearer tok', 'Content-Type': 'application/pdf', 'x-upsert': 'false' })
-  expect(db.inserts[0]).toEqual({ id, tenant_id: 'ta', asset_id: 'a1', file_name: 'Manual v2.pdf' })
+  expect(db.inserts[0]).toEqual({ table: 'asset_attachment', row: { id, tenant_id: 'ta', asset_id: 'a1', file_name: 'Manual v2.pdf' } })
   expect(container.querySelector('[role="alert"]')).toBeNull()
 })
 
@@ -125,4 +138,41 @@ test('upload: a refused row shows the upload error', async () => {
   await render(['asset_attachment.view', 'asset_attachment.create'])
   await pick(new File(['%PDF'], 'a.pdf', { type: 'application/pdf' }))
   expect(container.querySelector('[role="alert"]')?.textContent).toBe(x.uploadError)
+})
+
+// 5.2b: the same tab on a service record.
+test('service record: lists its files; asset_attachment grants do not give Upload or Delete', async () => {
+  await render(['asset_attachment.view', 'asset_attachment.create', 'asset_attachment.delete', 'service_record.view'], 'service_record', 'r1')
+  expect(db.rpcs).toEqual([{ fn: 'service_record_attachments', args: { p_service_record_id: 'r1' } }])
+  expect(container.textContent).toContain('Manual.pdf')
+  expect(buttons()).not.toContain(x.upload)
+  expect(buttons()).not.toContain(x.delete)
+})
+
+test('service record: upload with service_record.create to its path, then its row; delete with service_record.update', async () => {
+  await render(['service_record.view', 'service_record.create', 'service_record.update'], 'service_record', 'r1')
+  expect(buttons()).toContain(x.delete)
+  await pick(new File(['%PDF'], 'Report.pdf', { type: 'application/pdf' }))
+  const id = (db.inserts[0] as { row: { id: string } }).row.id
+  expect(sent[0]!.url).toMatch(new RegExp(`/storage/v1/object/attachments/ta/service_record/r1/${id}$`))
+  expect(db.inserts[0]).toEqual({ table: 'service_record_attachment', row: { id, tenant_id: 'ta', service_record_id: 'r1', file_name: 'Report.pdf' } })
+})
+
+test('service record: a file over 10 MB is refused before upload', async () => {
+  await render(['service_record.view', 'service_record.create'], 'service_record', 'r1')
+  await pick(new File([new Uint8Array(MAX_BYTES + 1)], 'big.pdf', { type: 'application/pdf' }))
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(x.tooBig)
+  expect(sent).toHaveLength(0)
+})
+
+test('open: a 60 s signed URL for the service record path, opened in a new tab without opener', async () => {
+  db.list = [{ id: 'f2', file_name: 'Photo.jpg', mime_type: 'image/jpeg', size_bytes: 4096, created_at: '2026-10-22T10:00:00Z', uploaded_by: null }]
+  const tab = { opener: {} as unknown, location: { href: '' }, close: vi.fn() }
+  const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window)
+  await render(['service_record.view'], 'service_record', 'r1')
+  await act(async () => [...container.querySelectorAll('button')].find((b) => b.textContent === 'Photo.jpg')!.click())
+  expect(db.signed).toEqual([['attachments', 'ta/service_record/r1/f2', 60, undefined]])
+  expect(tab.opener).toBeNull()
+  expect(tab.location.href).toBe('https://signed/x')
+  open.mockRestore()
 })

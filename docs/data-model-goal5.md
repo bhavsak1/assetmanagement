@@ -170,7 +170,7 @@ Completion and service records (5.2), Maintenance screen (5.3), Dashboard (5.4),
 
 ## 12. Story 5.2: Service completion record
 
-**Status:** in review, 28 Oct 2026. The owner accepted every lean, S0 to S9, on 28 Oct 2026. 5.2 builds §12.1 to §12.5 and §12.7; attachments (§12.6) are story 5.2b. Built in migrations `5_2_service_values_domain`, `5_2_service_record`, `5_2_complete_obligation`; tests in `5_2_service_record.test.sql` (91), web `Service.tsx`.
+**Status:** Done (owner accepted 28 Oct 2026). 5.2b in review. The owner accepted every lean, S0 to S9, on 28 Oct 2026. 5.2 builds §12.1 to §12.5 and §12.7; attachments (§12.6) are story 5.2b. Built in migrations `5_2_service_values_domain`, `5_2_service_record`, `5_2_complete_obligation`; tests in `5_2_service_record.test.sql` (91), web `Service.tsx`.
 
 **As built (differences from the design below):**
 - **Undo works on any live record**, not only the latest advanced one. Both actions keep one invariant: `last_done_date` = the later of the baseline (the value before any record) and the latest live record's `done_on`. So undoing an older record changes nothing, undoing the latest puts the right date back, and no "undo the later one first" refusal is needed. Still no replay (S4 a, not b).
@@ -244,6 +244,7 @@ The action runs as owner, so the 5.1 column grants (`next_due_date` none, `last_
 - Path `<tenant>/service_record/<service_record_id>/<attachment_id>`. Same bucket, limits, 60 s signed URL, object first then row (Z6).
 - New table `service_record_attachment` (copy of `asset_attachment` with `service_record_id`). Permissions: view `service_record.view`, upload `service_record.create`, remove `service_record.update`. No new domain.
 - Storage: `can_upload_attachment` gets a second branch for `/service_record/` (live record in the tenant, `service_record.create`); `attachments_select` gets a second `exists` on `service_record_attachment`. `create or replace` in a new migration; the 3.6 one stays frozen. Tests on both entities: cross-tenant path, no permission, soft-deleted row, orphan, no update or delete; the asset branch still works.
+- **Built (5.2b, 28 Oct 2026, in review):** migrations `5_2b_service_record_attachment` (table, insert trigger `private.check_service_attachment_object`, `public.service_record_attachments` list) and `5_2b_attachment_storage` (`create or replace can_upload_attachment`, `alter policy attachments_select`); tests `5_2b_service_attachments.test.sql` (41), `3_6_attachments.test.sql` unchanged and green. One addition to the plan above: the read policy also needs the service record live, so after an undo its files are no longer readable (the record is gone from history too). UI: the Record completion dialog takes files and uploads them straight after the save, because the path needs the new record id; if an upload fails the record stays and only Close is offered (no double save). Each Service history row has **Files**, which opens the 3.6 Attachments list for that record.
 
 ### 12.7 UI (5.2)
 
