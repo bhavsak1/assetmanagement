@@ -153,6 +153,8 @@ select v.id, v.tenant_id, 'amc', v.id, '2026-01-01', '2026-12-31' from public.ve
 insert into public.coverage_asset (tenant_id, coverage_id, asset_id)
 select a.tenant_id, v.id, a.id from public.asset a join public.vendor v on v.tenant_id = a.tenant_id and v.name = a.name
 where a.name in ('a-row', 'b-row');
+insert into public.obligation (tenant_id, asset_id, name, obligation_type, interval_count, interval_unit, anchor, first_due_date)
+select a.tenant_id, a.id, 'row', 'service', 3, 'month', 'completion', '2026-12-31' from public.asset a where a.name in ('a-row', 'b-row');
 select is(array(select name from tenant_table where pg_temp.count_rows(name, $$tenant_id = '00000000-0000-0000-0000-00000000000b'$$) = 0 order by 1),
           '{}', 'every public tenant_id table holds tenant B rows to hide');
 -- One test per tenant A user, each acting as that user over every table. Plain queries, so RLS decides.

@@ -3,7 +3,7 @@
 begin;
 select plan(22);
 
-select ok(not has_function_privilege('anon', 'public.update_tenant_settings(text, text, text, text, smallint, text[], smallint)', 'execute'), 'anon cannot call');
+select ok(not has_function_privilege('anon', 'public.update_tenant_settings(text, text, text, text, smallint, text[], smallint, smallint)', 'execute'), 'anon cannot call');
 select ok(not has_table_privilege('authenticated', 'public.tenant', 'update'), 'no update grant on tenant');
 select ok(not has_column_privilege('authenticated', 'public.tenant', 'status', 'update'), 'no update grant on tenant.status');
 

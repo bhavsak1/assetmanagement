@@ -333,6 +333,23 @@ test('4.5 extended warranty: starts the day after the warranty ends, own term; a
   expect(valueOf('w.end_date')).toBe('2027-06-30')
 })
 
+test('5.1 category warranty default fills Term until the user picks one', async () => {
+  db.results.category_defaults = { data: [{ default_warranty_months: 24 }], error: null }
+  await renderCreate(planner)
+  await tick()
+  await type('purchase_date', '2026-03-15')
+  await pick('category_id', 'c3')
+  await tick(1)
+  expect(db.rpcs).toContainEqual(['category_defaults', { p_category_id: 'c3' }])
+  expect(valueOf('w.term')).toBe('24')
+  expect(valueOf('w.end_date')).toBe('2028-03-14')
+  await pick('w.term', '12')
+  db.results.category_defaults = { data: [{ default_warranty_months: 36 }], error: null }
+  await pick('category_id', 'c1')
+  await tick(1)
+  expect(valueOf('w.term')).toBe('12')
+})
+
 test('4.5 warranty errors: client checks and the database messages land on the block', async () => {
   const line = { coverage_type: 'warranty', vendor_id: 'v1', reference: null, start_date: '2026-03-15', end_date: '2028-03-14' }
   expect(validateLines([line])).toEqual({})

@@ -137,14 +137,14 @@ isOneToOne: false
                   ]
                 },"asset_category": {
                   Row: {
-                    "code": string | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"description": string | null,"id": string,"is_active": boolean,"name": string,"oem_vendor_ids": (string)[],"om_vendor_ids": (string)[],"parent_id": string | null,"status_ids": (string)[] | null,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                    "code": string | null,"created_at": string,"created_by": string | null,"default_obligations": Json | null,"default_warranty_months": number | null,"deleted_at": string | null,"description": string | null,"id": string,"is_active": boolean,"name": string,"oem_vendor_ids": (string)[],"om_vendor_ids": (string)[],"parent_id": string | null,"status_ids": (string)[] | null,"tenant_id": string,"updated_at": string,"updated_by": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "code"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"description"?: string | null,"id"?: string,"is_active"?: boolean,"name": string,"oem_vendor_ids"?: (string)[],"om_vendor_ids"?: (string)[],"parent_id"?: string | null,"status_ids"?: (string)[] | null,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                    "code"?: string | null,"created_at"?: string,"created_by"?: string | null,"default_obligations"?: Json | null,"default_warranty_months"?: number | null,"deleted_at"?: string | null,"description"?: string | null,"id"?: string,"is_active"?: boolean,"name": string,"oem_vendor_ids"?: (string)[],"om_vendor_ids"?: (string)[],"parent_id"?: string | null,"status_ids"?: (string)[] | null,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Update: {
-                    "code"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"description"?: string | null,"id"?: string,"is_active"?: boolean,"name"?: string,"oem_vendor_ids"?: (string)[],"om_vendor_ids"?: (string)[],"parent_id"?: string | null,"status_ids"?: (string)[] | null,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                    "code"?: string | null,"created_at"?: string,"created_by"?: string | null,"default_obligations"?: Json | null,"default_warranty_months"?: number | null,"deleted_at"?: string | null,"description"?: string | null,"id"?: string,"is_active"?: boolean,"name"?: string,"oem_vendor_ids"?: (string)[],"om_vendor_ids"?: (string)[],"parent_id"?: string | null,"status_ids"?: (string)[] | null,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Relationships: [
                     {
@@ -483,6 +483,50 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"obligation": {
+                  Row: {
+                    "anchor": string,"asset_id": string,"created_at": string,"created_by": string | null,"deleted_at": string | null,"due_state": string,"due_state_until": string | null,"first_due_date": string,"id": string,"interval_count": number,"interval_unit": string,"is_active": boolean,"last_done_date": string | null,"name": string,"next_due_date": string,"notes": string | null,"obligation_type": string,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "anchor": string,"asset_id": string,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"due_state"?: string,"due_state_until"?: string | null,"first_due_date": string,"id"?: string,"interval_count": number,"interval_unit": string,"is_active"?: boolean,"last_done_date"?: string | null,"name": string,"next_due_date": string,"notes"?: string | null,"obligation_type": string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "anchor"?: string,"asset_id"?: string,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"due_state"?: string,"due_state_until"?: string | null,"first_due_date"?: string,"id"?: string,"interval_count"?: number,"interval_unit"?: string,"is_active"?: boolean,"last_done_date"?: string | null,"name"?: string,"next_due_date"?: string,"notes"?: string | null,"obligation_type"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "obligation_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "obligation_tenant_id_asset_id_fkey"
+      columns: ["tenant_id","asset_id"]
+isOneToOne: false
+      referencedRelation: "asset"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "obligation_tenant_id_asset_id_fkey"
+      columns: ["tenant_id","asset_id"]
+isOneToOne: false
+      referencedRelation: "asset_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "obligation_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "obligation_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"rls_sample": {
                   Row: {
                     "created_at": string,"created_by": string | null,"deleted_at": string | null,"id": string,"name": string,"parent_id": string | null,"tenant_id": string,"updated_at": string,"updated_by": string | null
@@ -613,14 +657,14 @@ isOneToOne: false
                   ]
                 },"tenant": {
                   Row: {
-                    "asset_tag_pattern": string,"coverage_expiring_days": number,"coverage_refresh_after": string | null,"created_at": string,"created_by": string | null,"currency_code": string,"date_format": string,"deleted_at": string | null,"fiscal_year_start_month": number,"id": string,"locale": string,"name": string,"required_asset_fields": (string)[],"slug": string,"status": string,"time_zone": string,"updated_at": string,"updated_by": string | null
+                    "asset_tag_pattern": string,"coverage_expiring_days": number,"coverage_refresh_after": string | null,"created_at": string,"created_by": string | null,"currency_code": string,"date_format": string,"deleted_at": string | null,"fiscal_year_start_month": number,"id": string,"locale": string,"name": string,"obligation_due_soon_days": number,"obligation_refresh_after": string | null,"required_asset_fields": (string)[],"slug": string,"status": string,"time_zone": string,"updated_at": string,"updated_by": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "asset_tag_pattern"?: string,"coverage_expiring_days"?: number,"coverage_refresh_after"?: string | null,"created_at"?: string,"created_by"?: string | null,"currency_code": string,"date_format": string,"deleted_at"?: string | null,"fiscal_year_start_month": number,"id"?: string,"locale": string,"name": string,"required_asset_fields"?: (string)[],"slug": string,"status"?: string,"time_zone": string,"updated_at"?: string,"updated_by"?: string | null
+                    "asset_tag_pattern"?: string,"coverage_expiring_days"?: number,"coverage_refresh_after"?: string | null,"created_at"?: string,"created_by"?: string | null,"currency_code": string,"date_format": string,"deleted_at"?: string | null,"fiscal_year_start_month": number,"id"?: string,"locale": string,"name": string,"obligation_due_soon_days"?: number,"obligation_refresh_after"?: string | null,"required_asset_fields"?: (string)[],"slug": string,"status"?: string,"time_zone": string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Update: {
-                    "asset_tag_pattern"?: string,"coverage_expiring_days"?: number,"coverage_refresh_after"?: string | null,"created_at"?: string,"created_by"?: string | null,"currency_code"?: string,"date_format"?: string,"deleted_at"?: string | null,"fiscal_year_start_month"?: number,"id"?: string,"locale"?: string,"name"?: string,"required_asset_fields"?: (string)[],"slug"?: string,"status"?: string,"time_zone"?: string,"updated_at"?: string,"updated_by"?: string | null
+                    "asset_tag_pattern"?: string,"coverage_expiring_days"?: number,"coverage_refresh_after"?: string | null,"created_at"?: string,"created_by"?: string | null,"currency_code"?: string,"date_format"?: string,"deleted_at"?: string | null,"fiscal_year_start_month"?: number,"id"?: string,"locale"?: string,"name"?: string,"obligation_due_soon_days"?: number,"obligation_refresh_after"?: string | null,"required_asset_fields"?: (string)[],"slug"?: string,"status"?: string,"time_zone"?: string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Relationships: [
                     {
@@ -1059,6 +1103,11 @@ isOneToOne: false
               "action": string,"actor_name": string,"actor_type": string,"hidden_fields": (string)[],"id": string,"new_data": Json,"occurred_at": string,"old_data": Json
             }[]
                            },
+"category_defaults":
+{ Args: { "p_category_id": string }; Returns: {
+              "default_obligations": Json,"default_warranty_months": number,"obligations_from": string,"warranty_from": string
+            }[]
+                           },
 "category_statuses":
 { Args: { "p_category_id"?: string }; Returns: (string)[]
                            },
@@ -1136,7 +1185,7 @@ isOneToOne: false
 { Args: { "p_asset_id": string,"p_reason": string,"p_to_location_id": string }; Returns: undefined
                            },
 "update_tenant_settings":
-{ Args: { "p_coverage_expiring_days"?: number,"p_currency_code": string,"p_date_format": string,"p_fiscal_year_start_month": number,"p_locale": string,"p_required_asset_fields": (string)[],"p_time_zone": string }; Returns: undefined
+{ Args: { "p_coverage_expiring_days"?: number,"p_currency_code": string,"p_date_format": string,"p_fiscal_year_start_month": number,"p_locale": string,"p_obligation_due_soon_days"?: number,"p_required_asset_fields": (string)[],"p_time_zone": string }; Returns: undefined
                            }
           }
           Enums: {

@@ -111,7 +111,8 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 
 | ID | Story | Open items | Status |
 |---|---|---|---|
-| 5.1 | Obligation rule table, next-due calculation, category default intervals | OQ-03 | In progress |
+| 5.1 | Obligation rule table, next-due calculation, stored due state with a `pg_cron` job, category defaults for obligations and the warranty term (copied to new assets), due-soon setting, Term prefill on Add asset | OQ-03 | In review |
+| 5.1b | Category form: default obligations and default warranty term (inherit or own); asset detail Obligations tab: add, edit, deactivate | | Todo |
 | 5.2 | Service completion record (date, notes, cost, attachment) that advances next due | | Todo |
 | 5.3 | Maintenance screen: overdue, due soon, scheduled, completed | | Todo |
 | 5.4 | Dashboard KPIs, upcoming list, assets by location | | Todo |
@@ -219,3 +220,4 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 | 27 Oct 2026 | Story 4.4 widened: owner asked to declutter the Assets list filters, so the same story adds a collapsible filter panel (Filters button with a count, active-filter chips, bottom sheet at phone width) |
 | 27 Oct 2026 | Backlog item BL-1 added (background jobs monitor), after the first `pg_cron` job (4.4). Not in Goal 4; owner will plan it with the other technical work (API, notifications, AI) |
 | 27 Oct 2026 | Goal 5 owner decisions before 5.1: OQ-03 decided (both anchors per rule; new rules from last completion, statutory items fixed dates); category defaults with asset override for service intervals and the warranty term, one mechanism (settles the 4.5 parked item; the default prefills the Warranty block on Add asset); BOM parked, removed from 5.5, added as BL-2 |
+| 28 Oct 2026 | Story 5.1 split: 5.1 database, state job, settings field and Term prefill; 5.1b the category defaults form and the asset Obligations tab. Owner chose O9 a (docs/data-model-goal5.md) |

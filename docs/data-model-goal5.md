@@ -1,6 +1,13 @@
 # Goal 5 data model: obligations (story 5.1)
 
-**Status:** design, 27 Oct 2026. Waiting for the owner's answers to the DECIDE items in §9. No migration yet.
+**Status:** in review, 28 Oct 2026. The owner accepted every lean, O1 to O9, on 28 Oct 2026. So 5.1 is the database part plus the Settings field and the Term prefill (O9 a); the category form defaults and the asset Obligations tab are story 5.1b. Built in migrations `5_1_obligation`, `5_1_obligation_state`, `5_1_category_defaults`; tests in `5_1_obligations.test.sql` (110).
+
+**As built (differences from the design below):**
+- Obligation names are unique per asset among live rows, case-insensitive (`obligation_name_uq`). A copy cannot duplicate a row.
+- The job index is `(tenant_id, due_state_until)`, as 4.4's.
+- The obligation refresh trigger stops on an empty set. A statement trigger fires for zero rows, so without that check the refresh's own update would fire it again without end.
+- `update_tenant_settings` no longer writes the two refresh cursors (`coverage_refresh_after`, `obligation_refresh_after`) into the settings audit row. They are the job's state, not settings.
+- Asset status changes and soft deletes refresh the asset's obligations through a row trigger with a `when` guard, so the 4.4 coverage refresh (which writes only the coverage columns) does not fire it.
 
 **Goal (F11):** recurring obligations per asset (service, calibration, inspection, certificate) with a next-due date, a stored state (scheduled, due soon, overdue) kept right by `pg_cron`, and category defaults that new assets copy. The same default mechanism gives a default warranty term per category, which prefills the 4.5 Warranty block.
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { t } from './i18n'
 import { loadStatuses, statusName, type Status } from './Assets'
@@ -261,6 +261,30 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
   // Untouched vendor selects follow: warranty the OEM, extended the warranty vendor.
   const wVendor = values?.['w.vendor_id'] ?? values?.oem_vendor_id ?? ''
   const xVendor = values?.['x.vendor_id'] ?? wVendor
+
+  // 5.1: the category's default warranty term (inherited) fills Term until the user picks another one.
+  const [catTerm, setCatTerm] = useState('')
+  useEffect(() => {
+    if (!canWarranty || !categoryId) {
+      setCatTerm('')
+      return
+    }
+    let live = true
+    void supabase.rpc('category_defaults', { p_category_id: categoryId }).then(({ data }) => {
+      const n = data?.[0]?.default_warranty_months
+      if (live) setCatTerm(n ? String(n) : '')
+    })
+    return () => {
+      live = false
+    }
+  }, [canWarranty, categoryId])
+  const shownTerm = useRef('')
+  useEffect(() => {
+    if (w.term === shownTerm.current) changeW({ term: catTerm })
+    shownTerm.current = catTerm
+    // Only a new category default may change Term; the user's own pick stays.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catTerm])
 
   // Warranty Start follows the purchase date (else in-service date); extended Start the day after warranty End.
   function changeW(ch: TermChange) {
