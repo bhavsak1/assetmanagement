@@ -832,6 +832,8 @@
     "save": "Save",
     "edit": "Correct",
     "undo": "Undo",
+    "files": "Files",
+    "close": "Close",
     "undoConfirm": "Undo the {name} completion of {date}? The next due date moves back.",
     "col": {
       "date": "Done on",
@@ -850,7 +852,8 @@
       "cost": "Cost must be zero or more.",
       "invalid": "Some values are not valid.",
       "generic": "Could not save. Try again.",
-      "load": "Could not load service history."
+      "load": "Could not load service history.",
+      "fileAfterSave": "The completion is saved, but a file did not upload. Add it from Service history, under Files."
     }
   }
 }

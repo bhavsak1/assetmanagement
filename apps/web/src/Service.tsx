@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useState, type FormEvent } from 'react'
+import { AttachmentsTab, checkFile, TYPES, uploadAttachment } from './Attachments'
 import { addDays, showDate, tenantToday, useTenant } from './Coverage'
 import { t } from './i18n'
 import { supabase } from './supabase'
@@ -7,7 +8,7 @@ import type { Database, Tables } from './types/database'
 // Story 5.2: Record completion and the Service history tab (data-model-goal5.md §12.7).
 type Can = (domain: string, operation: string) => boolean
 type DbError = { code?: string; message?: string }
-type Obligation = Pick<Tables<'obligation'>, 'id' | 'name' | 'obligation_type'>
+type Obligation = Pick<Tables<'obligation'>, 'id' | 'tenant_id' | 'name' | 'obligation_type'>
 export type HistoryRow = Database['public']['Functions']['service_history']['Returns'][number]
 type Vendor = { id: string; name: string }
 
@@ -32,7 +33,11 @@ export function CompletionForm({ obligation, row, can, onDone, onCancel }: { obl
   const tenant = useTenant()
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [error, setError] = useState<string>()
+  const [busy, setBusy] = useState(false)
+  // Set when the completion saved but a file did not: saving again would record it twice, so only Close is left.
+  const [saved, setSaved] = useState(false)
   const canCost = can('service_values', 'update') && can('service_values', 'view')
+  const canAttach = !row && can('service_record', 'create')
   useEffect(() => {
     let live = true
     if (can('vendor_core', 'view')) void loadVendors().then((v) => live && setVendors(v))
@@ -58,8 +63,12 @@ export function CompletionForm({ obligation, row, can, onDone, onCancel }: { obl
       ...shown('notes', 'outcome', 'vendor_id', 'certificate_expiry'),
       ...(canCost && { cost_amount: cost === null ? null : Number(cost), cost_currency: cost === null ? null : text('cost_currency') }),
     }
+    const files = [...((e.currentTarget.elements.namedItem('files') as HTMLInputElement | null)?.files ?? [])]
+    const bad = files.map(checkFile).find(Boolean)
+    if (bad) return setError(bad)
     setError(undefined)
-    const { error } = row
+    setBusy(true)
+    const { data, error } = row
       ? // A correction keeps who did it unless a contractor is named or removed.
         await supabase.from('service_record').update(v).eq('id', row.id ?? '')
       : await supabase.rpc('complete_obligation', {
@@ -72,7 +81,18 @@ export function CompletionForm({ obligation, row, can, onDone, onCancel }: { obl
           p_cost: v.cost_amount ?? undefined,
           p_currency: v.cost_currency ?? undefined,
         })
-    if (error) return setError(serviceError(error))
+    if (error) {
+      setBusy(false)
+      return setError(serviceError(error))
+    }
+    // 5.2b: a file's path needs the new record's id, so the files upload straight after the save.
+    for (const file of files) {
+      if (!(await uploadAttachment(obligation.tenant_id, 'service_record', String(data), file, () => {}))) {
+        setBusy(false)
+        setSaved(true)
+        return setError(s.errors.fileAfterSave)
+      }
+    }
     onDone()
   }
 
@@ -143,22 +163,39 @@ export function CompletionForm({ obligation, row, can, onDone, onCancel }: { obl
         {s.notes}
         <textarea name="notes" rows={3} maxLength={2000} defaultValue={row?.notes ?? ''} />
       </label>
+      {canAttach && (
+        <label className="field">
+          {s.files}
+          <input name="files" type="file" multiple accept={TYPES.join(',')} />
+          <span className="muted hint">{t.assetDetail.attachments.limits}</span>
+        </label>
+      )}
       <div className="page-head">
         <div className="spacer" />
-        <button className="btn" type="button" onClick={onCancel}>
-          {s.cancel}
-        </button>
-        <button className="btn btn-main" type="submit">
-          {s.save}
-        </button>
+        {saved ? (
+          <button className="btn btn-main" type="button" onClick={onDone}>
+            {s.close}
+          </button>
+        ) : (
+          <>
+            <button className="btn" type="button" onClick={onCancel}>
+              {s.cancel}
+            </button>
+            <button className="btn btn-main" type="submit" disabled={busy}>
+              {s.save}
+            </button>
+          </>
+        )}
       </div>
     </form>
   )
 }
 
-export function ServiceHistoryTab({ assetId, can }: { assetId: string; can: Can }) {
+export function ServiceHistoryTab({ tenantId, assetId, can }: { tenantId: string; assetId: string; can: Can }) {
   const tenant = useTenant()
   const [rows, setRows] = useState<HistoryRow[]>()
+  // The record whose files are open (5.2b).
+  const [files, setFiles] = useState<string>()
   const [types, setTypes] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState<HistoryRow>()
   const [error, setError] = useState<string>()
@@ -203,7 +240,7 @@ export function ServiceHistoryTab({ assetId, can }: { assetId: string; can: Can 
       )}
       {editing && (
         <CompletionForm
-          obligation={{ id: editing.obligation_id ?? '', name: editing.obligation_name ?? '', obligation_type: types[editing.obligation_id ?? ''] ?? 'service' }}
+          obligation={{ id: editing.obligation_id ?? '', tenant_id: tenantId, name: editing.obligation_name ?? '', obligation_type: types[editing.obligation_id ?? ''] ?? 'service' }}
           row={editing}
           can={can}
           onDone={done}
@@ -223,12 +260,13 @@ export function ServiceHistoryTab({ assetId, can }: { assetId: string; can: Can 
                 <th>{s.col.doneBy}</th>
                 <th>{s.col.cost}</th>
                 <th>{s.col.notes}</th>
-                {canUpdate && <th aria-label={s.col.actions} />}
+                <th aria-label={s.col.actions} />
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id}>
+                <Fragment key={r.id}>
+                <tr>
                   <td>{showDate(r.done_on, tenant)}</td>
                   <td>
                     {r.obligation_name ?? '—'}
@@ -238,17 +276,30 @@ export function ServiceHistoryTab({ assetId, can }: { assetId: string; can: Can 
                   <td>{r.vendor_name ?? r.done_by_name ?? (r.vendor_id ? s.contractorHidden : '—')}</td>
                   <td>{!seeCost ? <span className="tag">{t.coverage.hidden}</span> : r.cost_amount == null ? '—' : `${Number(r.cost_amount).toLocaleString()} ${r.cost_currency ?? ''}`}</td>
                   <td>{r.notes ?? ''}</td>
-                  {canUpdate && (
-                    <td className="actions">
-                      <button className="btn" type="button" onClick={() => setEditing(r)}>
-                        {s.edit}
-                      </button>
-                      <button className="btn" type="button" onClick={() => void undo(r)}>
-                        {s.undo}
-                      </button>
-                    </td>
-                  )}
+                  <td className="actions">
+                    <button className="btn" type="button" aria-expanded={files === r.id} onClick={() => setFiles(files === r.id ? undefined : (r.id ?? undefined))}>
+                      {s.files}
+                    </button>
+                    {canUpdate && (
+                      <>
+                        <button className="btn" type="button" onClick={() => setEditing(r)}>
+                          {s.edit}
+                        </button>
+                        <button className="btn" type="button" onClick={() => void undo(r)}>
+                          {s.undo}
+                        </button>
+                      </>
+                    )}
+                  </td>
                 </tr>
+                {files === r.id && (
+                  <tr>
+                    <td colSpan={7}>
+                      <AttachmentsTab tenantId={tenantId} entity="service_record" entityId={r.id ?? ''} can={can} timeZone={tenant.time_zone} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>

@@ -321,9 +321,9 @@ export function AssetDetailPage({ can }: { can: Can }) {
       ) : tab === 'obligations' ? (
         <ObligationsTab tenantId={asset.tenant_id ?? ''} assetId={id} asset={asset} can={can} />
       ) : tab === 'service' ? (
-        <ServiceHistoryTab assetId={id} can={can} />
+        <ServiceHistoryTab tenantId={asset.tenant_id ?? ''} assetId={id} can={can} />
       ) : tab === 'attachments' ? (
-        <AttachmentsTab tenantId={asset.tenant_id ?? ''} assetId={id} can={can} timeZone={timeZone} />
+        <AttachmentsTab tenantId={asset.tenant_id ?? ''} entityId={id} can={can} timeZone={timeZone} />
       ) : (
         <AuditTab key={`${asset.id}-${version}`} assetId={asset.id ?? assetId} timeZone={timeZone} label={label} show={show} onTags={(m) => setTags((x) => ({ ...x, ...m }))} known={tags} />
       )}

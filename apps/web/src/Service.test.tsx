@@ -33,6 +33,10 @@ vi.mock('./supabase', () => {
   }
 })
 
+// 5.2b: the dialog's uploads; the real AttachmentsTab stays for the history rows.
+const upload = vi.hoisted(() => vi.fn(() => Promise.resolve(true)))
+vi.mock('./Attachments', async (orig) => ({ ...(await orig<typeof import('./Attachments')>()), uploadAttachment: upload }))
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 const s = t.service
 
@@ -45,6 +49,8 @@ beforeEach(() => {
   db.results = { tenant: { data: [{ time_zone: 'UTC', date_format: 'yyyy-MM-dd', locale: 'en-IN', currency_code: 'INR' }], error: null } }
   db.writes = []
   db.calls = []
+  upload.mockClear()
+  upload.mockResolvedValue(true)
 })
 afterEach(() => {
   act(() => root.unmount())
@@ -74,7 +80,7 @@ test('serviceError maps the action codes', () => {
 test('record completion: service type, no cost permission; date defaults to today; sends the action', async () => {
   const done = vi.fn()
   await act(async () =>
-    root.render(<CompletionForm obligation={{ id: 'o1', name: 'Quarterly service', obligation_type: 'service' }} can={only('obligation.complete')} onDone={done} onCancel={() => {}} />),
+    root.render(<CompletionForm obligation={{ id: 'o1', tenant_id: 'ta', name: 'Quarterly service', obligation_type: 'service' }} can={only('obligation.complete')} onDone={done} onCancel={() => {}} />),
   )
   expect(container.querySelector<HTMLInputElement>('input[name="done_on"]')!.value).toBe(today)
   expect(container.querySelector('select[name="outcome"]')).toBeNull()
@@ -90,7 +96,7 @@ test('record completion: certificate with cost permission shows outcome, expiry,
   await act(async () =>
     root.render(
       <CompletionForm
-        obligation={{ id: 'o2', name: 'Lift certificate', obligation_type: 'certificate' }}
+        obligation={{ id: 'o2', tenant_id: 'ta', name: 'Lift certificate', obligation_type: 'certificate' }}
         can={only('obligation.complete', 'service_values.view', 'service_values.update')}
         onDone={() => {}}
         onCancel={() => {}}
@@ -114,7 +120,7 @@ const row = {
 
 test('service history: cost masked and no actions without the operations', async () => {
   db.results['rpc:service_history'] = { data: [{ ...row, cost_amount: null, cost_currency: null }], error: null }
-  await act(async () => root.render(<ServiceHistoryTab assetId="a1" can={only('service_record.view')} />))
+  await act(async () => root.render(<ServiceHistoryTab tenantId="ta" assetId="a1" can={only('service_record.view')} />))
   expect(container.textContent).toContain('Quarterly service')
   expect(container.textContent).toContain('Ravi')
   expect(container.textContent).toContain(t.coverage.hidden)
@@ -125,7 +131,7 @@ test('service history: cost masked and no actions without the operations', async
 test('service history: cost shown; undo asks, then calls the action; correction keeps the date', async () => {
   db.results['rpc:service_history'] = { data: [row], error: null }
   db.results.obligation = { data: [{ id: 'o1', obligation_type: 'service' }], error: null }
-  await act(async () => root.render(<ServiceHistoryTab assetId="a1" can={only('service_record.view', 'service_record.update', 'service_values.view')} />))
+  await act(async () => root.render(<ServiceHistoryTab tenantId="ta" assetId="a1" can={only('service_record.view', 'service_record.update', 'service_values.view')} />))
   expect(container.textContent).toContain('1,250 INR')
 
   const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
@@ -150,4 +156,58 @@ test('obligations tab: Record completion per row with obligation.complete, not o
   expect([...container.querySelectorAll('button')].filter((b) => b.textContent === t.obligations.recordCompletion)).toHaveLength(1)
   await act(async () => button(t.obligations.recordCompletion)!.click())
   expect(container.textContent).toContain(s.title.replace('{name}', 'Live'))
+})
+
+// 5.2b: files in the Record completion dialog upload straight after the save, with the new record's id.
+const pickFiles = (...files: File[]) => Object.defineProperty(container.querySelector('input[name="files"]')!, 'files', { value: files, configurable: true })
+const renderForm = (can: (dom: string, op: string) => boolean, done = () => {}) =>
+  act(async () => root.render(<CompletionForm obligation={{ id: 'o1', tenant_id: 'ta', name: 'Quarterly service', obligation_type: 'service' }} can={can} onDone={done} onCancel={() => {}} />))
+
+test('record completion: no file picker without service_record.create', async () => {
+  await renderForm(only('obligation.complete'))
+  expect(container.querySelector('input[name="files"]')).toBeNull()
+})
+
+test('record completion: a refused file type stops the save', async () => {
+  await renderForm(only('obligation.complete', 'service_record.create'))
+  pickFiles(new File(['<svg/>'], 'x.svg', { type: 'image/svg+xml' }))
+  await act(async () => container.querySelector('form')!.requestSubmit())
+  expect(container.textContent).toContain(t.assetDetail.attachments.badType)
+  expect(db.calls).toHaveLength(0)
+})
+
+test('record completion: files upload to the new record after the save', async () => {
+  db.results['rpc:complete_obligation'] = { data: 'r9', error: null }
+  const done = vi.fn()
+  await renderForm(only('obligation.complete', 'service_record.create'), done)
+  const pdf = new File(['%PDF'], 'Report.pdf', { type: 'application/pdf' })
+  pickFiles(pdf)
+  await act(async () => container.querySelector('form')!.requestSubmit())
+  expect(upload).toHaveBeenCalledWith('ta', 'service_record', 'r9', pdf, expect.any(Function))
+  expect(done).toHaveBeenCalled()
+})
+
+test('record completion: a failed upload keeps the dialog with only Close, so the save is not repeated', async () => {
+  db.results['rpc:complete_obligation'] = { data: 'r9', error: null }
+  upload.mockResolvedValue(false)
+  const done = vi.fn()
+  await renderForm(only('obligation.complete', 'service_record.create'), done)
+  pickFiles(new File(['%PDF'], 'Report.pdf', { type: 'application/pdf' }))
+  await act(async () => container.querySelector('form')!.requestSubmit())
+  expect(container.textContent).toContain(s.errors.fileAfterSave)
+  expect(done).not.toHaveBeenCalled()
+  expect(button(s.save)).toBeUndefined()
+  await act(async () => button(s.close)!.click())
+  expect(done).toHaveBeenCalled()
+})
+
+test('service history: Files opens the record attachments, upload only with service_record.create', async () => {
+  db.results['rpc:service_history'] = { data: [row], error: null }
+  await act(async () => root.render(<ServiceHistoryTab tenantId="ta" assetId="a1" can={only('service_record.view')} />))
+  await act(async () => button(s.files)!.click())
+  expect(db.calls.at(-1)).toEqual({ fn: 'service_record_attachments', args: { p_service_record_id: 'r1' } })
+  expect(container.textContent).toContain(t.assetDetail.attachments.none)
+  expect(button(t.assetDetail.attachments.upload)).toBeUndefined()
+  await act(async () => button(s.files)!.click())
+  expect(container.textContent).not.toContain(t.assetDetail.attachments.none)
 })
