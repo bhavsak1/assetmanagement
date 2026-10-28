@@ -170,7 +170,7 @@ Completion and service records (5.2), Maintenance screen (5.3), Dashboard (5.4),
 
 ## 12. Story 5.2: Service completion record
 
-**Status:** Done (owner accepted 28 Oct 2026). 5.2b in review. The owner accepted every lean, S0 to S9, on 28 Oct 2026. 5.2 builds §12.1 to §12.5 and §12.7; attachments (§12.6) are story 5.2b. Built in migrations `5_2_service_values_domain`, `5_2_service_record`, `5_2_complete_obligation`; tests in `5_2_service_record.test.sql` (91), web `Service.tsx`.
+**Status:** Done (owner accepted 28 Oct 2026). 5.2b Done (owner accepted 28 Oct 2026). The owner accepted every lean, S0 to S9, on 28 Oct 2026. 5.2 builds §12.1 to §12.5 and §12.7; attachments (§12.6) are story 5.2b. Built in migrations `5_2_service_values_domain`, `5_2_service_record`, `5_2_complete_obligation`; tests in `5_2_service_record.test.sql` (91), web `Service.tsx`.
 
 **As built (differences from the design below):**
 - **Undo works on any live record**, not only the latest advanced one. Both actions keep one invariant: `last_done_date` = the later of the baseline (the value before any record) and the latest live record's `done_on`. So undoing an older record changes nothing, undoing the latest puts the right date back, and no "undo the later one first" refusal is needed. Still no replay (S4 a, not b).
@@ -244,7 +244,7 @@ The action runs as owner, so the 5.1 column grants (`next_due_date` none, `last_
 - Path `<tenant>/service_record/<service_record_id>/<attachment_id>`. Same bucket, limits, 60 s signed URL, object first then row (Z6).
 - New table `service_record_attachment` (copy of `asset_attachment` with `service_record_id`). Permissions: view `service_record.view`, upload `service_record.create`, remove `service_record.update`. No new domain.
 - Storage: `can_upload_attachment` gets a second branch for `/service_record/` (live record in the tenant, `service_record.create`); `attachments_select` gets a second `exists` on `service_record_attachment`. `create or replace` in a new migration; the 3.6 one stays frozen. Tests on both entities: cross-tenant path, no permission, soft-deleted row, orphan, no update or delete; the asset branch still works.
-- **Built (5.2b, 28 Oct 2026, in review):** migrations `5_2b_service_record_attachment` (table, insert trigger `private.check_service_attachment_object`, `public.service_record_attachments` list) and `5_2b_attachment_storage` (`create or replace can_upload_attachment`, `alter policy attachments_select`); tests `5_2b_service_attachments.test.sql` (41), `3_6_attachments.test.sql` unchanged and green. One addition to the plan above: the read policy also needs the service record live, so after an undo its files are no longer readable (the record is gone from history too). UI: the Record completion dialog takes files and uploads them straight after the save, because the path needs the new record id; if an upload fails the record stays and only Close is offered (no double save). Each Service history row has **Files**, which opens the 3.6 Attachments list for that record.
+- **Built (5.2b, 28 Oct 2026, Done):** migrations `5_2b_service_record_attachment` (table, insert trigger `private.check_service_attachment_object`, `public.service_record_attachments` list) and `5_2b_attachment_storage` (`create or replace can_upload_attachment`, `alter policy attachments_select`); tests `5_2b_service_attachments.test.sql` (41), `3_6_attachments.test.sql` unchanged and green. One addition to the plan above: the read policy also needs the service record live, so after an undo its files are no longer readable (the record is gone from history too). UI: the Record completion dialog takes files and uploads them straight after the save, because the path needs the new record id; if an upload fails the record stays and only Close is offered (no double save). Each Service history row has **Files**, which opens the 3.6 Attachments list for that record.
 
 ### 12.7 UI (5.2)
 
@@ -283,3 +283,115 @@ pgTAP `5_2_service_record.test.sql`. Types. Web: dialog, Service history tab, "L
 ### 12.11 Not in 5.2
 
 Attachments (5.2b if S0 a), Maintenance screen and its Completed bucket (5.3), certificate expiry driving the due date (S7 b), failed-outcome follow-up (Phase 2), alerts (Goal 9).
+
+---
+
+## 13. Story 5.3: Maintenance screen
+
+**Status:** design, 28 Oct 2026. Waiting for the owner on M1 to M7.
+
+**Goal (F13):** one tenant-wide page of obligations: Overdue, Due soon, Scheduled (from the stored 5.1 state) and Completed (from `service_record`), with due or done date, state, location, coverage status, asset age and optional purchase value. Record completion from a row.
+
+**Screen (`Maintenance` in the screens file):** title "Maintenance", subtitle "Obligations due across all assets"; buttons Export and Record completion; tiles Overdue, Next 7 days, Next 30 days, Out of coverage; tabs Overdue, Due soon, Scheduled, Completed; columns Asset, Obligation, Location, Due, Status ("3 d overdue", "In 8 d"), Coverage.
+
+**Mostly no choice left.** Everything reuses an existing pattern: the 3.2 plpgsql list with `execute` and `format('%L')`, `asset_list_where` for every asset filter, `asset_view` for asset visibility and the purchase value mask, `service_record_view` for the cost mask, the 4.4 stored `coverage_state`, the 5.1 state index, the 4.4 filter panel and the 5.2 dialog. The real choices are M1 to M7 (§13.8).
+
+**Open items used:** none new.
+
+### 13.1 Read path: invoker functions, no definer [M1]
+
+```
+public.list_obligations(p_bucket text, p_term, p_category_id, p_location_id, p_type text, p_vendor_id,
+                        p_coverage, p_after_value text, p_after_id uuid, p_limit int default 50)
+public.list_completions(p_term, p_category_id, p_location_id, p_type, p_vendor_id, p_coverage,
+                        p_after_value, p_after_id, p_limit)
+public.maintenance_counts(p_term, p_category_id, p_location_id, p_type, p_vendor_id, p_coverage)
+```
+
+- **Invoker, plpgsql, `execute`** (3.2 S1): each call is planned with its real values. The statements come from `private.obligation_list_sql(...)` and `private.completion_list_sql(...)`, so the tests EXPLAIN exactly what runs (3.2 as built).
+- **Checks come from the objects it reads, not from new code:**
+  - `public.obligation` under its own RLS: tenant + `obligation.view`;
+  - joined to `public.asset_view v` on `(tenant_id, id)`: tenant, `asset_core.view`, live asset, and the 6.1 scope clause once 6.1 adds it to `asset_view`. So an obligation of an asset the user cannot see never shows;
+  - Completed reads `public.service_record_view` (tenant, `service_record.view`, live, cost masked without `service_values.view`), joined to `asset_view` the same way, left join `obligation` for name and type.
+- **Asset filters:** `private.asset_list_where(p_term, null, p_category_id, p_location_id, null, p_vendor_id, p_coverage)` on alias `v`, as it is: search by tag, name or serial (3.2 helper, set form), location and category with descendants (set form), vendor [M3], coverage (4.4; matches nothing without `coverage_contract.view`). One new clause: `o.obligation_type = %L`.
+- **Return shape.** `list_obligations`: obligation `id, asset_id, name, obligation_type, interval_count, interval_unit, anchor, next_due_date, last_done_date, due_state`; asset `tag, asset_name, location_id, category_id, in_service_date, purchase_date, purchase_value, purchase_currency` (masked by `asset_view`). `list_completions`: record `id, obligation_id, asset_id, done_on, outcome, done_by_name, vendor_id, vendor_name, cost_amount, cost_currency, attachments` (count), obligation name and type, and the same asset columns. Vendor name through the invoker join, so it shows only with `vendor_core.view` (as `service_history`).
+
+### 13.2 Buckets, sort, keyset, indexes [M2]
+
+| Bucket | Where | Sort | Keyset (after `value`, `id`) | Index |
+|---|---|---|---|---|
+| Overdue | `o.due_state = 'overdue'` | `next_due_date, id` (oldest due = most overdue first) | `(o.next_due_date, o.id) > (%L::date, %L::uuid)` | existing `obligation_state_idx (tenant_id, due_state, next_due_date, id)` |
+| Due soon | `'due_soon'` | `next_due_date, id` | same | same |
+| Scheduled | `'scheduled'` | `next_due_date, id` | same | same |
+| Completed | live record | `done_on desc, id` | `r.done_on <= d and (r.done_on < d or r.id > id)` (the 3.2 `updated` form) | **new** `service_record_done_idx (tenant_id, done_on desc, id) where deleted_at is null` |
+
+- **Paused** obligations (inactive, or the asset inactive, disposed or deleted, O6) are in no bucket. No Paused tab on the screen; not built.
+- The three open buckets need no new index.
+- **Join cost:** a page walks the bucket index and probes `asset_view` by primary key for 51 rows. A very selective asset filter (one small location) on the large Scheduled bucket reads many rows before it fills a page (the spike §6 narrow-scope case). The planner sees real values and may drive from the asset side instead. The build measures both and records the numbers; no extra index unless they fail spike §2.
+- `p_bucket` outside the three values, `p_limit` outside 1 to 100: error `22023`, as `list_assets`.
+
+### 13.3 Counts and tiles (5.4 reuses them) [M4] [M5]
+
+`maintenance_counts(filters)` returns one row `overdue, due_soon, scheduled, completed, next_7, next_30`, each **exact, capped at 10,001** (3.2 S5; the UI shows "10,000+"), with the same filters and `asset_view` join as the lists.
+- `next_7`: state `due_soon` or `scheduled` and `next_due_date <= today + 6`; `next_30`: `<= today + 29`. Both on the state index. Fixed 7 and 30, as the tile labels; the Due soon tab follows the tenant setting N.
+- **Out of coverage tile:** `count_assets(p_coverage => 'out', same filters)`, the 4.4 function as it is. It counts assets, not obligations, and links to the Assets list with that filter. Hidden without `coverage_contract.view`.
+
+### 13.4 Columns and masking (UI)
+
+| Column | Source |
+|---|---|
+| Asset | tag and name, link to the asset |
+| Obligation | name, `ruleText` (5.1b) under it |
+| Due (open tabs) | date and tag "12 d overdue" / "Due today" / "In 5 d" from tenant today; tone from `stateTone` (5.1b) |
+| Done (Completed) | `done_on`, outcome, done by name or vendor name |
+| Location | name from the loaded tree (as Assets) |
+| Coverage | the 4.4 cell from `asset_coverage(page asset ids)`, once per page, only with `coverage_contract.view` |
+| Age | years and months since `in_service_date`, else `purchase_date`; blank if neither |
+| Purchase value | null from `asset_view` without `asset_financials.view`; the column is hidden for those users |
+| Cost (Completed) | null from `service_record_view` without `service_values.view`; column hidden then |
+| Files (Completed) | attachments count; opens the 5.2b list for that record |
+
+Phone width: rows become cards (the Assets list pattern).
+
+### 13.5 Actions [M6]
+
+- **Record completion** per row on the open tabs, with `obligation.complete`: the 5.2 dialog as it is. After save the page reloads the current tab page and the counts (the row usually leaves Overdue for Scheduled).
+- **Open the asset:** the asset link.
+- Completed rows: Files. Edit and Undo stay on the asset's Service history tab.
+- **Export:** no story yet (as 3.2). Not built.
+
+### 13.6 Permissions and nav
+
+- Route `/maintenance`, nav item "Maintenance". Open tabs need `obligation.view`, Completed needs `service_record.view`; a tab without its permission is hidden, the nav item without both.
+- No new domain, operation or grid change.
+
+### 13.7 Tests planned
+
+- **pgTAP `5_3_maintenance.test.sql`:** permission steps (none; `obligation.view` without `asset_core.view` returns nothing; both; `service_record.view` for Completed); cross-tenant: tenant B's rows never return, also with B's ids as filters; bucket membership matches the stored state; paused (inactive obligation, Inactive, Disposed, deleted asset) in no bucket; deleted obligation and undone record absent; each filter, location and category with descendants; cost null without `service_values.view`; purchase value null without `asset_financials.view`; keyset: all pages of each bucket return every row once, in order, with date ties; counts equal list lengths and cap at 10,001; bad bucket and limit refused.
+- **EXPLAIN** on a seeded large tenant: each open bucket walks `obligation_state_idx`, Completed walks `service_record_done_idx`, no sort node.
+- **Bench** (local, as goal 4 §34): page 1, a deep page, counts at 200k assets with about 2 obligations each, with and without a narrow location filter. Numbers recorded here.
+- Tenancy guard green (no new table).
+- **Web `Maintenance.test.tsx`:** tabs and counts, the days text, filters to RPC args, chips, masked columns hidden, Record completion refreshes rows and counts, Next and Previous cursors, empty and loading states.
+
+### 13.8 DECIDE
+
+| # | Question | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| M1 | Read shape | **a)** Two invoker list functions plus one counts function, reading `obligation` (RLS), `asset_view` and `service_record_view` (§13.1). **b)** One definer function with the checks repeated. **c)** PostgREST filters on a new view | a. Every check and mask already lives in what it reads, so 6.1 scope arrives through `asset_view` with no change here, and nothing new needs owner review. b repeats checks; c has the 3.2 §13.1 plan problems | Low: functions only |
+| M2 | Completed index | **a)** New `(tenant_id, done_on desc, id)` partial index on `service_record`. **b)** None; sort the tenant's records each page | a | None |
+| M3 | Vendor filter | **a)** The 4.1b asset vendor filter as it is (OEM or O&M vendor on the asset), same on every tab. **b)** AMC vendor from coverage: a new set-form helper over live AMC links (needs `coverage_contract.view`). **c)** a on open tabs, the record's vendor on Completed | a. No new code and the same meaning as the Assets list; the O&M vendor is the maintenance contractor. b is a new helper and a second meaning of "vendor" | Low |
+| M4 | Counts | **a)** Exact, capped at 10,001, same filters as the list. **b)** Exact, no cap. **c)** Estimates | a. Same rule as 3.2 S5; one function for tabs, tiles and 5.4 | Low |
+| M5 | Tiles | **a)** Build the four tiles: Overdue, Next 7 days, Next 30 days (fixed 7 and 30), Out of coverage as an asset count via `count_assets`. **b)** Tab counts only; tiles wait for 5.4 | a. On the screen, and the counts come free | None |
+| M6 | Header "Record completion" | **a)** Not built; per row only (the row is the picker). **b)** A picker: search asset, pick obligation, then the 5.2 dialog | a. b is a new search dialog for the same action | None |
+| M7 | Saved views for Maintenance | **a)** Not now. **b)** Widen the `saved_view.entity` check to `'maintenance'` (one migration) and reuse the 3.2 menu | a. Not in the story; b is small later | Low |
+
+### 13.9 Build plan (after answers)
+
+1. Migration `5_3_service_record_done_idx`: the M2 index.
+2. Migration `5_3_maintenance_list`: `obligation_list_sql`, `completion_list_sql`, `list_obligations`, `list_completions`, `maintenance_counts`, grants.
+3. pgTAP `5_3_maintenance.test.sql`; bench numbers in §13.7.
+4. Types regenerated. Web `Maintenance.tsx` (route, tiles, tabs, filter panel and chips, table, dialog), i18n, `Maintenance.test.tsx`.
+
+### 13.10 Not in 5.3
+
+Export, Paused tab, saved views (M7 a), header picker (M6 a), AMC-vendor filter (M3 b), Edit and Undo on the Completed tab, dashboard (5.4).
