@@ -32,6 +32,7 @@ const tenant = {
   required_asset_fields: ['model'],
   asset_tag_pattern: 'AST-{SEQ:5}',
   coverage_expiring_days: 60,
+  obligation_due_soon_days: 30,
 }
 
 let root: Root
@@ -82,6 +83,7 @@ test('manage: save sends every setting to update_tenant_settings', async () => {
   await render(true, true)
   field<HTMLSelectElement>('currency').value = 'USD'
   field<HTMLInputElement>('serial_number').checked = true
+  field<HTMLInputElement>('dueSoonDays').value = '14'
   await act(async () => container.querySelector('form')!.requestSubmit())
   expect(db.rpc).toHaveBeenCalledWith('update_tenant_settings', {
     p_currency_code: 'USD',
@@ -91,6 +93,7 @@ test('manage: save sends every setting to update_tenant_settings', async () => {
     p_fiscal_year_start_month: 4,
     p_required_asset_fields: ['serial_number', 'model'],
     p_coverage_expiring_days: 60,
+    p_obligation_due_soon_days: 14,
   })
   // Shown in the button row, and gone once the user edits again.
   expect(container.querySelector('button[type="submit"]')!.parentElement!.querySelector('[role="status"]')?.textContent).toContain(t.settings.saved)

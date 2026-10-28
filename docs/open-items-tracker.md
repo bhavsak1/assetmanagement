@@ -34,11 +34,11 @@
 - **Outcome:**
 
 ### OQ-03 Default schedule anchor for obligations (from B2)
-- **Status:** Needs user input. **Needed by:** start of M3 (F11).
+- **Status:** Decided (owner, 27 Oct 2026). **Needed by:** start of M3 (F11).
 - **Question:** when a service is done late, does the next due date shift from the actual completion date, or stay on the original calendar?
 - **Current lean:** both supported per rule. Default for new rules is "from last completion". Statutory items (boiler, calibration) default to fixed dates.
 - **Ask users:** "If a quarterly service is done two weeks late, when is the next one due?"
-- **Outcome:**
+- **Outcome:** the lean, accepted by the owner on 27 Oct 2026. Each rule picks its anchor: "from last completion" or "fixed dates". New rules default to "from last completion"; statutory items (boiler inspection, calibration) default to "fixed dates". Design: `docs/data-model-goal5.md` §1, §3.
 
 ### OQ-04 Reopening disposed assets (from B11)
 - **Status:** Needs user input. **Needed by:** M2.

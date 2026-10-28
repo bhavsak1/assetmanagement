@@ -228,6 +228,8 @@
     "fiscalMonth": "Fiscal year starts in",
     "expiringDays": "Coverage expiring window (days)",
     "expiringDaysHint": "Warranties and AMCs ending within this many days show as Expiring. 1 to 365.",
+    "dueSoonDays": "Obligation due soon window (days)",
+    "dueSoonDaysHint": "Services, calibrations and inspections due within this many days show as Due soon. 1 to 365.",
     "mandatory": "Mandatory asset fields",
     "mandatoryHint": "Name, category and status are always required. Turn on the other fields your company must fill in. Custom fields are set on the Categories screen.",
     "assetFields": {

@@ -5,7 +5,7 @@ import type { Tables } from './types/database'
 
 type Settings = Pick<
   Tables<'tenant'>,
-  'currency_code' | 'locale' | 'time_zone' | 'date_format' | 'fiscal_year_start_month' | 'required_asset_fields' | 'asset_tag_pattern' | 'coverage_expiring_days'
+  'currency_code' | 'locale' | 'time_zone' | 'date_format' | 'fiscal_year_start_month' | 'required_asset_fields' | 'asset_tag_pattern' | 'coverage_expiring_days' | 'obligation_due_soon_days'
 >
 type DbError = { code?: string; message?: string }
 
@@ -217,7 +217,7 @@ export function SettingsPage({ tenantId, canView, canManage }: { tenantId: strin
     let live = true
     void supabase
       .from('tenant')
-      .select('currency_code, locale, time_zone, date_format, fiscal_year_start_month, required_asset_fields, asset_tag_pattern, coverage_expiring_days')
+      .select('currency_code, locale, time_zone, date_format, fiscal_year_start_month, required_asset_fields, asset_tag_pattern, coverage_expiring_days, obligation_due_soon_days')
       .eq('id', tenantId)
       .then(({ data, error }) => {
         if (!live) return
@@ -243,6 +243,7 @@ export function SettingsPage({ tenantId, canView, canManage }: { tenantId: strin
       required_asset_fields: optionalAssetFields.filter((f) => form.get(f) === 'on'),
       asset_tag_pattern: settings?.asset_tag_pattern ?? '',
       coverage_expiring_days: Number(form.get('expiringDays')),
+      obligation_due_soon_days: Number(form.get('dueSoonDays')),
     }
     setSaving(true)
     const { error } = await supabase.rpc('update_tenant_settings', {
@@ -253,6 +254,7 @@ export function SettingsPage({ tenantId, canView, canManage }: { tenantId: strin
       p_fiscal_year_start_month: values.fiscal_year_start_month,
       p_required_asset_fields: values.required_asset_fields,
       p_coverage_expiring_days: values.coverage_expiring_days,
+      p_obligation_due_soon_days: values.obligation_due_soon_days,
     })
     setSaving(false)
     if (error) return setSaveError(errorMessage(error))
@@ -335,6 +337,13 @@ export function SettingsPage({ tenantId, canView, canManage }: { tenantId: strin
               <input name="expiringDays" type="number" min={1} max={365} step={1} required defaultValue={s.coverage_expiring_days} aria-describedby="expiring-hint" />
               <span id="expiring-hint" className="muted hint">
                 {t.settings.expiringDaysHint}
+              </span>
+            </label>
+            <label className="field">
+              {t.settings.dueSoonDays}
+              <input name="dueSoonDays" type="number" min={1} max={365} step={1} required defaultValue={s.obligation_due_soon_days} aria-describedby="due-soon-hint" />
+              <span id="due-soon-hint" className="muted hint">
+                {t.settings.dueSoonDaysHint}
               </span>
             </label>
           </fieldset>
