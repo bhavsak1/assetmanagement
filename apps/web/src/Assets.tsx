@@ -560,12 +560,12 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate, canCoverage }: {
   )
 }
 
-function CoverageTag({ lines, today }: { lines: Line[]; today: string }) {
+export function CoverageTag({ lines, today }: { lines: Line[]; today: string }) {
   const c = coverageCell(lines, today)
   return <span className={`tag status ${c.tone}`}>{c.text}</span>
 }
 
-function TreeSelect({ label, all, rows, value, onChange }: { label: string; all: string; rows: Option[]; value: string; onChange: (v: string) => void }) {
+export function TreeSelect({ label, all, rows, value, onChange }: { label: string; all: string; rows: Option[]; value: string; onChange: (v: string) => void }) {
   return (
     <select className="filter" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">{all}</option>

@@ -855,5 +855,53 @@
       "load": "Could not load service history.",
       "fileAfterSave": "The completion is saved, but a file did not upload. Add it from Service history, under Files."
     }
+  },
+  "maintenance": {
+    "subtitle": "Obligations due across all assets",
+    "tabs": {
+      "overdue": "Overdue",
+      "due_soon": "Due soon",
+      "scheduled": "Scheduled",
+      "completed": "Completed"
+    },
+    "tiles": {
+      "overdue": "Overdue",
+      "next7": "Next 7 days",
+      "next30": "Next 30 days",
+      "out": "Out of coverage"
+    },
+    "filter": "Search asset tag or name",
+    "allTypes": "All types",
+    "type": "Type",
+    "loading": "Loading…",
+    "none": "Nothing here.",
+    "noMatch": "No rows match these filters.",
+    "overdue": "{n} d overdue",
+    "dueToday": "Due today",
+    "dueIn": "In {n} d",
+    "age": {
+      "years": "{y} y {m} mo",
+      "months": "{m} mo"
+    },
+    "col": {
+      "asset": "Asset",
+      "obligation": "Obligation",
+      "location": "Location",
+      "due": "Due",
+      "status": "Status",
+      "coverage": "Coverage",
+      "age": "Age",
+      "value": "Purchase value",
+      "done": "Done on",
+      "outcome": "Outcome",
+      "doneBy": "Done by",
+      "cost": "Cost",
+      "files": "Files",
+      "actions": "Actions"
+    },
+    "showing": "Showing {from}–{to}",
+    "errors": {
+      "load": "Could not load maintenance."
+    }
   }
 }
