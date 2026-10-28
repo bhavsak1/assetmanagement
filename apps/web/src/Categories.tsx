@@ -1,12 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { loadStatuses, type Status } from './Assets'
+import { asRules, CategoryDefaults, validateRules, type Defaults } from './Obligations'
 import { t } from './i18n'
 import { StatusesCard, StatusSetPicker, validateSet } from './Statuses'
 import { supabase } from './supabase'
 import { buildTree, lineage } from './tree'
 import type { Json, Tables } from './types/database'
 
-type Category = Pick<Tables<'asset_category'>, 'id' | 'parent_id' | 'name' | 'code' | 'is_active' | 'status_ids' | 'oem_vendor_ids' | 'om_vendor_ids'>
+type Category = Pick<Tables<'asset_category'>, 'id' | 'parent_id' | 'name' | 'code' | 'is_active' | 'status_ids' | 'oem_vendor_ids' | 'om_vendor_ids' | 'default_obligations' | 'default_warranty_months'>
 type Vendor = { id: string; name: string; roles: string[]; is_active: boolean }
 const vendorRoles = ['oem', 'om'] as const
 type VendorRole = (typeof vendorRoles)[number]
@@ -95,7 +96,7 @@ export function CategoriesPage({ tenantId, canManage }: { tenantId: string; canM
   useEffect(() => {
     let live = true
     void Promise.all([
-      supabase.from('asset_category').select('id, parent_id, name, code, is_active, status_ids, oem_vendor_ids, om_vendor_ids').is('deleted_at', null),
+      supabase.from('asset_category').select('id, parent_id, name, code, is_active, status_ids, oem_vendor_ids, om_vendor_ids, default_obligations, default_warranty_months').is('deleted_at', null),
       supabase.from('field_definition').select('*').eq('entity', 'asset').is('deleted_at', null).order('sort_order'),
       supabase.rpc('field_domains', { p_entity: 'asset' }),
       loadStatuses(),
@@ -345,7 +346,17 @@ function CategoryForm({
   categories: Category[]
   statuses: Status[]
   vendors: Vendor[]
-  onSave: (v: { name: string; parent_id: string | null; code: string | null; is_active: boolean; status_ids: string[] | null; oem_vendor_ids?: string[]; om_vendor_ids?: string[] }) => Promise<boolean>
+  onSave: (v: {
+    name: string
+    parent_id: string | null
+    code: string | null
+    is_active: boolean
+    status_ids: string[] | null
+    oem_vendor_ids?: string[]
+    om_vendor_ids?: string[]
+    default_obligations?: Json | null
+    default_warranty_months?: number | null
+  }) => Promise<boolean>
   onCancel: () => void
   onError: (message: string) => void
 }) {
@@ -355,6 +366,7 @@ function CategoryForm({
   const [code, setCode] = useState(row?.code ?? '')
   const [statusIds, setStatusIds] = useState(row?.status_ids ?? null)
   const [tags, setTags] = useState<Record<VendorRole, string[]>>({ oem: row?.oem_vendor_ids ?? [], om: row?.om_vendor_ids ?? [] })
+  const [defaults, setDefaults] = useState<Defaults>({ warranty: row?.default_warranty_months ?? null, rules: asRules(row?.default_obligations) })
   const inherited = inheritedCode(categories, parentId)
 
   function submit(e: FormEvent<HTMLFormElement>) {
@@ -364,12 +376,19 @@ function CategoryForm({
     if (value && !codePattern.test(value)) return onError(t.categories.errors.code)
     const badSet = statusIds && validateSet(statusIds, statuses)
     if (badSet) return onError(badSet)
+    const badRule = defaults.rules && validateRules(defaults.rules)
+    if (badRule) return onError(badRule)
     void onSave({
       name: String(form.get('name')).trim(),
       parent_id: parentId || null,
       code: value || null,
       is_active: form.get('active') === 'on',
       status_ids: statusIds,
+      // 5.1b defaults, also only when changed.
+      ...(defaults.warranty === (row?.default_warranty_months ?? null) ? {} : { default_warranty_months: defaults.warranty }),
+      ...(JSON.stringify(defaults.rules) === JSON.stringify(row?.default_obligations ?? null)
+        ? {}
+        : { default_obligations: defaults.rules && defaults.rules.map((r) => ({ ...r, name: r.name.trim() })) }),
       // Sent only when changed: tags are checked on change, and most saves do not touch them.
       ...vendorRoles.reduce((o, role) => {
         const before = (role === 'oem' ? row?.oem_vendor_ids : row?.om_vendor_ids) ?? []
@@ -412,6 +431,7 @@ function CategoryForm({
       </label>
       <StatusSetPicker categories={categories} statuses={statuses} parentId={parentId} value={statusIds} onChange={setStatusIds} />
       <VendorTags categories={categories} vendors={vendors} parentId={parentId} value={tags} onChange={setTags} />
+      <CategoryDefaults categories={categories} parentId={parentId} value={defaults} onChange={setDefaults} />
       <FormButtons onCancel={onCancel} />
     </form>
   )

@@ -155,7 +155,7 @@ export function useTenant() {
   return tenant
 }
 
-const showDate = (d: string | null | undefined, tn?: Tenant) =>
+export const showDate = (d: string | null | undefined, tn?: Tenant) =>
   !d ? '—' : tn ? formatDate(new Date(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))), tn.date_format, tn.locale) : d
 
 export function StatusTag({ row, today }: { row: { status: string | null; start_date: string | null; end_date: string | null }; today: string }) {

@@ -86,6 +86,8 @@ const cat = (id: string, name: string, parent_id: string | null = null, code: st
   status_ids,
   oem_vendor_ids: [] as string[],
   om_vendor_ids: [] as string[],
+  default_obligations: null,
+  default_warranty_months: null,
 })
 
 test('the tree builds from flat rows: parents before children, by name, orphans at the top', () => {
