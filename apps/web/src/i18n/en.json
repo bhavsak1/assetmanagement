@@ -219,6 +219,11 @@
     "status": "Status",
     "active": "Active",
     "noValue": "—",
+    "counts": {
+      "title": "Asset status, with child locations",
+      "overdue": "Overdue service",
+      "assets": "{n} assets"
+    },
     "save": "Save",
     "cancel": "Cancel",
     "errors": {

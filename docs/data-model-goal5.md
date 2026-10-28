@@ -417,7 +417,7 @@ Export, Paused tab, saved views (M7 a), header picker (M6 a), AMC-vendor filter 
 
 ## 14. Story 5.4: Dashboard
 
-**Status:** in review, 28 Oct 2026. No choice was costly to reverse, so the build took every lean below (D1 to D6). The owner can still change any of them. Built in migration `5_4_location_asset_counts`; tests in `5_4_dashboard.test.sql` (9); web `Dashboard.tsx` (6 tests, plus one each in Assets and Maintenance for the URL params).
+**Status:** done, 28 Oct 2026 (accepted by the owner). No choice was costly to reverse, so the build took every lean below (D1 to D6). Built in migration `5_4_location_asset_counts`; tests in `5_4_dashboard.test.sql` (9); web `Dashboard.tsx` (6 tests, plus one each in Assets and Maintenance for the URL params).
 
 **Screen (`Dashboard` in the screens file):** title "Dashboard"; buttons Export and Add asset; four tiles (Total assets, Due in 30 days, Overdue service, Coverage expiring (60d)); card "Upcoming and overdue service" (Asset, Location, Due, Status, View all); card "Assets by location" (one bar per location); an "Ask" AI card. Route `/dashboard`, already the landing page after sign-in (0.3).
 
@@ -490,3 +490,106 @@ The calls run in parallel, so the page waits for the slowest one (`maintenance_c
 ### 14.6 Not in 5.4
 
 Export, the AI card, totals by status (D1 a), an exact 30-day link (D4 b), a chart library (the bars are plain CSS, as on the screen).
+
+## 15. Story 5.5: Locations status counts, demo seed
+
+**Status:** in review, 28 Oct 2026. The owner accepted the leans L1 to L6 on 28 Oct 2026. Part B (the demo tenant, §15.2) is parked as BL-3: the owner checks Goal 5 on staging first. B1 to B7 stay open.
+
+**As built (Part A):** migration `5_5_location_status_counts`; tests `5_5_location_status_counts.test.sql` (11); web `Locations.tsx` (`rollUp`, tiles, row totals; 3 new tests) and `Maintenance.tsx` (`?location_id=`, 1 new test). The 200k EXPLAIN was not rerun: the read is the 5.4 `location_asset_counts` query with five `filter` counts in the same single pass (5.4 bench about 210 ms).
+
+**Goal 5 review point:** a seeded demo tenant with a populated dashboard and maintenance view, the first pilot-style demo.
+
+**Open items used:** OQ-16 (sales-led provisioning; lean: a script run as postgres, as 1.6b).
+
+### 15.1 Part A: status counts on the Locations page
+
+**Screen (`Locations` in the screens file):** subtitle "Hierarchy and asset status"; the tree on the left; for the selected node, four tiles (Active, Maintenance, Spare, Retired) and a card "Pune · assets by category". The tiles count the node **with its descendants**.
+
+**Read: new `public.location_status_counts()` [L1].** The same kind of read as 5.4 `location_asset_counts()`: invoker, `language sql`, stable, one grouped pass, roll-up in the web.
+
+```
+returns table (location_id uuid, in_stock int, active int, under_maintenance int,
+               inactive int, disposed int, overdue int)
+```
+
+- Reads `asset_view` (tenant, `asset_core.view`, live asset, the 6.1 scope clause once 6.1 adds it there), grouped by `location_id`, `count(*) filter (where v.status = ...)` per system status; `obligation` under its RLS for `overdue` (0 without `obligation.view`). No check of its own, so nothing new for owner review.
+- One row per location that holds assets; `location_id` null = no location.
+- A new function, not a change to `location_asset_counts()`: a return type cannot change in place, and the dashboard keeps its call. The old one stays (dropping it is a later tidy-up).
+- **Roll-up in the web** with the `lineage` the page already loads (2.4): a node's count = its own row plus every descendant's. The closure table stays private.
+- **Caps [L4]:** exact counts (one pass; 5.4 bench about 210 ms at 200k assets). The web shows "10,000+" above 10,000 with the 3.2 S5 formatter, so a tile never shows more than the list it opens.
+
+**UI on `Locations.tsx`:**
+- In the selected node's detail card: tiles In stock, Active, Under maintenance, Inactive, Disposed, Overdue service [L2]. A zero tile still shows.
+- Each tile links to the filtered list [L5]: a status to `/assets?location_id=<id>&status=<system status>` (both params exist since 5.4); Overdue to `/maintenance?tab=overdue&location_id=<id>` (Maintenance learns `?location_id=`, with the same uuid check as Assets).
+- On each tree row: the node's asset total with descendants, small and grey [L3].
+- Tiles and totals need `asset_core.view`; Overdue also `obligation.view`. Without them they do not show. The page keeps its 2.4 permission.
+- Phone width: the tiles wrap (the Dashboard tile row).
+- i18n keys under `locations.counts.*`.
+
+**Tests:** pgTAP `5_5_location_status_counts.test.sql`: no permission: nothing; `asset_core.view`: statuses counted, overdue 0; with `obligation.view`: overdue counted; deleted asset and deleted obligation not counted; null location row; per leaf, each status equals `count_assets(p_status, p_location_id)` and overdue equals `maintenance_counts(p_location_id).overdue`; row sums equal `location_asset_counts()`; cross-tenant both ways. EXPLAIN on the 200k bench tenant (one pass over the tenant's assets, no loop per location). Tenancy guard green (no new table). Web: roll-up, tiles and links, row totals, hidden without permission, "10,000+", Maintenance `?location_id=`.
+
+### 15.2 Part B: the demo tenant
+
+**Script `scripts/demo-tenant.sql` [B1].** Plain SQL, one `do` block (all or nothing), run as `postgres`: on staging the way 1.6b runs (Supabase MCP `execute_sql`, or psql with the DB password); locally with `docker exec -i supabase_db_<project> psql -U postgres < scripts/demo-tenant.sql`. No service-role key, no Node, no new dependency, nothing in web config (CLAUDE.md §6.4, §14).
+
+**Guard.** The script touches only the tenant with slug `demo-manufacturing`. Before it changes anything it checks that this tenant's name is `Demo Manufacturing Pvt Ltd`, and stops if not. Every statement carries the demo `tenant_id`; no other tenant's rows are read or written.
+
+**Reset [B3]: a new tenant per run.** The audit log is append-only (1.5: a trigger blocks delete, even for the owner role), so the demo rows cannot be hard-deleted without switching that guard off. A run:
+1. renames the old demo tenant to `Demo Manufacturing (retired <date>)`, slug `demo-manufacturing-r<yyyymmddhh24mi>`, status `suspended`, and sets its memberships to `disabled` (rows stay, so `tenant_session` and the audit trail stay valid);
+2. creates a fresh `demo-manufacturing` tenant (INR, en-IN, Asia/Kolkata, dd-MM-yyyy, fiscal year from April), `seed_starter_groups`, statuses;
+3. seeds the data below, then links the demo users.
+
+Retired copies stay as dead rows (about 2,000 rows each). That is the price of an untouchable audit log.
+
+**Write path [B2]: direct inserts as postgres.** Every table trigger still runs: tag numbering (pattern set on the tenant), status pick (3.7), category defaults copied to obligations (5.1), next due, the value checks, audit and outbox (actor `system`, which is true: the script did it). The triggers already allow a system writer (`auth.uid()` null skips the per-user permission checks). Service history repeats the two writes `complete_obligation` makes: insert `service_record` (with `advanced` and `prev_last_done_date`), then set the obligation's `last_done_date` and `next_due_date` with `private.obligation_next_due`. At the end, `private.refresh_coverage_state(<demo asset ids>)` and `private.refresh_obligation_state(<demo obligation ids>)`, so the stored states are right at once, not after the 15-minute job.
+
+**Data.** Deterministic (no `random()`), so two runs give the same counts [B6]. Dates relative to the tenant's today, so overdue and due soon stay true later (until the next run).
+
+| What | Amount |
+|---|---|
+| Locations | 3 plants: Plant 1 · Pune (Chakan), Plant 2 · Nashik (Satpur), Plant 3 · Aurangabad (Waluj), each with 2 to 3 shops or bays and a store; about 15 nodes |
+| Categories | Machine tools (CNC lathe, VMC), Utilities (air compressor, DG set, boiler), HVAC (chiller, AHU), Material handling (forklift, EOT crane), Electrical (transformer, panel), Quality lab (CMM, gauges), IT. Defaults: warranty term (12 to 36 months), service rules (quarterly, half-yearly), calibration (yearly, fixed anchor), statutory inspection (boiler, crane; yearly, fixed) |
+| Tenant statuses | two extra, e.g. "Under repair" (under_maintenance) and "Standby" (in_stock), on two categories |
+| Vendors | 8: OEMs, O&M contractors, a calibration lab, a supplier; roles, tags, a primary contact each; GSTIN only as the optional field |
+| Assets | 150 over the plants; about 75% active, 8% under maintenance, 8% in stock, 5% inactive, 4% disposed; OEM and O&M vendors; purchase values in INR |
+| Coverage | warranties from the category term (some expired, about 10 expiring within the tenant's window); 4 AMCs over several assets each (one expiring soon, one expired); about 20% of assets never covered |
+| Obligations | from the category defaults, then dates set so about 10% are overdue, 10% due soon, the rest scheduled |
+| Service history | 1 to 3 records per obligation over the last 12 months; costs on some; outcomes ok, issues found, failed; done by a vendor or a person |
+| Attachments | none [B7] |
+
+**Demo users [B4].** The owner adds five auth users in the Supabase dashboard (Authentication, Add user, auto-confirm) and sets their passwords. The script holds only the email list and links each existing user: `user_profile`, membership, starter group (Tenant Admin, Plant Manager, Planner, Technician, Auditor). A missing user is skipped with a NOTICE [B5], so the data can be seeded first and the users linked by a later run. A user who already belongs to a non-demo tenant stops the script (one tenant per user until the 1.10 picker).
+
+**Local use.** The same script seeds a local demo tenant; local auth users come from local Studio. `supabase/seed.sql` and the test harness are not touched.
+
+**Script check:** on the local stack, run it twice; after each run the demo counts match (assets per status, obligations per state, coverage per state, records), the previous copy is suspended, and every other tenant's row counts are unchanged (taken before and after). The guard stops on a wrong name.
+
+**README:** a "Demo tenant" section: what it creates, how to run it (local and staging), that a re-run retires the old copy, and that it refuses any other tenant.
+
+### 15.3 DECIDE
+
+| # | Question | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| L1 | Status counts read | **a)** New invoker `location_status_counts()`, one grouped pass, web roll-up (§15.1). **b)** No SQL: per selected node, five `count_assets(p_status, p_location_id)` plus `maintenance_counts(p_location_id).overdue`: six calls per click, selected node only (no tree-row totals), root overdue 200 to 300 ms at 200k | a. One call per page, every node at once, the 5.4 pattern | Low: one function |
+| L2 | Which statuses | **a)** The five system statuses, fixed tiles. **b)** Tenant statuses (3.7), one tile per status in use | a. A fixed set, comparable across categories. The screen's Active, Maintenance, Spare, Retired read as labels for system statuses | Low |
+| L3 | Counts on tree rows | **a)** Asset total per row, plus tiles for the selected node. **b)** Tiles only, as the screen | a. Free from the same call | None |
+| L4 | Caps | **a)** Exact counts, "10,000+" in the UI. **b)** Capped in SQL | a. As 5.4 D3 | None |
+| L5 | Tile clicks | **a)** Assets with `location_id` and `status`; Overdue to Maintenance with `tab` and a new `location_id` param. **b)** Assets only | a | None |
+| L6 | "Assets by category" card | **a)** Not built. **b)** Build it (another grouped read) | a. Not in the story | None |
+| B1 | Script runner | **a)** SQL as postgres, as 1.6b. **b)** Node with the service-role key from a local `.env` | a. No key on disk, no dependency, the 1.6b path | Low |
+| B2 | Write path | **a)** Direct inserts; triggers do tags, statuses, defaults, audit; history repeats `complete_obligation`'s two writes; then both state refreshes. **b)** Act as the demo Tenant Admin in the transaction (`set local role authenticated` plus JWT claims) and call the public functions (`create_asset_with_warranty`, `complete_obligation`) | a. Works before any demo user exists, and locally. b copies the test harness's impersonation into a script and needs the admin user first | Low |
+| B3 | Reset | **a)** Retire the old copy (rename, suspend, disable memberships), build a new one. **b)** Hard-delete the demo rows with the audit append-only trigger disabled inside the transaction: one tenant id forever, but a delete list to keep current with every new table. **c)** Soft-delete and re-add (junk grows; vendors and locations are never deleted, §8) | a. The audit log stays untouchable | Medium: b means owner review of switching the audit guard off |
+| B4 | Demo user emails | e.g. `demo.admin@assetly.com`, `demo.plantmanager@`, `demo.planner@`, `demo.technician@`, `demo.auditor@` | The owner names them | None |
+| B5 | Missing auth user | **a)** NOTICE and skip. **b)** Stop, as 1.6b | a. Data first, users later | None |
+| B6 | Volume | 150 assets (about 300 obligations, 500 records) | 150 | None |
+| B7 | Attachments | **a)** None. **b)** A few PDFs through Storage | a. Storage objects need an upload, not SQL | None |
+
+### 15.4 Build plan (after answers)
+
+1. Migration `5_5_location_status_counts`; pgTAP; EXPLAIN on the bench tenant; types.
+2. Web: Locations tiles, row totals, links; Maintenance `?location_id=`; i18n; tests.
+3. `scripts/demo-tenant.sql` and the README section; run twice locally and compare counts.
+4. Tracker 5.5 In review. Staging push and the staging run only on the owner's yes, from the main checkout after the merge.
+
+### 15.5 Not in 5.5
+
+The "Assets by category" card (L6 a), tenant-status tiles (L2 b), demo attachments (B7 a), BOM (BL-2), dropping `location_asset_counts()`.

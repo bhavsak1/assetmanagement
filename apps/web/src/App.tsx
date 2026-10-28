@@ -348,7 +348,7 @@ export function App() {
         <Route path="/categories" element={<CategoriesPage tenantId={tenantId ?? ''} canManage={can('category_config', 'manage')} />} />
         <Route path="/vendors" element={<VendorsPage tenantId={tenantId ?? ''} can={can} />} />
         <Route path="/coverage" element={<CoveragePage tenantId={tenantId ?? ''} can={can} />} />
-        <Route path="/locations" element={<LocationsPage tenantId={tenantId ?? ''} canManage={can('location_hierarchy', 'manage')} />} />
+        <Route path="/locations" element={<LocationsPage tenantId={tenantId ?? ''} canManage={can('location_hierarchy', 'manage')} can={can} />} />
         <Route
           path="/settings"
           element={<SettingsPage tenantId={tenantId ?? ''} canView={can('tenant_settings', 'view')} canManage={can('tenant_settings', 'manage')} />}
