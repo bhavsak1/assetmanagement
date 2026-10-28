@@ -806,5 +806,51 @@
       "generic": "Could not save. Try again.",
       "load": "Could not load obligations."
     }
+  },
+  "service": {
+    "title": "Record completion: {name}",
+    "editTitle": "Correct completion: {name}",
+    "loading": "Loading service history…",
+    "none": "No completions recorded yet.",
+    "doneOn": "Done on",
+    "dateLocked": "To change the date, undo and record again.",
+    "outcome": "Outcome",
+    "noOutcome": "Not recorded",
+    "outcomes": {
+      "pass": "Pass",
+      "fail": "Fail"
+    },
+    "contractor": "Done by",
+    "doneByMe": "Me (our team)",
+    "contractorHidden": "Contractor",
+    "certificateExpiry": "Certificate expires",
+    "expires": "· expires {date}",
+    "cost": "Cost",
+    "currency": "Currency",
+    "notes": "Notes",
+    "cancel": "Cancel",
+    "save": "Save",
+    "edit": "Correct",
+    "undo": "Undo",
+    "undoConfirm": "Undo the {name} completion of {date}? The next due date moves back.",
+    "col": {
+      "date": "Done on",
+      "obligation": "Obligation",
+      "outcome": "Outcome",
+      "doneBy": "Done by",
+      "cost": "Cost",
+      "notes": "Notes",
+      "actions": "Actions"
+    },
+    "errors": {
+      "noPermission": "You do not have permission to do that.",
+      "paused": "This obligation is paused, so it cannot be completed.",
+      "date": "Pick a date from the last 366 days, not in the future.",
+      "vendor": "That contractor is inactive or not found.",
+      "cost": "Cost must be zero or more.",
+      "invalid": "Some values are not valid.",
+      "generic": "Could not save. Try again.",
+      "load": "Could not load service history."
+    }
   }
 }

@@ -4,6 +4,7 @@ import { AttachmentsTab } from './Attachments'
 import { CoverageCard, CoverageTab } from './Coverage'
 import { lineFields } from './AssetForm'
 import { ObligationsCard, ObligationsTab } from './Obligations'
+import { ServiceHistoryTab } from './Service'
 import { loadStatuses, statusName, StatusTag, type Status } from './Assets'
 import { t } from './i18n'
 import { supabase } from './supabase'
@@ -103,7 +104,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
   const [vendors, setVendors] = useState<{ id: string; name: string; is_active: boolean }[]>([])
   // Change status offers what the database allows now (allowed_asset_statuses, 3.7).
   const [targets, setTargets] = useState<string[]>([])
-  const [tab, setTab] = useState<'overview' | 'coverage' | 'obligations' | 'attachments' | 'audit'>('overview')
+  const [tab, setTab] = useState<'overview' | 'coverage' | 'obligations' | 'service' | 'attachments' | 'audit'>('overview')
   const [dialog, setDialog] = useState<'transfer' | 'retire' | 'status'>()
   // Bumped after an action: reloads the asset and the Audit tab.
   const [version, setVersion] = useState(0)
@@ -231,7 +232,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
       </div>
       <div className="tabs" role="tablist">
         {tabs.map((k) =>
-          k === 'overview' || k === 'audit' || (k === 'coverage' && can('coverage_contract', 'view')) || (k === 'obligations' && can('obligation', 'view')) || (k === 'attachments' && can('asset_attachment', 'view')) ? (
+          k === 'overview' || k === 'audit' || (k === 'coverage' && can('coverage_contract', 'view')) || (k === 'obligations' && can('obligation', 'view')) || (k === 'service' && can('service_record', 'view')) || (k === 'attachments' && can('asset_attachment', 'view')) ? (
             <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
               {d.tabs[k]}
             </button>
@@ -301,7 +302,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
             </dl>
           </section>
           {can('coverage_contract', 'view') && <CoverageCard assetId={id} can={can} />}
-          {can('obligation', 'view') && <ObligationsCard assetId={id} />}
+          {can('obligation', 'view') && <ObligationsCard assetId={id} onRecord={can('obligation', 'complete') ? () => setTab('obligations') : undefined} />}
           {line.length > 0 && (
             <section className="card">
               <h2>{t.assetForm.fields}</h2>
@@ -319,6 +320,8 @@ export function AssetDetailPage({ can }: { can: Can }) {
         <CoverageTab assetId={id} can={can} />
       ) : tab === 'obligations' ? (
         <ObligationsTab tenantId={asset.tenant_id ?? ''} assetId={id} asset={asset} can={can} />
+      ) : tab === 'service' ? (
+        <ServiceHistoryTab assetId={id} can={can} />
       ) : tab === 'attachments' ? (
         <AttachmentsTab tenantId={asset.tenant_id ?? ''} assetId={id} can={can} timeZone={timeZone} />
       ) : (

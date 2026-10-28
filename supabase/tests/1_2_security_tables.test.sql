@@ -10,15 +10,15 @@ select ok((select relrowsecurity from pg_class where oid = 'public.group_domain_
 select ok((select relrowsecurity from pg_class where oid = 'public.user_group_assignment'::regclass), 'RLS on user_group_assignment');
 
 -- Catalog seeded, and re-running the seed adds nothing. Counts include rls_sample (1.4, 1 domain, 4 ops)
--- the 3.1 operations asset_core.set_tag and asset_lifecycle.reopen, and the 3.6 domain asset_attachment (3 ops).
+-- the 3.1 operations asset_core.set_tag and asset_lifecycle.reopen, the 3.6 domain asset_attachment (3 ops) and the 5.2 domain service_values (2 ops).
 select results_eq(
   'select (select count(*)::int from public.security_domain), (select count(*)::int from public.domain_operation)',
-  $$values (22, 56)$$, 'catalog seeded'
+  $$values (23, 58)$$, 'catalog seeded'
 );
 select lives_ok('select private.seed_domain_catalog()', 'catalog seed re-runs');
 select results_eq(
   'select (select count(*)::int from public.security_domain), (select count(*)::int from public.domain_operation)',
-  $$values (22, 56)$$, 'catalog seed is idempotent'
+  $$values (23, 58)$$, 'catalog seed is idempotent'
 );
 
 -- Composite FKs: a row can never point at another tenant's group or a non-member.

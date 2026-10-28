@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import { addDays, showDate, tenantToday, terms, useTenant } from './Coverage'
 import { t } from './i18n'
+import { CompletionForm } from './Service'
 import { supabase } from './supabase'
 import { lineage } from './tree'
 import type { Json, Tables, TablesInsert } from './types/database'
@@ -88,6 +89,7 @@ export function ObligationsTab({ tenantId, assetId, asset, can }: { tenantId: st
   const tenant = useTenant()
   const [rows, setRows] = useState<Obligation[]>()
   const [editing, setEditing] = useState<{ row?: Obligation }>()
+  const [completing, setCompleting] = useState<Obligation>()
   const [error, setError] = useState<string>()
   const [reload, setReload] = useState(0)
 
@@ -119,16 +121,13 @@ export function ObligationsTab({ tenantId, assetId, asset, can }: { tenantId: st
   if (!rows || !tenant) return <p className="muted" role="status">{o.loading}</p>
   const today = tenantToday(tenant.time_zone)
   const canUpdate = can('obligation', 'update')
+  const canComplete = can('obligation', 'complete')
   const update = (id: string, v: Partial<Obligation>) => write(supabase.from('obligation').update(v).eq('id', id).select('id'))
 
   return (
     <div className="stack detail">
       <div className="page-head">
         <div className="spacer" />
-        {/* Completion is story 5.2 (complete_obligation). */}
-        <button className="btn" type="button" disabled title={t.assetDetail.laterHint}>
-          {o.recordCompletion}
-        </button>
         {can('obligation', 'create') && (
           <button className="btn btn-main" type="button" onClick={() => setEditing({})}>
             {o.add}
@@ -139,6 +138,17 @@ export function ObligationsTab({ tenantId, assetId, asset, can }: { tenantId: st
         <p className="login-error" role="alert">
           {error}
         </p>
+      )}
+      {completing && (
+        <CompletionForm
+          obligation={completing}
+          can={can}
+          onCancel={() => setCompleting(undefined)}
+          onDone={() => {
+            setCompleting(undefined)
+            setReload((n) => n + 1)
+          }}
+        />
       )}
       {editing && (
         <ObligationForm
@@ -178,7 +188,7 @@ export function ObligationsTab({ tenantId, assetId, asset, can }: { tenantId: st
                 <th>{o.col.lastDone}</th>
                 <th>{o.col.nextDue}</th>
                 <th>{o.col.status}</th>
-                {canUpdate && <th aria-label={o.col.actions} />}
+                {(canUpdate || canComplete) && <th aria-label={o.col.actions} />}
               </tr>
             </thead>
             <tbody>
@@ -193,8 +203,16 @@ export function ObligationsTab({ tenantId, assetId, asset, can }: { tenantId: st
                   <td>
                     <StateTag state={r.due_state} />
                   </td>
-                  {canUpdate && (
+                  {(canUpdate || canComplete) && (
                     <td className="actions">
+                      {/* Paused rows cannot be completed (complete_obligation refuses them too). */}
+                      {canComplete && r.due_state !== 'paused' && (
+                        <button className="btn btn-main" type="button" onClick={() => setCompleting(r)}>
+                          {o.recordCompletion}
+                        </button>
+                      )}
+                      {canUpdate && (
+                        <>
                       <button className="btn" type="button" onClick={() => setEditing({ row: r })}>
                         {t.categories.edit}
                       </button>
@@ -208,6 +226,8 @@ export function ObligationsTab({ tenantId, assetId, asset, can }: { tenantId: st
                       >
                         {o.remove}
                       </button>
+                        </>
+                      )}
                     </td>
                   )}
                 </tr>
@@ -348,7 +368,7 @@ function RuleInterval({ rule, onChange, label = '' }: { rule: Rule; onChange: (c
 }
 
 // Overview card, as the screens: name and state. Hidden when there are none.
-export function ObligationsCard({ assetId }: { assetId: string }) {
+export function ObligationsCard({ assetId, onRecord }: { assetId: string; onRecord?: () => void }) {
   const [rows, setRows] = useState<Obligation[]>([])
   useEffect(() => {
     let live = true
@@ -371,6 +391,11 @@ export function ObligationsCard({ assetId }: { assetId: string }) {
           </Fragment>
         ))}
       </dl>
+      {onRecord && (
+        <button className="btn btn-main block" type="button" onClick={onRecord}>
+          {o.recordCompletion}
+        </button>
+      )}
     </section>
   )
 }
