@@ -115,7 +115,7 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | 5.1b | Category form: default obligations and default warranty term (inherit or own); asset detail Obligations tab: add, edit, pause, remove | OQ-03 | Done |
 | 5.2 | Service completion record (date, notes, cost, done by or vendor, outcome) that advances next due; undo; Service history tab | OQ-03 | Done |
 | 5.2b | Attachments on service records (second entity in the 3.6 bucket and storage policies) | | Done |
-| 5.3 | Maintenance screen: overdue, due soon, scheduled, completed | | Todo |
+| 5.3 | Maintenance screen: overdue, due soon, scheduled, completed | | In review |
 | 5.4 | Dashboard KPIs, upcoming list, assets by location | | Todo |
 | 5.5 | Locations status counts, demo seed data | | Todo |
 

@@ -1352,6 +1352,21 @@ isOneToOne: false
         isOneToOne: false
         isSetofReturn: true
       } },
+"list_completions":
+{ Args: { "p_after_id"?: string,"p_after_value"?: string,"p_category_id"?: string,"p_coverage"?: string,"p_limit"?: number,"p_location_id"?: string,"p_term"?: string,"p_type"?: string,"p_vendor_id"?: string }; Returns: {
+              "asset_id": string,"asset_name": string,"attachments": number,"category_id": string,"cost_amount": number,"cost_currency": string,"done_by_name": string,"done_on": string,"id": string,"in_service_date": string,"location_id": string,"obligation_id": string,"obligation_name": string,"obligation_type": string,"outcome": string,"purchase_currency": string,"purchase_date": string,"purchase_value": number,"tag": string,"vendor_id": string,"vendor_name": string
+            }[]
+                           },
+"list_obligations":
+{ Args: { "p_after_id"?: string,"p_after_value"?: string,"p_bucket": string,"p_category_id"?: string,"p_coverage"?: string,"p_limit"?: number,"p_location_id"?: string,"p_term"?: string,"p_type"?: string,"p_vendor_id"?: string }; Returns: {
+              "anchor": string,"asset_id": string,"asset_name": string,"category_id": string,"due_state": string,"id": string,"in_service_date": string,"interval_count": number,"interval_unit": string,"last_done_date": string,"location_id": string,"name": string,"next_due_date": string,"obligation_type": string,"purchase_currency": string,"purchase_date": string,"purchase_value": number,"tag": string
+            }[]
+                           },
+"maintenance_counts":
+{ Args: { "p_category_id"?: string,"p_coverage"?: string,"p_location_id"?: string,"p_term"?: string,"p_type"?: string,"p_vendor_id"?: string }; Returns: {
+              "completed": number,"due_soon": number,"next_30": number,"next_7": number,"overdue": number,"scheduled": number
+            }[]
+                           },
 "merge_vendor":
 { Args: { "p_from_id": string,"p_into_id": string }; Returns: undefined
                            },

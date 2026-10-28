@@ -288,7 +288,26 @@ Attachments (5.2b if S0 a), Maintenance screen and its Completed bucket (5.3), c
 
 ## 13. Story 5.3: Maintenance screen
 
-**Status:** design, 28 Oct 2026. Waiting for the owner on M1 to M7.
+**Status:** in review, 28 Oct 2026. The owner accepted every lean, M1 to M7, on 28 Oct 2026. Built in migrations `5_3_service_record_done_idx` and `5_3_maintenance_list`; tests in `5_3_maintenance.test.sql` (49); web `Maintenance.tsx` (10 tests).
+
+**As built (differences from the design below):**
+- **Asset filters are resolved to literals.** `private.maintenance_where` resolves the location and category subtree ids and the search ids first and writes them in as `= any ('{...}'::uuid[])`, so the planner knows how selective the filter is. The set form (an InitPlan) hid that, so the planner always walked the bucket index. With one small location, that took 1.7 s at 200k assets. A search term that matches more than 1,000 assets keeps the set form (marked as a shortcut). Vendor and coverage still use `asset_list_where`. Its column equality already has statistics.
+- The two SQL builders are `stable`, not `immutable`, because they call those helpers.
+- The Out of coverage tile is a plain count. The Assets list reads no filter from the URL, so the tile has no link.
+- Phone width: the table scrolls sideways, like the 5.1b Obligations tab. It does not turn into cards.
+- The Completed tab shows "Files · n". It opens the 5.2b list in place, as Service history does.
+
+**Bench (local Docker, 200k assets, 400k obligations, 400k records, planner.a, p50 of 3):**
+
+| Query | ms |
+|---|---|
+| Overdue page 1 | 2.8 |
+| Scheduled page 1 / deep page | 3.6 / 3.5 |
+| Scheduled, one small location (200 assets) | 0.9 |
+| Completed page 1 / deep page | 5.7 / 5.6 |
+| Completed, one small location | 1.4 |
+| `maintenance_counts`, no filter (6 capped counts) | about 90 |
+| `maintenance_counts`, one small location | about 2 |
 
 **Goal (F13):** one tenant-wide page of obligations: Overdue, Due soon, Scheduled (from the stored 5.1 state) and Completed (from `service_record`), with due or done date, state, location, coverage status, asset age and optional purchase value. Record completion from a row.
 
