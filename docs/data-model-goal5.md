@@ -165,3 +165,112 @@ pgTAP `5_1_obligations.test.sql` (§8). Types regenerated. Web: Settings field, 
 ## 11. Not in 5.1
 
 Completion and service records (5.2), Maintenance screen (5.3), Dashboard (5.4), meter-based rules, bulk "apply category defaults to existing assets", notifications (Goal 9), BOM (BL-2).
+
+---
+
+## 12. Story 5.2: Service completion record
+
+**Status:** design, 28 Oct 2026. Waiting for the owner on S0 to S9. No migration yet.
+
+**Owner decisions already made (27 to 28 Oct 2026), not reopened:** cost behind its own field domain, masked like `coverage_values`; a Technician completes through `complete_obligation`, never open table writes; attachments reuse the 3.6 pattern with a second entity; outbox events now, alerts in Goal 9.
+
+**Owner review (CLAUDE.md §9):** `complete_obligation` and `undo_completion` (definer), the `service_record` RLS, the `service_record_view` masking, the `service_values` grid seed, and (5.2b) the storage policy change.
+
+**Screens:** Asset detail has a **Service history** tab (disabled today) and "Record completion" on the Obligations card. Maintenance has "Record completion" and a Completed tab (5.3). No dialog layout: the dialog follows the 4.3 coverage form style.
+
+### 12.1 `service_record` (public, 1.4 pattern, domain `service_record`, 1.2 seed)
+
+| Column | Type | Notes |
+|---|---|---|
+| id, tenant_id, std | | Standard, `unique (tenant_id, id)`, soft delete |
+| obligation_id | uuid not null | `(tenant_id, obligation_id) → obligation` |
+| asset_id | uuid not null | `(tenant_id, asset_id) → asset`. Copied from the obligation by the action, so history per asset needs no join |
+| done_on | date not null | [S3] Not after tenant today; at most 366 days back |
+| done_by_user_id | uuid null | [S1] Default the caller. Must be an active member of the tenant |
+| vendor_id | uuid null | [S1] Contractor (4.1 vendor, same tenant, active). `(tenant_id, vendor_id) → vendor` |
+| outcome | text null | [S6] `check in ('pass', 'fail')`. Null = not an inspection result |
+| certificate_expiry | date null | [S7] Optional, any type. Shown in history |
+| notes | text null | Max 2,000 |
+| cost_amount | numeric(19,4) null | `>= 0`. Domain `service_values`, masked [S8] |
+| cost_currency | char(3) null | ISO 4217 shape. Default tenant `currency_code` when an amount is given. `check (cost_amount is null or cost_currency is not null)` |
+| prev_last_done_date | date null | [S4] What `last_done_date` was before this record moved it. System only |
+| advanced | boolean not null | [S2] True when this record moved the obligation's dates. System only |
+
+- **No insert grant.** Rows come only from `complete_obligation`. Update grant: `done_by_user_id, vendor_id, outcome, certificate_expiry, notes, cost_amount, cost_currency, updated_by` (correction, [S4]). `done_on`, `obligation_id`, `asset_id`, `prev_*`, `advanced`, `deleted_at`: no grant (undo is the action).
+- **Select grant:** every column except `cost_amount, cost_currency` (as `coverage`). Reads with cost go through the view.
+- **Triggers:** `set_updated_at`, `audit_row('data')`, `check_service_record()` (vendor live and same tenant, user active member, a change of cost needs `service_values.update`: the 4.2 `check_coverage` rule).
+- **Policies:** select tenant + `service_record.view`; update tenant + `service_record.update` + `tenant_can_write()`; no insert, no delete policy (`revoke delete, truncate`). `tests.cross_tenant('public.service_record', ...)` (its insert step expects 42501, which the missing grant gives).
+- **`public.service_record_view`** (owner-run, like `coverage_view`): live rows, `cost_amount` and `cost_currency` as `case when (select private.has_permission('service_values', 'view')) then ... end`, plus `done_by_name` via `private.member_name()` and `vendor_name`.
+- **Indexes** (partial live, tenant first): `(tenant_id, asset_id, done_on desc, id)` for the tab; `(tenant_id, obligation_id, done_on desc, id)` for undo's "latest" lookup.
+- 6.1: one scope clause on `asset_id`, as `asset_attachment`.
+
+### 12.2 Domain `service_values` (new, as data)
+
+`security_domain ('service_values', 'service', 'field', 'Service costs')` `on conflict do nothing`, operations `view`, `update`. Grid [S8]: new `seed_starter_groups` plus backfill for existing tenants (as 3.1 and 3.6 did); the 1.6 grid test gets the cells.
+
+### 12.3 `public.complete_obligation(p_obligation_id, p_done_on, p_notes, p_cost, p_currency, p_outcome, p_vendor_id, p_done_by, p_certificate_expiry) returns uuid`
+
+Definer, `set search_path = ''`, every name schema-qualified. Returns the new record id.
+
+1. **Checks:** obligation in `current_tenant_id()`, live; `has_permission('obligation', 'complete')` [S5]; `tenant_can_write()`; `select ... for update` on the obligation (two people finishing at once queue; the second sees the first's dates). Refused when paused: obligation inactive, or the asset's system status `inactive` or `disposed` (the §5 rule read directly, not from `due_state`). `p_done_on` per S3. `p_cost` not null needs `service_values.update`, else refused (never silently dropped).
+2. **Insert** the record (`asset_id` from the obligation, `cost_currency` default tenant currency, `done_by_user_id` default `auth.uid()`).
+3. **Advance [S2]:** if `last_done_date is null or p_done_on >= last_done_date`: record gets `prev_last_done_date = last_done_date`, `advanced = true`; obligation gets `last_done_date = p_done_on`, `next_due_date = obligation_next_due(anchor, count, unit, first_due, last_done, next_due_date, p_done_on)` (O5). Else (back-dated before a later completion): history only, `advanced = false`, dates unchanged.
+4. **State in the same transaction:** the 5.1 statement trigger on `obligation` update already calls `refresh_obligation_state`, so the stored state is right before the call returns. No wait for cron.
+5. **Events, same transaction:** the audit triggers write the `service_record` insert and the `obligation` update audit rows and their outbox rows, as today. Plus one `obligation.completed` outbox event, payload `{asset_id, service_record_id, done_on, outcome, next_due_date, advanced}`. Cost is never in a payload.
+
+The action runs as owner, so the 5.1 column grants (`next_due_date` none, `last_done_date` insert only) stay as they are.
+
+### 12.4 Undo and correction [S4]
+
+- **Correct** (wrong note, cost, vendor, outcome): plain update of the record, `service_record.update` (+ `service_values.update` for cost). Audited. Dates do not move.
+- **Wrong date or wrong obligation:** undo, then record again.
+- **`public.undo_completion(p_service_record_id)`** (definer; `service_record.update`, `tenant_can_write()`, locks the obligation): soft-deletes the record. If it was `advanced`, it must be the latest live advanced record of that obligation (else refused: undo the later one first); then `last_done_date = prev_last_done_date` and `next_due_date` recomputed by the insert rule (`done_on` null), which also respects a rule edit made after the completion. Writes `obligation.completion_undone`. A non-advanced (back-dated) record is only soft-deleted.
+
+### 12.5 Reads
+
+- **`public.service_history(p_asset_id uuid, p_obligation_id uuid default null)`**: invoker, reads `service_record_view`, newest `done_on` first, with the obligation name. No paging: an asset has tens of records over years. EXPLAIN test on `(tenant_id, asset_id, done_on desc)`.
+- **5.3 Completed bucket:** tenant-wide, needs keyset paging and its own index. Designed in 5.3, not here.
+
+### 12.6 Attachments (5.2b if S0 a) [S9]
+
+- Path `<tenant>/service_record/<service_record_id>/<attachment_id>`. Same bucket, limits, 60 s signed URL, object first then row (Z6).
+- New table `service_record_attachment` (copy of `asset_attachment` with `service_record_id`). Permissions: view `service_record.view`, upload `service_record.create`, remove `service_record.update`. No new domain.
+- Storage: `can_upload_attachment` gets a second branch for `/service_record/` (live record in the tenant, `service_record.create`); `attachments_select` gets a second `exists` on `service_record_attachment`. `create or replace` in a new migration; the 3.6 one stays frozen. Tests on both entities: cross-tenant path, no permission, soft-deleted row, orphan, no update or delete; the asset branch still works.
+
+### 12.7 UI (5.2)
+
+- **Record completion dialog** (Obligations tab row action and the Overview card button, with `obligation.complete`; hidden on paused rows): done date (default tenant today, max today), outcome (inspection, calibration, certificate), done by me or contractor (vendor picker), certificate expiry (certificate type), notes, cost and currency (only with `service_values.update`). After save the row shows the new next due and state.
+- **Service history tab** (enable the disabled tab, `service_record.view`): date, obligation, outcome, done by or vendor, cost (only with `service_values.view`), notes. Edit and Undo (confirm) with `service_record.update`.
+- Obligations tab row: "Last done".
+- i18n, responsive, web tests (gating, masked cost, dialog defaults, undo confirm).
+
+### 12.8 Tests planned (`5_2_service_record.test.sql`)
+
+Permission steps (none, `obligation.view` only, `complete`, `service_record.update`, read-only tenant); `tests.cross_tenant('public.service_record', ...)`; no insert grant, no `done_on` update. Next due: completion anchor early, on time, late; fixed early, on time, late, missed several; back-dated before the latest (no move); undo latest (both anchors, prior null and set), undo not-latest refused, undo after a rule edit. State refreshed in the same call (overdue to scheduled); one `obligation.completed` per call, none on a refused call. Cost masked without `service_values.view`, refused without `service_values.update`. Paused, inactive asset, Disposed, deleted obligation, future date, more than 366 days back refused. Vendor of another tenant or inactive refused. EXPLAIN `service_history`. Tenancy guard green. Grid cells for `service_values`.
+
+### 12.9 DECIDE
+
+| # | Question | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| S0 | Split | **a)** 5.2: domain, table, view, two actions, dialog, Service history tab. **5.2b:** attachments (storage policy change, table, upload). **b)** All in one | a. Storage policies are owner review on their own (3.6 / 3.6b precedent); 5.2 alone is a full PR | None |
+| S1 | Done by | **a)** `done_by_user_id` (default me) plus optional `vendor_id` for contractor work. **b)** User only. **c)** Free text | a. AMC work is done by the vendor; reports by vendor for free. c cannot be reported | Medium once data exists |
+| S2 | Back-dated, out of order | **a)** Latest `done_on` wins: an older record is history only. **b)** Recompute from all live records each time | a. Same answer for the normal case, one row read; b replays O5 over history | Low (function body) |
+| S3 | Date limits | **a)** Not after today; at most 366 days back (catches a wrong year); older history via import (Goal 8). **b)** No lower limit. Fiscal-year lock: none in Phase 1 (3.1 locks only the fiscal year **start**; no period close exists) | a | Low (one check) |
+| S4 | Undo and correct | **a)** Correct by update; undo by action, latest advanced only, restores `prev_last_done_date`, recomputes. **b)** Undo any record, recompute from the rest. **c)** No undo, a correcting record only | a. Exact, small, audited. c leaves wrong next dues | Medium: b needs a replay |
+| S5 | Permission to complete | **a)** `obligation.complete` only (the action's domain, §7.8). **b)** Also `service_record.create` | a. One gate per action; the grid gives both to the same groups, so nobody changes. `service_record.complete` stays unused | Low |
+| S6 | Outcome | **a)** `pass`, `fail` or null; fail still advances (follow-up is Phase 2 incidents). **b)** Fail does not advance | a. A failed inspection still happened; b hides the real date | Low |
+| S7 | Certificate expiry | **a)** Stored and shown only. **b)** When given, sets `next_due_date` (overrides the rule) | a. One math path (O5). b later is one branch in the action | Low |
+| S8 | `service_values` grid | **a)** Tenant Admin, Plant Manager, Planner view + update; Technician none; Auditor view. **b)** Like `coverage_values` (Admin updates, Plant Manager views, Planner none) | a. Planners enter service invoices; Technicians do the work, not the money. Starter seed: owner review | Low (seed + backfill) |
+| S9 | Attachment table (5.2b) | **a)** New `service_record_attachment`. **b)** Generalise `asset_attachment` with an entity column | a. 3.6 is frozen on staging; its generated path and policies stay; b rewrites both | Medium |
+
+### 12.10 Build plan (after answers)
+
+1. `5_2_service_values_domain`: domain row, operations, `seed_starter_groups` plus backfill.
+2. `5_2_service_record`: table, grants, triggers, policies, indexes, `service_record_view`, `service_history`.
+3. `5_2_complete_obligation`: `complete_obligation`, `undo_completion`.
+
+pgTAP `5_2_service_record.test.sql`. Types. Web: dialog, Service history tab, "Last done".
+
+### 12.11 Not in 5.2
+
+Attachments (5.2b if S0 a), Maintenance screen and its Completed bucket (5.3), certificate expiry driving the due date (S7 b), failed-outcome follow-up (Phase 2), alerts (Goal 9).
