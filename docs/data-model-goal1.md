@@ -206,6 +206,7 @@ Grant matrix. The migration `1_6_starter_groups` and the test `1_6_starter_group
 | `coverage_values` | view, update | view | – | – | view |
 | `obligation` | view, create, update, complete | view, create, update, complete | view, create, update, complete | view, complete | view |
 | `service_record` | view, create, update, complete | view, create, update, complete | view, create, update, complete | view, create, update, complete | view |
+| `service_values` (5.2) | view, update | view, update | view, update | – | view |
 | `location_hierarchy` | view, manage | view, manage | view | view | view |
 | `category_config` | view, manage | view | view | view | view |
 | `excel_import` | run, review, commit | run, review, commit | run, review | – | – |

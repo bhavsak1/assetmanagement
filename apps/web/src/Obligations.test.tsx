@@ -168,7 +168,8 @@ test('obligations tab: read-only without permission', async () => {
   expect(container.querySelector('.tag.status.error')?.textContent).toBe(o.states.overdue)
   expect(container.textContent).not.toContain(o.add)
   expect(container.textContent).not.toContain(o.pause)
-  expect(button(o.recordCompletion).disabled).toBe(true)
+  // No obligation.complete: no Record completion (5.2).
+  expect(container.textContent).not.toContain(o.recordCompletion)
 })
 
 test('obligations tab: empty state, add prefills first due and sends no derived columns, pause', async () => {

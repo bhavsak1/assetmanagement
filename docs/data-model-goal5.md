@@ -170,7 +170,15 @@ Completion and service records (5.2), Maintenance screen (5.3), Dashboard (5.4),
 
 ## 12. Story 5.2: Service completion record
 
-**Status:** design, 28 Oct 2026. Waiting for the owner on S0 to S9. No migration yet.
+**Status:** in review, 28 Oct 2026. The owner accepted every lean, S0 to S9, on 28 Oct 2026. 5.2 builds §12.1 to §12.5 and §12.7; attachments (§12.6) are story 5.2b. Built in migrations `5_2_service_values_domain`, `5_2_service_record`, `5_2_complete_obligation`; tests in `5_2_service_record.test.sql` (91), web `Service.tsx`.
+
+**As built (differences from the design below):**
+- **Undo works on any live record**, not only the latest advanced one. Both actions keep one invariant: `last_done_date` = the later of the baseline (the value before any record) and the latest live record's `done_on`. So undoing an older record changes nothing, undoing the latest puts the right date back, and no "undo the later one first" refusal is needed. Still no replay (S4 a, not b).
+- The baseline is the least `prev_last_done_date` over the obligation's records (null if any is null), not "the first record by `created_at`": two completions in one transaction share `created_at`.
+- `service_record_view` masks cost only. `service_history` (invoker) adds the obligation name, `done_by_name` (`member_name`) and `vendor_name`, so the vendor name shows only with `vendor_core.view`.
+- The `service_record` audit row and its outbox event carry the whole row, cost included, as every audited table does (coverage contract value too). Only `obligation.completed` and `obligation.completion_undone` are cost-free by design.
+- A correction sends only the fields the form shows, so a user without the vendor list or cost rights never clears those values.
+- Record completion is a per-row button on the Obligations tab (not on paused rows); the Overview card's button opens that tab.
 
 **Owner decisions already made (27 to 28 Oct 2026), not reopened:** cost behind its own field domain, masked like `coverage_values`; a Technician completes through `complete_obligation`, never open table writes; attachments reuse the 3.6 pattern with a second entity; outbox events now, alerts in Goal 9.
 

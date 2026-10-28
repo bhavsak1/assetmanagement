@@ -655,6 +655,74 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"service_record": {
+                  Row: {
+                    "advanced": boolean,"asset_id": string,"certificate_expiry": string | null,"cost_amount": number | null,"cost_currency": string | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"done_by_user_id": string | null,"done_on": string,"id": string,"notes": string | null,"obligation_id": string,"outcome": string | null,"prev_last_done_date": string | null,"tenant_id": string,"updated_at": string,"updated_by": string | null,"vendor_id": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "advanced": boolean,"asset_id": string,"certificate_expiry"?: string | null,"cost_amount"?: number | null,"cost_currency"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"done_by_user_id"?: string | null,"done_on": string,"id"?: string,"notes"?: string | null,"obligation_id": string,"outcome"?: string | null,"prev_last_done_date"?: string | null,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null,"vendor_id"?: string | null
+                  }
+                  Update: {
+                    "advanced"?: boolean,"asset_id"?: string,"certificate_expiry"?: string | null,"cost_amount"?: number | null,"cost_currency"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"done_by_user_id"?: string | null,"done_on"?: string,"id"?: string,"notes"?: string | null,"obligation_id"?: string,"outcome"?: string | null,"prev_last_done_date"?: string | null,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null,"vendor_id"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "service_record_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "service_record_done_by_user_id_fkey"
+      columns: ["done_by_user_id"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "service_record_tenant_id_asset_id_fkey"
+      columns: ["tenant_id","asset_id"]
+isOneToOne: false
+      referencedRelation: "asset"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "service_record_tenant_id_asset_id_fkey"
+      columns: ["tenant_id","asset_id"]
+isOneToOne: false
+      referencedRelation: "asset_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "service_record_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "service_record_tenant_id_obligation_id_fkey"
+      columns: ["tenant_id","obligation_id"]
+isOneToOne: false
+      referencedRelation: "obligation"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "service_record_tenant_id_vendor_id_fkey"
+      columns: ["tenant_id","vendor_id"]
+isOneToOne: false
+      referencedRelation: "vendor"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "service_record_tenant_id_vendor_id_fkey"
+      columns: ["tenant_id","vendor_id"]
+isOneToOne: false
+      referencedRelation: "vendor_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "service_record_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"tenant": {
                   Row: {
                     "asset_tag_pattern": string,"coverage_expiring_days": number,"coverage_refresh_after": string | null,"created_at": string,"created_by": string | null,"currency_code": string,"date_format": string,"deleted_at": string | null,"fiscal_year_start_month": number,"id": string,"locale": string,"name": string,"obligation_due_soon_days": number,"obligation_refresh_after": string | null,"required_asset_fields": (string)[],"slug": string,"status": string,"time_zone": string,"updated_at": string,"updated_by": string | null
@@ -1050,6 +1118,74 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"service_record_view": {
+                  Row: {
+                    "advanced": boolean | null,"asset_id": string | null,"certificate_expiry": string | null,"cost_amount": number | null,"cost_currency": string | null,"created_at": string | null,"created_by": string | null,"done_by_user_id": string | null,"done_on": string | null,"id": string | null,"notes": string | null,"obligation_id": string | null,"outcome": string | null,"tenant_id": string | null,"updated_at": string | null,"updated_by": string | null,"vendor_id": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                           "advanced"?: boolean | null,"asset_id"?: string | null,"certificate_expiry"?: string | null,"cost_amount"?: never,"cost_currency"?: never,"created_at"?: string | null,"created_by"?: string | null,"done_by_user_id"?: string | null,"done_on"?: string | null,"id"?: string | null,"notes"?: string | null,"obligation_id"?: string | null,"outcome"?: string | null,"tenant_id"?: string | null,"updated_at"?: string | null,"updated_by"?: string | null,"vendor_id"?: string | null
+                         }
+                        Update: {
+                           "advanced"?: boolean | null,"asset_id"?: string | null,"certificate_expiry"?: string | null,"cost_amount"?: never,"cost_currency"?: never,"created_at"?: string | null,"created_by"?: string | null,"done_by_user_id"?: string | null,"done_on"?: string | null,"id"?: string | null,"notes"?: string | null,"obligation_id"?: string | null,"outcome"?: string | null,"tenant_id"?: string | null,"updated_at"?: string | null,"updated_by"?: string | null,"vendor_id"?: string | null
+                         }
+                        Relationships: [
+                    {
+      foreignKeyName: "service_record_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "service_record_done_by_user_id_fkey"
+      columns: ["done_by_user_id"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "service_record_tenant_id_asset_id_fkey"
+      columns: ["tenant_id","asset_id"]
+isOneToOne: false
+      referencedRelation: "asset"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "service_record_tenant_id_asset_id_fkey"
+      columns: ["tenant_id","asset_id"]
+isOneToOne: false
+      referencedRelation: "asset_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "service_record_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "service_record_tenant_id_obligation_id_fkey"
+      columns: ["tenant_id","obligation_id"]
+isOneToOne: false
+      referencedRelation: "obligation"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "service_record_tenant_id_vendor_id_fkey"
+      columns: ["tenant_id","vendor_id"]
+isOneToOne: false
+      referencedRelation: "vendor"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "service_record_tenant_id_vendor_id_fkey"
+      columns: ["tenant_id","vendor_id"]
+isOneToOne: false
+      referencedRelation: "vendor_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "service_record_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"vendor_view": {
                   Row: {
                     "address": string | null,"code": string | null,"created_at": string | null,"created_by": string | null,"custom_values": Json | null,"email": string | null,"id": string | null,"is_active": boolean | null,"name": string | null,"notes": string | null,"phone": string | null,"roles": (string)[] | null,"tenant_id": string | null,"updated_at": string | null,"updated_by": string | null,"website": string | null
@@ -1119,6 +1255,9 @@ isOneToOne: false
                            } |
 { Args: { "p_asset_id": string,"p_reason"?: string,"p_status_id": string }; Returns: undefined
                            },
+"complete_obligation":
+{ Args: { "p_certificate_expiry"?: string,"p_cost"?: number,"p_currency"?: string,"p_done_by"?: string,"p_done_on": string,"p_notes"?: string,"p_obligation_id": string,"p_outcome"?: string,"p_vendor_id"?: string }; Returns: string
+                           },
 "count_assets":
 { Args: { "p_category_id"?: string,"p_coverage"?: string,"p_location_id"?: string,"p_status"?: string,"p_status_id"?: string,"p_term"?: string,"p_vendor_id"?: string }; Returns: number
                            },
@@ -1178,11 +1317,19 @@ isOneToOne: false
 "select_tenant":
 { Args: { "p_tenant_id": string }; Returns: undefined
                            },
+"service_history":
+{ Args: { "p_asset_id": string,"p_obligation_id"?: string }; Returns: {
+              "advanced": boolean,"certificate_expiry": string,"cost_amount": number,"cost_currency": string,"done_by_name": string,"done_by_user_id": string,"done_on": string,"id": string,"notes": string,"obligation_id": string,"obligation_name": string,"outcome": string,"vendor_id": string,"vendor_name": string
+            }[]
+                           },
 "set_asset_tag_pattern":
 { Args: { "p_pattern": string }; Returns: undefined
                            },
 "transfer_asset":
 { Args: { "p_asset_id": string,"p_reason": string,"p_to_location_id": string }; Returns: undefined
+                           },
+"undo_completion":
+{ Args: { "p_service_record_id": string }; Returns: undefined
                            },
 "update_tenant_settings":
 { Args: { "p_coverage_expiring_days"?: number,"p_currency_code": string,"p_date_format": string,"p_fiscal_year_start_month": number,"p_locale": string,"p_obligation_due_soon_days"?: number,"p_required_asset_fields": (string)[],"p_time_zone": string }; Returns: undefined

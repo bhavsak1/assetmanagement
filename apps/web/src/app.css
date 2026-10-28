@@ -517,6 +517,16 @@ fieldset.set .check {
   white-space: nowrap;
 }
 
+/* 5.2: the Overview card's Record completion button, full width as the screens. Notes may wrap. */
+.btn.block {
+  width: 100%;
+  margin-top: var(--space-3);
+}
+
+.service td:not(:nth-child(6)) {
+  white-space: nowrap;
+}
+
 /* Phone width: sidebar becomes a scrolling row above the page. */
 @media (max-width: 767px) {
   .app {

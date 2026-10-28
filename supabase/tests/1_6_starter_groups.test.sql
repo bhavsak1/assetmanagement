@@ -19,6 +19,7 @@ create temp table expected (domain_code, tenant_admin, plant_manager, planner, t
   ('coverage_values',    '{view,update}',                 '{view}',                         '{}',                             '{}',                             '{view}'),
   ('obligation',         '{view,create,update,complete}', '{view,create,update,complete}',  '{view,create,update,complete}',  '{view,complete}',                '{view}'),
   ('service_record',     '{view,create,update,complete}', '{view,create,update,complete}',  '{view,create,update,complete}',  '{view,create,update,complete}',  '{view}'),
+  ('service_values',     '{view,update}',                 '{view,update}',                  '{view,update}',                  '{}',                             '{view}'),
   ('location_hierarchy', '{view,manage}',                 '{view,manage}',                  '{view}',                         '{view}',                         '{view}'),
   ('category_config',    '{view,manage}',                 '{view}',                         '{view}',                         '{view}',                         '{view}'),
   ('excel_import',       '{run,review,commit}',           '{run,review,commit}',            '{run,review}',                   '{}',                             '{}'),
@@ -155,6 +156,8 @@ select a.tenant_id, v.id, a.id from public.asset a join public.vendor v on v.ten
 where a.name in ('a-row', 'b-row');
 insert into public.obligation (tenant_id, asset_id, name, obligation_type, interval_count, interval_unit, anchor, first_due_date)
 select a.tenant_id, a.id, 'row', 'service', 3, 'month', 'completion', '2026-12-31' from public.asset a where a.name in ('a-row', 'b-row');
+insert into public.service_record (tenant_id, obligation_id, asset_id, done_on, advanced)
+select o.tenant_id, o.id, o.asset_id, '2026-10-01', true from public.obligation o where o.name = 'row';
 select is(array(select name from tenant_table where pg_temp.count_rows(name, $$tenant_id = '00000000-0000-0000-0000-00000000000b'$$) = 0 order by 1),
           '{}', 'every public tenant_id table holds tenant B rows to hide');
 -- One test per tenant A user, each acting as that user over every table. Plain queries, so RLS decides.
