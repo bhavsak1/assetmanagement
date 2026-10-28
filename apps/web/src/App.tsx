@@ -7,6 +7,7 @@ import { AssetLabelPage, ScanPage } from './AssetLabel'
 import { AssetsPage } from './Assets'
 import { CategoriesPage } from './Categories'
 import { CoveragePage } from './Coverage'
+import { DashboardPage } from './Dashboard'
 import { LocationsPage } from './Locations'
 import { MaintenancePage } from './Maintenance'
 import { SettingsPage } from './Settings'
@@ -326,9 +327,10 @@ export function App() {
       <Route element={session ? signedIn : <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />}>
         {navGroups.flatMap(({ items }) =>
           items
-            .filter((key) => key !== 'assets' && key !== 'maintenance' && key !== 'categories' && key !== 'locations' && key !== 'settings' && key !== 'vendors' && key !== 'coverage')
+            .filter((key) => key !== 'dashboard' && key !== 'assets' && key !== 'maintenance' && key !== 'categories' && key !== 'locations' && key !== 'settings' && key !== 'vendors' && key !== 'coverage')
             .map((key) => <Route key={key} path={`/${key}`} element={<EmptyPage page={key} />} />),
         )}
+        <Route path="/dashboard" element={<DashboardPage tenantId={tenantId ?? ''} can={can} />} />
         <Route
           path="/assets"
           element={

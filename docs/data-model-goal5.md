@@ -288,7 +288,7 @@ Attachments (5.2b if S0 a), Maintenance screen and its Completed bucket (5.3), c
 
 ## 13. Story 5.3: Maintenance screen
 
-**Status:** in review, 28 Oct 2026. The owner accepted every lean, M1 to M7, on 28 Oct 2026. Built in migrations `5_3_service_record_done_idx` and `5_3_maintenance_list`; tests in `5_3_maintenance.test.sql` (49); web `Maintenance.tsx` (10 tests).
+**Status:** done, 28 Oct 2026 (accepted by the owner). The owner accepted every lean, M1 to M7, on 28 Oct 2026. Built in migrations `5_3_service_record_done_idx` and `5_3_maintenance_list`; tests in `5_3_maintenance.test.sql` (49); web `Maintenance.tsx` (10 tests).
 
 **As built (differences from the design below):**
 - **Asset filters are resolved to literals.** `private.maintenance_where` resolves the location and category subtree ids and the search ids first and writes them in as `= any ('{...}'::uuid[])`, so the planner knows how selective the filter is. The set form (an InitPlan) hid that, so the planner always walked the bucket index. With one small location, that took 1.7 s at 200k assets. A search term that matches more than 1,000 assets keeps the set form (marked as a shortcut). Vendor and coverage still use `asset_list_where`. Its column equality already has statistics.
@@ -414,3 +414,79 @@ Phone width: rows become cards (the Assets list pattern).
 ### 13.10 Not in 5.3
 
 Export, Paused tab, saved views (M7 a), header picker (M6 a), AMC-vendor filter (M3 b), Edit and Undo on the Completed tab, dashboard (5.4).
+
+## 14. Story 5.4: Dashboard
+
+**Status:** in review, 28 Oct 2026. No choice was costly to reverse, so the build took every lean below (D1 to D6). The owner can still change any of them. Built in migration `5_4_location_asset_counts`; tests in `5_4_dashboard.test.sql` (9); web `Dashboard.tsx` (6 tests, plus one each in Assets and Maintenance for the URL params).
+
+**Screen (`Dashboard` in the screens file):** title "Dashboard"; buttons Export and Add asset; four tiles (Total assets, Due in 30 days, Overdue service, Coverage expiring (60d)); card "Upcoming and overdue service" (Asset, Location, Due, Status, View all); card "Assets by location" (one bar per location); an "Ask" AI card. Route `/dashboard`, already the landing page after sign-in (0.3).
+
+**Mostly reuse.** Each tile is an existing call. Only "Assets by location" needs a new read.
+
+| Part | Source | Needs |
+|---|---|---|
+| Total assets | `count_assets()` (3.2, capped at 10,001) | `asset_core.view` |
+| Due in 30 days | `maintenance_counts().next_30` (5.3) | `obligation.view` |
+| Overdue service | `maintenance_counts().overdue` | `obligation.view` |
+| Coverage expiring (N d) | `count_assets(p_coverage => 'expiring')` (4.4); N is `tenant.coverage_expiring_days` | `coverage_contract.view` |
+| Upcoming list | `list_obligations('overdue' / 'due_soon' / 'scheduled', p_limit => 5)`, the first 5 in that order; Record completion is the 5.2 dialog | `obligation.view`; button `obligation.complete` |
+| Assets by location | **new** `location_asset_counts()` | `asset_core.view` |
+
+Every count also needs `asset_core.view`, because each read joins `asset_view`. A tile shows only with its permissions. Masked values stay masked: the dashboard shows no money.
+
+### 14.1 `public.location_asset_counts()` [D3]
+
+Returns one row per location that holds assets: `location_id` (null = no location), `assets` (live assets), `overdue` (overdue obligations on them). **Invoker, `language sql`, stable.** It reads `asset_view` (tenant, `asset_core.view`, live, 6.1 scope later) and `obligation` under its RLS, so it adds no check of its own and needs no owner review. `overdue` is 0 without `obligation.view`. The counts are **exact**: one pass over the tenant's assets, grouped by `location_id`. The web rolls them up to the shown level with the location tree it already loads (`lineage`, 2.4). The private closure table is not readable by `authenticated`, so the roll-up is not done in SQL.
+
+**Shown level:** the top level, but while it holds only one location, step down to its children (a tenant with one "India" root sees its plants). Labels use the Maintenance form "Plant 1 · Pune". Bar width = count / largest count. Each name links to the Assets list for that location. Assets with no location show as "No location", without a link.
+
+### 14.2 Links (tiles click through) [D4]
+
+Neither list read filters from the URL until now. Both now read them once, on load:
+- Assets: `?status=`, `?coverage=` (validated like a saved view) and `?location_id=` (uuid shape).
+- Maintenance: `?tab=` (a tab the user can see).
+
+| Tile | Link |
+|---|---|
+| Total assets | `/assets` |
+| Due in 30 days | `/maintenance?tab=due_soon` (see D4) |
+| Overdue service | `/maintenance?tab=overdue` |
+| Coverage expiring | `/assets?coverage=expiring` |
+| Location bar | `/assets?location_id=<id>` |
+| View all | `/maintenance` |
+
+### 14.3 Speed [D5]
+
+The page makes six calls at once (both counts, three five-row list calls, the location counts) plus the lists it already loads (tenant, locations). Bench, local Docker, 200k assets, 400k obligations (20k overdue), 4 roots with 5 children each:
+
+| Call | ms |
+|---|---|
+| `count_assets()` | 14 to 27 |
+| `count_assets(p_coverage => 'expiring')` | 3 |
+| `maintenance_counts()` | 300 to 750 (the slowest; it computes six capped counts) |
+| `list_obligations(bucket, p_limit => 5)`, each | 5 to 9 |
+| `location_asset_counts()` | about 210 (assets 30, overdue 180) |
+| Per-root `count_assets(p_location_id)` (the rejected D3 a) | 13 to 73 each, capped |
+| Per-root `maintenance_counts(p_location_id)` (for overdue per root) | 200 to 300 each |
+
+The calls run in parallel, so the page waits for the slowest one (`maintenance_counts`), not the sum. One combined RPC would still wait for the same counts and would copy every check, so it saves nothing.
+
+### 14.4 DECIDE (leans taken)
+
+| # | Question | Options | Lean taken | Cost to reverse |
+|---|---|---|---|---|
+| D1 | Tiles | **a)** The four on the screen. **b)** Also totals by system status | a. Status counts per location are 5.5 | None |
+| D2 | Upcoming list | **a)** First 5 of overdue, due soon, scheduled (three `list_obligations` calls), Record completion per row. **b)** A new merged list function | a. No SQL; each call reads 5 rows from its index | None |
+| D3 | Assets by location | **a)** One `count_assets(p_location_id)` per shown location: no SQL, but N calls, capped (bars stop being comparable above 10,000), and no overdue count. **b)** One invoker grouped count `location_asset_counts()`, roll-up in the web | b. One call, exact, invoker. 5.5 can reuse it | Low: one function |
+| D4 | "Due in 30 days" link | **a)** The Due soon tab: its rows come first in date order, but the tab follows the tenant's N, not 30. **b)** A new `p_due_by` filter on `list_obligations` | a. The 5.3 Next 30 days tile has no link either | Low |
+| D5 | Calls | **a)** Separate calls, in parallel. **b)** One combined RPC | a (§14.3) | None |
+| D6 | Header and AI card | Export: no story (as 3.2 and 5.3), not built. Add asset: link to `/assets/new` with `asset_core.create`. The AI "Ask" card: not built. No AI feature exists yet (CLAUDE.md §10.2); it comes with Goal 10, behind the AI add-on (§11) | — | None |
+
+### 14.5 Tests
+
+- **pgTAP `5_4_dashboard.test.sql`:** no permission: nothing; `asset_core.view` only: assets counted, overdue 0; with `obligation.view`: overdue counted; deleted asset, deleted obligation and a not-overdue state not counted; null location row; the sums equal `count_assets()` and `maintenance_counts().overdue`, and each location's count equals `count_assets(p_location_id)` for a leaf; cross-tenant (tenant B rows never counted, B's user sees only B). Tenancy guard green (no new table).
+- **Web `Dashboard.test.tsx`:** tile values and "10,000+", tile links, tiles hidden without permission, upcoming list order and Record completion refresh, by-location roll-up and links, empty states. `Assets` and `Maintenance` tests for the URL params.
+
+### 14.6 Not in 5.4
+
+Export, the AI card, totals by status (D1 a), an exact 30-day link (D4 b), a chart library (the bars are plain CSS, as on the screen).

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { daysBetween, groups, tenantToday, useTenant } from './Coverage'
 import { t } from './i18n'
 import { supabase } from './supabase'
@@ -126,10 +126,17 @@ export function savedFilters(f: Filters): Record<string, string> {
   return Object.fromEntries(Object.entries({ ...f, q: f.q.trim() }).filter(([, v]) => v))
 }
 
+// Filters from a link (5.4 Dashboard), read once on load: checked like a saved view, a location id by its shape.
+export function urlFilters(params: URLSearchParams): Filters {
+  const s = Object.fromEntries(params)
+  return { ...viewFilters(s, [], []), location_id: /^[0-9a-f-]{36}$/i.test(s.location_id ?? '') ? (s.location_id ?? '') : '' }
+}
+
 const isSort = (v: string): v is Sort => v === 'name' || v === 'tag' || v === 'updated'
 
 export function AssetsPage({ tenantId, canSaveViews, canCreate, canCoverage }: { tenantId: string; canSaveViews: boolean; canCreate: boolean; canCoverage: boolean }) {
-  const [filters, setFilters] = useState<Filters>(emptyFilters)
+  const [params] = useSearchParams()
+  const [filters, setFilters] = useState<Filters>(() => urlFilters(params))
   // Filter panel (4.4): closed by default, remembered per browser. A phone never reopens it as a sheet on load.
   const [open, setOpen] = useState(() => readOpen() && !isPhone())
   const toggleRef = useRef<HTMLButtonElement>(null)
@@ -138,7 +145,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate, canCoverage }: {
   const tenant = useTenant()
   const [sort, setSort] = useState<Sort>('name')
   // The search box applies after a short pause, not on every key.
-  const [typed, setTyped] = useState('')
+  const [typed, setTyped] = useState(filters.q)
   // Cursors of the pages before the current one, so Previous goes back without offsets.
   const [pages, setPages] = useState<Cursor[]>([])
   const [after, setAfter] = useState<Cursor>()

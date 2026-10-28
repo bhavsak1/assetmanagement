@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { coverageValues, CoverageTag, TreeSelect, type Cursor } from './Assets'
 import { AttachmentsTab } from './Attachments'
 import { daysBetween, showDate, tenantToday, useTenant } from './Coverage'
@@ -71,12 +71,21 @@ export function ageText(from: string | null | undefined, today: string): string 
   return (y ? m.age.years.replace('{y}', String(y)) : m.age.months).replace('{m}', String(months % 12))
 }
 
+// "Plant 1 · Pune": the location and its parent, from the loaded tree.
+export function placeName(list: Option[], id: string | null): string {
+  const l = list.find((r) => r.id === id)
+  const parent = l && list.find((r) => r.id === l.parent_id)
+  return l ? (parent ? `${l.name} · ${parent.name}` : l.name) : '—'
+}
+
 const money = (v: number | null, c: string | null) => (v == null ? '—' : `${Number(v).toLocaleString()} ${c ?? ''}`)
 
 export function MaintenancePage({ tenantId, can }: { tenantId: string; can: Can }) {
   const tenant = useTenant()
   const tabs = buckets.filter((b) => (b === 'completed' ? can('service_record', 'view') : can('obligation', 'view')))
-  const [picked, setPicked] = useState<Bucket>()
+  // ?tab= from a Dashboard link (5.4); a tab the user cannot see is ignored below.
+  const [params] = useSearchParams()
+  const [picked, setPicked] = useState(() => (params.get('tab') ?? undefined) as Bucket | undefined)
   const tab = picked && tabs.includes(picked) ? picked : tabs[0]
   const [filters, setFilters] = useState<Filters>(emptyFilters)
   const [typed, setTyped] = useState('')
@@ -184,11 +193,7 @@ export function MaintenancePage({ tenantId, can }: { tenantId: string; can: Can 
   const num = (n?: number) => (n === undefined ? '…' : n > 10000 ? t.assets.manyCount : n.toLocaleString())
   const today = tenant ? tenantToday(tenant.time_zone) : ''
   const nameOf = (list: Option[], id: string | null) => list.find((r) => r.id === id)
-  const place = (id: string | null) => {
-    const l = nameOf(locations, id)
-    const parent = l && nameOf(locations, l.parent_id)
-    return l ? (parent ? `${l.name} · ${parent.name}` : l.name) : '—'
-  }
+  const place = (id: string | null) => placeName(locations, id)
   const types = t.obligations.types as Record<string, string>
   const chips = (
     [
