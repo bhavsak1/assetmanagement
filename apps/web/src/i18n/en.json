@@ -178,6 +178,23 @@
       "addLabel": "{role} to add",
       "add": "Add",
       "remove": "Remove"
+    },
+    "defaults": {
+      "title": "Defaults for new assets",
+      "hint": "Changes apply to new assets only. Existing assets keep their own obligations.",
+      "warranty": "Default warranty term",
+      "inheritWarranty": "Inherit",
+      "noWarranty": "None",
+      "inheritedFrom": "Inherited from {name}: {value}",
+      "inheritedNone": "Nothing set above this category.",
+      "obligations": "Default obligations",
+      "inherit": "Inherit from parent",
+      "own": "Use own defaults",
+      "addRule": "Add rule",
+      "remove": "Remove",
+      "noRules": "No default obligations.",
+      "ruleLabel": "Rule {n}",
+      "rulesFrom": "Inherited from {name}."
     }
   },
   "locations": {
@@ -714,5 +731,80 @@
       "error": "Could not load the history. Try again."
     },
     "formerVendor": "Former vendor"
+  },
+  "obligations": {
+    "title": "Obligations",
+    "add": "Add obligation",
+    "edit": "Edit obligation",
+    "none": "No obligations for this asset yet.",
+    "recordCompletion": "Record completion",
+    "loading": "Loading obligations…",
+    "col": {
+      "name": "Obligation",
+      "rule": "Rule",
+      "lastDone": "Last done",
+      "nextDue": "Next due",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "types": {
+      "service": "Service",
+      "calibration": "Calibration",
+      "inspection": "Inspection",
+      "certificate": "Certificate"
+    },
+    "units": {
+      "day": "day",
+      "week": "week",
+      "month": "month",
+      "year": "year"
+    },
+    "unitsMany": {
+      "day": "days",
+      "week": "weeks",
+      "month": "months",
+      "year": "years"
+    },
+    "anchors": {
+      "completion": "from last completion",
+      "fixed": "fixed dates"
+    },
+    "everyOne": "Every {unit}",
+    "every": "Every {n} {unit}",
+    "states": {
+      "scheduled": "Scheduled",
+      "due_soon": "Due soon",
+      "overdue": "Overdue",
+      "paused": "Paused"
+    },
+    "name": "Name",
+    "type": "Type",
+    "interval": "Every",
+    "unit": "Unit",
+    "anchor": "Next due counts",
+    "firstDue": "First due",
+    "lastDone": "Last done (before Assetly)",
+    "lastDoneLocked": "Changes only by recording a completion.",
+    "notes": "Notes",
+    "firstDueHint": "Suggested from the in-service or purchase date, the first one from today.",
+    "pause": "Pause",
+    "resume": "Resume",
+    "remove": "Remove",
+    "removeConfirm": "Remove {name} from this asset?",
+    "cancel": "Cancel",
+    "save": "Save",
+    "errors": {
+      "name": "Enter a name of 1 to 80 characters.",
+      "type": "Pick a type.",
+      "interval": "Every must be a whole number from 1 to 999.",
+      "unit": "Pick a unit.",
+      "anchor": "Pick how the next due counts.",
+      "firstDue": "Enter the first due date.",
+      "duplicate": "Names must be unique.",
+      "noPermission": "You do not have permission to do that.",
+      "invalid": "Some values are not valid.",
+      "generic": "Could not save. Try again.",
+      "load": "Could not load obligations."
+    }
   }
 }
