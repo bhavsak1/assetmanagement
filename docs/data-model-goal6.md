@@ -471,7 +471,14 @@ Fixed, not a choice: activation is one transaction; rebuild, version bump, row a
 
 # Story 6.5: "Why can this user see this?" explainer and access review report (design)
 
-**Status:** design, waiting for the owner (DECIDE E1 to E9 in §37).
+**Status:** in review, 1 Nov 2026. The owner accepted every lean, E1 to E9, on 1 Nov 2026. Built in migration `6_5_explain_access`; tests in `6_5_explain_access.test.sql` (29); UI `apps/web/src/Security.tsx` (Vitest `Security.test.tsx`, 15).
+
+**As built (differences from the design below):**
+- `group_deleted` is not an outcome: a deleted group's assignments are left out (they grant nothing and the screen does not list them).
+- An asset id is checked against the caller's `asset_view` for every domain, not only scoped ones, so the rule is the same everywhere.
+- The explainer's asset field is a tag box (looked up in `asset_view`), not a search picker; no picker component exists to reuse.
+- The sensitive-domain list is read from `security_domain.kind = 'field'`, not hard-coded.
+- CSV cells starting with `= + - @` get a leading quote, so a spreadsheet does not run a group or member name as a formula.
 
 **Goal:** a security admin or auditor answers two questions with no SQL. (1) For one user, a domain and operation, and optionally one asset: does the user have access, and which assignment, group, policy and scope profile gives or blocks it? (2) Who holds which groups and scopes, filtered by a sensitive domain, as a file to hand to an auditor (security-model.md §3, §9).
 

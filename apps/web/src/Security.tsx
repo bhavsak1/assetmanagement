@@ -5,7 +5,7 @@ import { supabase } from './supabase'
 import type { Database, Tables } from './types/database'
 
 type Group = Pick<Tables<'security_group'>, 'id' | 'code' | 'name' | 'group_type'>
-type Domain = Pick<Tables<'security_domain'>, 'id' | 'code' | 'description'> & { domain_operation: Pick<Tables<'domain_operation'>, 'id' | 'code' | 'sort_order'>[] }
+type Domain = Pick<Tables<'security_domain'>, 'id' | 'code' | 'description' | 'kind'> & { domain_operation: Pick<Tables<'domain_operation'>, 'id' | 'code' | 'sort_order'>[] }
 type Assignment = Pick<Tables<'user_group_assignment'>, 'id' | 'user_id' | 'security_group_id' | 'scope_profile_id' | 'effective_from' | 'effective_to'>
 type Member = { user_id: string; display_name: string; email: string; status: string }
 type Profile = Pick<Tables<'scope_profile'>, 'id' | 'name'>
@@ -14,11 +14,12 @@ type Node = { id: string; parent_id: string | null; name: string }
 type ChangeSet = Pick<Tables<'policy_change_set'>, 'id' | 'status' | 'created_by' | 'activated_by' | 'activated_at' | 'created_at'>
 type Item = Pick<Tables<'policy_change_set_item'>, 'policy_change_set_id' | 'security_group_id' | 'operation_ids'>
 type Diff = Database['public']['Functions']['change_set_diff']['Returns'][number]
+type Explained = Database['public']['Functions']['explain_access']['Returns'][number]
 type DbError = { code?: string; message?: string }
 type Write = PromiseLike<{ data?: unknown; error: DbError | null }>
 
 const s = t.security
-const tabs = ['groups', 'assignments', 'profiles', 'changes'] as const
+const tabs = ['groups', 'assignments', 'profiles', 'review', 'changes'] as const
 type Tab = (typeof tabs)[number]
 const label = (map: Record<string, string>, code: string, fallback?: string) => map[code] ?? fallback ?? code
 // Domains in the order of the label file (the starter grid's order); a domain added later goes last.
@@ -63,6 +64,7 @@ export function SecurityPage({ tenantId, canView, canManage }: { tenantId: strin
   const [diff, setDiff] = useState<Diff[]>([])
   const [error, setError] = useState<string>()
   const [reload, setReload] = useState(0)
+  const [explaining, setExplaining] = useState(false)
   const draft = sets.find((x) => x.status === 'draft')
 
   useEffect(() => {
@@ -70,7 +72,7 @@ export function SecurityPage({ tenantId, canView, canManage }: { tenantId: strin
     let live = true
     void Promise.all([
       supabase.from('security_group').select('id, code, name, group_type').is('deleted_at', null).order('name'),
-      supabase.from('security_domain').select('id, code, description, domain_operation (id, code, sort_order)'),
+      supabase.from('security_domain').select('id, code, description, kind, domain_operation (id, code, sort_order)'),
       supabase.from('user_group_assignment').select('id, user_id, security_group_id, scope_profile_id, effective_from, effective_to').is('deleted_at', null).order('effective_from'),
       supabase.rpc('security_members'),
       supabase.from('scope_profile').select('id, name').is('deleted_at', null).order('name'),
@@ -133,6 +135,9 @@ export function SecurityPage({ tenantId, canView, canManage }: { tenantId: strin
           <span className="muted">{s.subtitle}</span>
         </div>
         <div className="spacer" />
+        <button className="btn" type="button" aria-expanded={explaining} onClick={() => setExplaining((x) => !x)}>
+          {s.explain.open}
+        </button>
         {canManage && diff.length > 0 && (
           <button className="btn btn-main" type="button" onClick={() => setTab('changes')}>
             {s.changes.review}
@@ -149,6 +154,7 @@ export function SecurityPage({ tenantId, canView, canManage }: { tenantId: strin
           {error}
         </p>
       )}
+      {explaining && <Explain members={members} domains={domains} onClose={() => setExplaining(false)} />}
       <div className="tabs" role="tablist">
         {tabs.map((k) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
@@ -163,6 +169,7 @@ export function SecurityPage({ tenantId, canView, canManage }: { tenantId: strin
       {tab === 'profiles' && (
         <Profiles tenantId={tenantId} profiles={profiles} rules={rules} assignments={assignments} locations={locations} categories={categories} canManage={canManage} run={run} />
       )}
+      {tab === 'review' && <AccessReview rows={assignments} members={members} groups={groups} profiles={profiles} domains={domains} />}
       {tab === 'changes' && <ChangeSets draft={draft} sets={sets} diff={diff} members={members} canManage={canManage} run={run} />}
     </>
   )
@@ -814,6 +821,291 @@ function DiffList({ rows }: { rows: Diff[] }) {
           </ul>
         </div>
       ))}
+    </div>
+  )
+}
+
+// "Why can this user see this?" [6.5 E1]: the database answers per assignment. An asset tag is looked up in
+// asset_view first, so only assets the caller sees can be asked about (explain_access checks it again).
+function Explain({ members, domains, onClose }: { members: Member[]; domains: Domain[]; onClose: () => void }) {
+  const x = s.explain
+  const [domain, setDomain] = useState(domains[0]?.code ?? '')
+  const [rows, setRows] = useState<Explained[]>()
+  const [asked, setAsked] = useState<{ name: string; op: string; domain: string; tag: string }>()
+  const [error, setError] = useState<string>()
+  const ops = [...(domains.find((d) => d.code === domain)?.domain_operation ?? [])].sort((a, b) => a.sort_order - b.sort_order)
+  const domainName = (code: string) => label(s.domains, code, domains.find((d) => d.code === code)?.description)
+
+  async function explain(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const form = new FormData(e.currentTarget)
+    const user = String(form.get('user') ?? '')
+    const op = String(form.get('op') ?? '')
+    const tag = String(form.get('tag') ?? '').trim()
+    setError(undefined)
+    setRows(undefined)
+    let assetId: string | undefined
+    if (tag) {
+      const { data } = await supabase.from('asset_view').select('id').eq('tag', tag).limit(1)
+      assetId = data?.[0]?.id ?? undefined
+      if (!assetId) return setError(x.assetNotFound)
+    }
+    const { data, error } = await supabase.rpc('explain_access', { p_user_id: user, p_domain: domain, p_operation: op, p_asset_id: assetId })
+    if (error) return setError(error.code === 'P0002' ? x.assetNotFound : securityError(error))
+    setRows(data ?? [])
+    setAsked({ name: members.find((m) => m.user_id === user)?.display_name ?? '', op, domain, tag })
+  }
+
+  const summary = rows?.find((r) => !r.group_name)
+  const lines = rows?.filter((r) => r.group_name) ?? []
+  const granted = summary?.outcome === 'grants'
+  return (
+    <div className="card detail">
+      <div className="page-head">
+        <h2>{x.title}</h2>
+        <div className="spacer" />
+        <button className="btn" type="button" onClick={onClose}>
+          {x.close}
+        </button>
+      </div>
+      <p className="muted">{x.intro}</p>
+      <form className="form-grid" onSubmit={(e) => void explain(e)}>
+        <label className="field">
+          {x.member}
+          <select name="user" required defaultValue="">
+            <option value="" disabled>
+              {s.assignments.pick}
+            </option>
+            {members.map((m) => (
+              <option key={m.user_id} value={m.user_id}>
+                {`${m.display_name} (${m.email})`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          {x.domain}
+          <select name="domain" value={domain} onChange={(e) => setDomain(e.target.value)}>
+            {domains.map((d) => (
+              <option key={d.code} value={d.code}>
+                {domainName(d.code)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          {x.operation}
+          <select name="op" key={domain} required>
+            {ops.map((o) => (
+              <option key={o.code} value={o.code}>
+                {label(s.ops, o.code)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          {x.asset}
+          <input name="tag" />
+        </label>
+        <div className="page-head">
+          <div className="spacer" />
+          <button className="btn btn-main" type="submit">
+            {x.run}
+          </button>
+        </div>
+      </form>
+      {error && (
+        <p className="login-error" role="alert">
+          {error}
+        </p>
+      )}
+      {summary && asked && (
+        <div className="stack">
+          <p role="status">
+            <span className={`tag status ${granted ? 'ok' : 'error'}`}>{granted ? x.yes : x.no}</span>{' '}
+            {(granted ? x.can : x.cannot)
+              .replace('{name}', asked.name)
+              .replace('{op}', label(s.ops, asked.op).toLowerCase())
+              .replace('{domain}', domainName(asked.domain))}
+            {asked.tag && x.onAsset.replace('{tag}', asked.tag)}
+          </p>
+          {summary.note && <p className="banner">{label(x.notes, summary.note)}</p>}
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>{x.assignment}</th>
+                  <th>{x.scope}</th>
+                  <th>{s.assignments.from}</th>
+                  <th>{s.assignments.to}</th>
+                  <th>{x.result}</th>
+                  <th>{x.draft}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="muted">
+                      {x.none}
+                    </td>
+                  </tr>
+                )}
+                {lines.map((r, i) => (
+                  <tr key={i}>
+                    <td>{r.group_name}</td>
+                    <td>{r.scope_profile_name ?? s.assignments.tenantWide}</td>
+                    <td>{day(r.effective_from)}</td>
+                    <td>{day(r.effective_to)}</td>
+                    <td>
+                      <span className={`tag status${r.outcome === 'grants' ? ' ok' : ''}`}>{label(x.outcomes, r.outcome)}</span>
+                    </td>
+                    <td>{r.draft ? label(x.drafts, r.draft) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Quoted cells, CRLF rows. A cell starting with = + - @ gets a leading quote so a spreadsheet does not run it.
+export function toCsv(rows: string[][]): string {
+  const cell = (v: string) => `"${(/^[=+\-@]/.test(v) ? `'${v}` : v).replace(/"/g, '""')}"`
+  return rows.map((r) => r.map(cell).join(',')).join('\r\n')
+}
+
+// Access review [6.5 E5, E7, E8]: joined in the browser from what the screen reads (RLS: users_security.view)
+// plus the live grants of every group. The CSV is built in the browser from the filtered rows.
+function AccessReview({ rows, members, groups, profiles, domains }: { rows: Assignment[]; members: Member[]; groups: Group[]; profiles: Profile[]; domains: Domain[] }) {
+  const v = s.review
+  const [grants, setGrants] = useState<{ security_group_id: string; domain_operation_id: string }[]>([])
+  const [domain, setDomain] = useState('')
+  const [group, setGroup] = useState('')
+  const [current, setCurrent] = useState(true)
+
+  useEffect(() => {
+    let live = true
+    void supabase
+      .from('group_domain_policy')
+      .select('security_group_id, domain_operation_id')
+      .is('deleted_at', null)
+      .then(({ data }) => {
+        if (live) setGrants(data ?? [])
+      })
+    return () => {
+      live = false
+    }
+  }, [])
+
+  const fields = domains.filter((d) => d.kind === 'field')
+  const others = domains.filter((d) => d.kind !== 'field')
+  const domainOf = new Map(domains.flatMap((d) => d.domain_operation.map((o) => [o.id, d.code] as const)))
+  const held = (groupId: string) => new Set(grants.filter((g) => g.security_group_id === groupId).map((g) => domainOf.get(g.domain_operation_id)))
+  const domainName = (code: string) => label(s.domains, code, domains.find((d) => d.code === code)?.description)
+  const at = now()
+  const state = (r: Assignment) => (r.effective_from > at ? 'future' : r.effective_to && r.effective_to <= at ? 'ended' : 'active')
+
+  const shown = rows
+    .filter((r) => (!current || state(r) !== 'ended') && (!group || r.security_group_id === group) && (!domain || held(r.security_group_id).has(domain)))
+    .map((r) => {
+      const m = members.find((x) => x.user_id === r.user_id)
+      const mine = held(r.security_group_id)
+      return {
+        id: r.id,
+        cells: [
+          m?.display_name ?? '—',
+          m?.email ?? '',
+          label(v.memberStatuses, m?.status ?? ''),
+          groups.find((g) => g.id === r.security_group_id)?.name ?? '—',
+          profiles.find((p) => p.id === r.scope_profile_id)?.name ?? s.assignments.tenantWide,
+          day(r.effective_from),
+          day(r.effective_to),
+          v.states[state(r)],
+          fields
+            .filter((f) => mine.has(f.code))
+            .map((f) => domainName(f.code))
+            .join(', '),
+        ],
+      }
+    })
+  const head = [v.member, v.email, v.memberStatus, v.group, v.scope, v.from, v.to, v.state, v.fields]
+
+  function download() {
+    const url = URL.createObjectURL(new Blob([toCsv([head, ...shown.map((r) => r.cells)])], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = v.fileName
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="card list detail">
+      <div className="page-head">
+        <span className="muted">{v.intro}</span>
+        <div className="spacer" />
+        <select className="filter" aria-label={v.domain} value={domain} onChange={(e) => setDomain(e.target.value)}>
+          <option value="">{v.anyDomain}</option>
+          <optgroup label={v.sensitive}>
+            {fields.map((d) => (
+              <option key={d.code} value={d.code}>
+                {domainName(d.code)}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label={v.other}>
+            {others.map((d) => (
+              <option key={d.code} value={d.code}>
+                {domainName(d.code)}
+              </option>
+            ))}
+          </optgroup>
+        </select>
+        <select className="filter" aria-label={v.group} value={group} onChange={(e) => setGroup(e.target.value)}>
+          <option value="">{v.anyGroup}</option>
+          {groups.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name}
+            </option>
+          ))}
+        </select>
+        <label>
+          <input type="checkbox" checked={current} onChange={(e) => setCurrent(e.target.checked)} /> {v.current}
+        </label>
+        <button className="btn" type="button" disabled={!shown.length} onClick={download}>
+          {v.export}
+        </button>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              {head.map((h) => (
+                <th key={h}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {shown.length === 0 && (
+              <tr>
+                <td colSpan={head.length} className="muted">
+                  {v.none}
+                </td>
+              </tr>
+            )}
+            {shown.map((r) => (
+              <tr key={r.id}>
+                {r.cells.map((c, i) => (
+                  <td key={i}>{c}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
