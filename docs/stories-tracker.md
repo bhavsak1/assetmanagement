@@ -117,7 +117,8 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | 5.2b | Attachments on service records (second entity in the 3.6 bucket and storage policies) | | Done |
 | 5.3 | Maintenance screen: overdue, due soon, scheduled, completed | | Done |
 | 5.4 | Dashboard KPIs, upcoming list, assets by location | | Done |
-| 5.5 | Locations status counts (demo seed parked as BL-3) | | In review |
+| 5.5 | Locations status counts (demo seed moved to 5.6) | | Done |
+| 5.6 | Demo tenant seed on staging (`scripts/demo-tenant.sql`): a separate demo tenant with realistic data, re-runnable, linking 5 demo users | OQ-16 | In review |
 
 ### Goal 6: Security admin UI and scope
 **Review point:** you create a Pune-only Plant Manager and verify through the UI that Mumbai assets disappear.
@@ -175,7 +176,6 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 |---|---|---|---|
 | BL-1 | Background jobs monitor: a `job_run` log (job, tenant, start, end, status, rows, error) written by every background job; a "Background jobs" page for a platform admin (like Workday's background process monitor); a `job.failed` outbox event for alerts. Needs a platform-admin role, which does not exist yet | Goal 9 (notifications, API) and Goal 10 (AI gateway) | Backlog |
 | BL-2 | Optional BOM per asset (reference parts list, no inventory). Parked from 5.5 by the owner | Later | Backlog |
-| BL-3 | Demo tenant seed: `scripts/demo-tenant.sql` builds "Demo Manufacturing Pvt Ltd" with plants, categories, vendors, about 150 assets, coverage, obligations and service history, plus five demo users (one per starter role). Design in docs/data-model-goal5.md §15.2 (B1 to B7 open). Parked from 5.5 by the owner | After the owner checks Goal 5 on staging | Backlog |
 
 ---
 
@@ -225,3 +225,4 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 | 28 Oct 2026 | Story 5.1 split: 5.1 database, state job, settings field and Term prefill; 5.1b the category defaults form and the asset Obligations tab. Owner chose O9 a (docs/data-model-goal5.md) |
 | 28 Oct 2026 | Story 5.2 split: 5.2 service record, cost domain, complete and undo actions, dialog and Service history tab; 5.2b attachments on service records (storage policy change). Owner chose S0 a (docs/data-model-goal5.md §12) |
 | 28 Oct 2026 | Story 5.5 narrowed to the Locations status counts. The demo tenant seed is parked as BL-3: the owner checks Goal 5 on staging first. Owner accepted L1 to L6 (docs/data-model-goal5.md §15) |
+| 1 Nov 2026 | Backlog item BL-3 (demo tenant) moved into Goal 5 as story 5.6: the Goal 5 review point needs the demo tenant. Owner accepted B1 to B7 and named the five demo emails (demo users only) |
