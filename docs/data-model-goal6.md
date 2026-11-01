@@ -1,6 +1,14 @@
 # Goal 6 data model: scope profiles and row scope (story 6.1)
 
-**Status:** design, 1 Nov 2026. Waiting for the owner on S1 to S9 (§11). No migration yet.
+**Status:** in review, 1 Nov 2026. The owner accepted every lean, S1 to S9, on 1 Nov 2026. Built in migrations `6_1_scope_profile`, `6_1_scope_helpers`, `6_1_scope_enforcement`; tests in `6_1_scope.test.sql` (66); bench in `scripts/spike-6-1/bench.sql`.
+
+**As built (differences from the design below):**
+- **S3 fell back for the asset table, as §8 allowed.** The id set alone missed the list target (one site: 156 / 181 ms; two profiles: 221 / 258 ms). The asset table (`asset` policies, `asset_view`, search) now matches its own columns: `location_id = any (scope_locations) or category_id = any (scope_categories) or id in (scope_mixed_ids)`. Profiles with one dimension go through the arrays; a profile with both goes through the id set of its intersection. So it stays exact across profiles, with no "one profile per grant" limit. Children still use `scope_asset_ids` on `asset_id`. Numbers are in §8.
+- Scoped users do not see soft-deleted assets in the `asset` table, nor the child rows of soft-deleted assets (the id set holds live assets only). Tenant-wide users still do. `asset_history` uses a row check, so the history of an in-scope deleted asset still shows.
+- `coverage_view` gets its own clause for the contract grant's scope (S2), in set form. `coverage_visible` is unchanged.
+- `change_asset_status` checks scope after the permission check, so a missing grant still says "not allowed" (the 3.1 tests rely on it). Out of scope reads as "asset not found" everywhere. `transfer_asset` to a location outside scope raises `42501 location is outside your scope`.
+- `allowed_asset_statuses` is empty for an asset outside the `asset_lifecycle` scope.
+- Storage downloads need no change: the read policy goes through the attachment rows, whose RLS now carries the scope. Only `can_upload_attachment` changed.
 
 **Goal:** a group can be assigned with a scope profile ("Plant Manager, scope = Pune plant and below"). The user then sees and changes only the assets in that scope, and the records that hang off those assets. No scope profile means tenant-wide, as today.
 
@@ -150,6 +158,17 @@ Re-run the 1.7 spike scripts (`scripts/spike-1-7/`) against the real helpers, wi
 | Two profiles | 100 ms list | not measured |
 
 If the id-set form misses a target by a lot, switch the asset table (and only it) to S3 option b and keep the id set for children. Numbers go into this file as "As built".
+
+**Measured, 1 Nov 2026** (`scripts/spike-6-1/bench.sql`, local Docker, one tenant of 200k assets over 5 sites > 4 buildings > 10 areas, p50 / p95 ms over 20 runs inside Postgres). Final form (as built):
+
+| Scope | List 50 by name | Count | Search "pump 12" | Location tiles |
+|---|---|---|---|---|
+| Tenant-wide | 4.6 / 7.0 | 5.0 / 8.1 | 48 / 77 | 85 / 149 |
+| One site (20%) | 8.9 / 21 | 11 / 122 | 42 / 49 | 119 / 149 |
+| One area (0.5%) | 27 / 32 | 82 / 99 | 40 / 85 | 77 / 97 |
+| Two profiles (site, plus site 2 AND one category) | 29 / 63 | 10 / 139 | 66 / 81 | 162 / 188 |
+
+All within the targets. The first try (id set on the asset table too) missed: list 156 / 181 (site), 221 / 258 (two profiles); search 359 / 609 (site). Children (obligation, service record lists) for scoped users were not measured at volume: each builds the scoped id set once per statement.
 
 ## 9. Tests planned (`6_1_scope.test.sql`)
 
