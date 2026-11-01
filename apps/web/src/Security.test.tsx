@@ -57,6 +57,8 @@ beforeEach(() => {
     scope_profile_rule: { data: [{ id: 'r1', scope_profile_id: 'p1', dimension: 'location', location_id: 'l1', category_id: null }], error: null },
     location: { data: [{ id: 'l1', parent_id: null, name: 'Pune' }], error: null },
     asset_category: { data: [], error: null },
+    policy_change_set: { data: [], error: null },
+    policy_change_set_item: { data: [], error: null },
   }
   db.rpc.mockReset().mockImplementation((name: string) =>
     name === 'security_members' ? { data: [{ user_id: 'u1', display_name: 'Priya', email: 'priya@example.com', status: 'active' }], error: null } : { data: null, error: null },
@@ -143,4 +145,59 @@ test('scope profiles: rules and assigned count', async () => {
   await act(async () => button(s.tabs.profiles)!.click())
   expect(container.textContent).toContain(`Pune ${s.profiles.andBelow}`)
   expect(container.textContent).toContain(s.profiles.users.replace('{n}', '1'))
+})
+
+// 6.4: a draft that adds asset_core update to Plant Manager.
+function withDraft() {
+  db.results.policy_change_set = {
+    data: [
+      { id: 'cs2', status: 'draft', created_by: 'u1', activated_by: null, activated_at: null, created_at: '2026-11-01T10:00:00Z' },
+      { id: 'cs1', status: 'activated', created_by: 'u1', activated_by: 'u1', activated_at: '2026-10-30T10:00:00Z', created_at: '2026-10-30T09:00:00Z' },
+    ],
+    error: null,
+  }
+  db.results.policy_change_set_item = { data: [{ policy_change_set_id: 'cs2', security_group_id: 'g1', operation_ids: ['o-view', 'o-update'] }], error: null }
+  const diff = [{ security_group_id: 'g1', group_name: 'Plant Manager', domain_code: 'asset_core', operation_code: 'update', change: 'add' }]
+  db.rpc.mockImplementation((name: string) =>
+    name === 'security_members'
+      ? { data: [{ user_id: 'u1', display_name: 'Priya', email: 'priya@example.com', status: 'active' }], error: null }
+      : name === 'change_set_diff'
+        ? { data: diff, error: null }
+        : { data: null, error: null },
+  )
+}
+
+test('draft: banner, Draft tag, the drafted set in the grid, and Revert sends the live set', async () => {
+  withDraft()
+  await render(true, true)
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(s.changes.pending.replace('{n}', '1'))
+  expect(button(s.changes.review)).toBeDefined()
+  expect(container.textContent).toContain(s.groups.draft)
+  expect(box(s.ops.update).checked).toBe(true)
+  await act(async () => button(s.groups.revert)!.click())
+  expect(db.rpc).toHaveBeenCalledWith('set_group_policies', { p_group_id: 'g1', p_operation_ids: ['o-view'] })
+})
+
+test('change sets: the diff, Activate and Discard, and the history', async () => {
+  withDraft()
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+  await render(true, true)
+  await act(async () => button(s.changes.review)!.click())
+  expect(container.textContent).toContain(`${s.changes.add} ${s.domains.asset_core} · ${s.ops.update}`)
+  expect(container.textContent).toContain(s.changes.draftedBy.replace('{name}', 'Priya'))
+  expect(container.textContent).toContain(s.changes.statuses.activated)
+  await act(async () => button(s.changes.activate)!.click())
+  expect(db.rpc).toHaveBeenCalledWith('activate_change_set', { p_change_set_id: 'cs2' })
+  await act(async () => button(s.changes.discard)!.click())
+  expect(db.rpc).toHaveBeenCalledWith('discard_change_set', { p_change_set_id: 'cs2' })
+})
+
+test('change sets: view only sees the draft but cannot activate', async () => {
+  withDraft()
+  await render(true, false)
+  expect(container.querySelector('[role="status"]')).not.toBeNull()
+  expect(button(s.changes.review)).toBeUndefined()
+  await act(async () => button(s.tabs.changes)!.click())
+  expect(container.textContent).toContain(s.domains.asset_core)
+  expect(button(s.changes.activate)).toBeUndefined()
 })

@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { TreeSelect } from './Assets'
 import { t } from './i18n'
 import { supabase } from './supabase'
-import type { Tables } from './types/database'
+import type { Database, Tables } from './types/database'
 
 type Group = Pick<Tables<'security_group'>, 'id' | 'code' | 'name' | 'group_type'>
 type Domain = Pick<Tables<'security_domain'>, 'id' | 'code' | 'description'> & { domain_operation: Pick<Tables<'domain_operation'>, 'id' | 'code' | 'sort_order'>[] }
@@ -11,11 +11,14 @@ type Member = { user_id: string; display_name: string; email: string; status: st
 type Profile = Pick<Tables<'scope_profile'>, 'id' | 'name'>
 type Rule = Pick<Tables<'scope_profile_rule'>, 'id' | 'scope_profile_id' | 'dimension' | 'location_id' | 'category_id'>
 type Node = { id: string; parent_id: string | null; name: string }
+type ChangeSet = Pick<Tables<'policy_change_set'>, 'id' | 'status' | 'created_by' | 'activated_by' | 'activated_at' | 'created_at'>
+type Item = Pick<Tables<'policy_change_set_item'>, 'policy_change_set_id' | 'security_group_id' | 'operation_ids'>
+type Diff = Database['public']['Functions']['change_set_diff']['Returns'][number]
 type DbError = { code?: string; message?: string }
 type Write = PromiseLike<{ data?: unknown; error: DbError | null }>
 
 const s = t.security
-const tabs = ['groups', 'assignments', 'profiles'] as const
+const tabs = ['groups', 'assignments', 'profiles', 'changes'] as const
 type Tab = (typeof tabs)[number]
 const label = (map: Record<string, string>, code: string, fallback?: string) => map[code] ?? fallback ?? code
 // Domains in the order of the label file (the starter grid's order); a domain added later goes last.
@@ -37,6 +40,7 @@ export function securityError(error: DbError | null): string {
   const e = s.errors
   const m = error?.message ?? ''
   if (m.includes('last security admin')) return e.lastAdmin
+  if (m.includes('not an open draft')) return e.notDraft
   if (error?.code === '42501') return e.noPermission
   if (m.includes('security group is assigned')) return e.groupAssigned
   if (m.includes('scope profile is assigned')) return e.profileAssigned
@@ -54,8 +58,12 @@ export function SecurityPage({ tenantId, canView, canManage }: { tenantId: strin
   const [rules, setRules] = useState<Rule[]>([])
   const [locations, setLocations] = useState<Node[]>([])
   const [categories, setCategories] = useState<Node[]>([])
+  const [sets, setSets] = useState<ChangeSet[]>([])
+  const [items, setItems] = useState<Item[]>([])
+  const [diff, setDiff] = useState<Diff[]>([])
   const [error, setError] = useState<string>()
   const [reload, setReload] = useState(0)
+  const draft = sets.find((x) => x.status === 'draft')
 
   useEffect(() => {
     if (!canView) return
@@ -69,7 +77,11 @@ export function SecurityPage({ tenantId, canView, canManage }: { tenantId: strin
       supabase.from('scope_profile_rule').select('id, scope_profile_id, dimension, location_id, category_id').is('deleted_at', null),
       supabase.from('location').select('id, parent_id, name').is('deleted_at', null),
       supabase.from('asset_category').select('id, parent_id, name').is('deleted_at', null),
-    ]).then(([g, d, a, m, p, r, l, c]) => {
+      supabase.from('policy_change_set').select('id, status, created_by, activated_by, activated_at, created_at').order('created_at', { ascending: false }),
+      supabase.from('policy_change_set_item').select('policy_change_set_id, security_group_id, operation_ids').is('deleted_at', null),
+    ]).then(async ([g, d, a, m, p, r, l, c, cs, ci]) => {
+      const open = (cs.data ?? []).find((x) => x.status === 'draft')
+      const diffRows = open ? (await supabase.rpc('change_set_diff', { p_change_set_id: open.id })).data : []
       if (!live) return
       setGroups(g.data ?? [])
       // rls_sample is the 1.4 test template, not business data (1.6 leaves it out of every group too).
@@ -80,6 +92,9 @@ export function SecurityPage({ tenantId, canView, canManage }: { tenantId: strin
       setRules(r.data ?? [])
       setLocations(l.data ?? [])
       setCategories(c.data ?? [])
+      setSets(cs.data ?? [])
+      setItems(open ? (ci.data ?? []).filter((x) => x.policy_change_set_id === open.id) : [])
+      setDiff(diffRows ?? [])
     })
     return () => {
       live = false
@@ -92,6 +107,8 @@ export function SecurityPage({ tenantId, canView, canManage }: { tenantId: strin
     const { data, error } = await write
     if (error || (needRow && !(Array.isArray(data) && data.length))) {
       setError(securityError(error ?? { code: '42501' }))
+      // A draft closed elsewhere: show the current state.
+      if (error?.message?.includes('not an open draft')) setReload((n) => n + 1)
       return false
     }
     setReload((n) => n + 1)
@@ -115,7 +132,18 @@ export function SecurityPage({ tenantId, canView, canManage }: { tenantId: strin
           <h1>{t.pages.security}</h1>
           <span className="muted">{s.subtitle}</span>
         </div>
+        <div className="spacer" />
+        {canManage && diff.length > 0 && (
+          <button className="btn btn-main" type="button" onClick={() => setTab('changes')}>
+            {s.changes.review}
+          </button>
+        )}
       </div>
+      {diff.length > 0 && (
+        <p className="banner" role="status">
+          {s.changes.pending.replace('{n}', String(diff.length))}
+        </p>
+      )}
       {error && (
         <p className="login-error" role="alert">
           {error}
@@ -128,28 +156,33 @@ export function SecurityPage({ tenantId, canView, canManage }: { tenantId: strin
           </button>
         ))}
       </div>
-      {tab === 'groups' && <Groups tenantId={tenantId} groups={groups} domains={domains} canManage={canManage} run={run} reload={reload} />}
+      {tab === 'groups' && <Groups tenantId={tenantId} groups={groups} domains={domains} items={items} canManage={canManage} run={run} reload={reload} />}
       {tab === 'assignments' && (
         <Assignments tenantId={tenantId} rows={assignments} members={members} groups={groups} profiles={profiles} canManage={canManage} run={run} />
       )}
       {tab === 'profiles' && (
         <Profiles tenantId={tenantId} profiles={profiles} rules={rules} assignments={assignments} locations={locations} categories={categories} canManage={canManage} run={run} />
       )}
+      {tab === 'changes' && <ChangeSets draft={draft} sets={sets} diff={diff} members={members} canManage={canManage} run={run} />}
     </>
   )
 }
 
 type Run = (write: Write, needRow?: boolean) => Promise<boolean>
 
-function Groups({ tenantId, groups, domains, canManage, run, reload }: { tenantId: string; groups: Group[]; domains: Domain[]; canManage: boolean; run: Run; reload: number }) {
+function Groups({ tenantId, groups, domains, items, canManage, run, reload }: { tenantId: string; groups: Group[]; domains: Domain[]; items: Item[]; canManage: boolean; run: Run; reload: number }) {
   const g = s.groups
   const [selected, setSelected] = useState<string>()
   const [creating, setCreating] = useState(false)
   const [renaming, setRenaming] = useState(false)
-  const [saved, setSaved] = useState<string[]>([])
+  const [live, setLive] = useState<string[]>([])
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const current = groups.find((x) => x.id === selected) ?? groups[0]
   const editable = canManage && current?.group_type !== 'system'
+  // The grid shows the group's draft when it has one (6.4 C7), else its live grants.
+  const drafted = items.find((x) => x.security_group_id === current?.id)?.operation_ids
+  const saved = drafted ?? live
+  const savedKey = [...saved].sort().join()
   const dirty = saved.length !== checked.size || saved.some((id) => !checked.has(id))
 
   const currentId = current?.id
@@ -163,14 +196,20 @@ function Groups({ tenantId, groups, domains, canManage, run, reload }: { tenantI
       .is('deleted_at', null)
       .then(({ data }) => {
         if (!live) return
-        const ids = (data ?? []).map((r) => r.domain_operation_id)
-        setSaved(ids)
-        setChecked(new Set(ids))
+        setLive((data ?? []).map((r) => r.domain_operation_id))
       })
     return () => {
       live = false
     }
   }, [currentId, reload])
+
+  // Reset the boxes when the group or its saved set changes (adjusting state during render).
+  const baseKey = `${currentId}:${savedKey}`
+  const [base, setBase] = useState(baseKey)
+  if (base !== baseKey) {
+    setBase(baseKey)
+    setChecked(new Set(saved))
+  }
 
   function toggle(id: string) {
     const next = new Set(checked)
@@ -277,7 +316,10 @@ function Groups({ tenantId, groups, domains, canManage, run, reload }: { tenantI
                   </button>
                 </form>
               ) : (
-                <h2>{g.policies.replace('{group}', current.name)}</h2>
+                <h2>
+                  {g.policies.replace('{group}', current.name)}
+                  {drafted && <span className="tag warn">{g.draft}</span>}
+                </h2>
               )}
               <div className="spacer" />
               {editable && !renaming && (
@@ -328,8 +370,13 @@ function Groups({ tenantId, groups, domains, canManage, run, reload }: { tenantI
             </div>
             {editable && (
               <div className="page-head">
-                <span className="muted">{dirty ? g.unsaved : ''}</span>
+                <span className="muted">{dirty ? g.unsaved : g.draftHint}</span>
                 <div className="spacer" />
+                {drafted && (
+                  <button className="btn" type="button" onClick={() => void run(supabase.rpc('set_group_policies', { p_group_id: current.id, p_operation_ids: live }), false)}>
+                    {g.revert}
+                  </button>
+                )}
                 <button className="btn" type="button" disabled={!dirty} onClick={() => setChecked(new Set(saved))}>
                   {g.reset}
                 </button>
@@ -655,6 +702,118 @@ function Profiles({ tenantId, profiles, rules, assignments, locations, categorie
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function ChangeSets({ draft, sets, diff, members, canManage, run }: { draft?: ChangeSet; sets: ChangeSet[]; diff: Diff[]; members: Member[]; canManage: boolean; run: Run }) {
+  const c = s.changes
+  const [open, setOpen] = useState<Record<string, Diff[]>>({})
+  const who = (id: string | null) => members.find((m) => m.user_id === id)?.display_name ?? '—'
+  const history = sets.filter((x) => x.status !== 'draft')
+
+  async function toggle(id: string) {
+    if (open[id])
+      return setOpen((o) => {
+        const next = { ...o }
+        delete next[id]
+        return next
+      })
+    const { data } = await supabase.rpc('change_set_diff', { p_change_set_id: id })
+    setOpen((o) => ({ ...o, [id]: data ?? [] }))
+  }
+
+  return (
+    <div className="stack">
+      <div className="card">
+        <div className="page-head">
+          <h2>{c.draftTitle}</h2>
+          <div className="spacer" />
+          {draft && <span className="muted">{c.draftedBy.replace('{name}', who(draft.created_by))}</span>}
+        </div>
+        {diff.length ? <DiffList rows={diff} /> : <p className="muted">{c.none}</p>}
+        {canManage && draft && (
+          <div className="page-head">
+            <div className="spacer" />
+            <button className="btn" type="button" onClick={() => window.confirm(c.confirmDiscard) && void run(supabase.rpc('discard_change_set', { p_change_set_id: draft.id }), false)}>
+              {c.discard}
+            </button>
+            <button
+              className="btn btn-main"
+              type="button"
+              disabled={!diff.length}
+              onClick={() => window.confirm(c.confirmActivate.replace('{n}', String(diff.length))) && void run(supabase.rpc('activate_change_set', { p_change_set_id: draft.id }), false)}
+            >
+              {c.activate}
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="card">
+        <h2>{c.history}</h2>
+        {history.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>{c.date}</th>
+                  <th>{c.status}</th>
+                  <th>{c.drafted}</th>
+                  <th>{c.activatedBy}</th>
+                  <th>{c.changes}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((x) => {
+                  const rows = open[x.id]
+                  return (
+                    <tr key={x.id}>
+                      <td>{day(x.activated_at ?? x.created_at)}</td>
+                      <td>
+                        <span className={`tag status${x.status === 'activated' ? ' ok' : ''}`}>{label(c.statuses, x.status)}</span>
+                      </td>
+                      <td>{who(x.created_by)}</td>
+                      <td>{x.activated_by ? who(x.activated_by) : '—'}</td>
+                      <td>
+                        <button className="btn" type="button" aria-expanded={!!rows} onClick={() => void toggle(x.id)}>
+                          {rows ? c.hide : c.show}
+                        </button>
+                        {rows && <DiffList rows={rows} />}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="muted">{c.noHistory}</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// One block per group: each added or removed operation, labelled like the grid.
+function DiffList({ rows }: { rows: Diff[] }) {
+  const groups = [...new Set(rows.map((r) => r.group_name))]
+  return (
+    <div className="stack">
+      {groups.map((group) => (
+        <div key={group}>
+          <h3>{group}</h3>
+          <ul className="plain-list">
+            {rows
+              .filter((r) => r.group_name === group)
+              .map((r) => (
+                <li key={`${r.domain_code}.${r.operation_code}`}>
+                  <span className={`tag status ${r.change === 'add' ? 'ok' : 'error'}`}>{r.change === 'add' ? s.changes.add : s.changes.remove}</span>{' '}
+                  {label(s.domains, r.domain_code)} · {label(s.ops, r.operation_code)}
+                </li>
+              ))}
+          </ul>
+        </div>
+      ))}
     </div>
   )
 }

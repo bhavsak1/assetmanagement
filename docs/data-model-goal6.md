@@ -389,7 +389,13 @@ New group: the client inserts `security_group` (code derived from the name), the
 
 # Story 6.4: Draft, review, activate change sets (design)
 
-**Status:** design, waiting for the owner's answers to C1 to C8 (§29).
+**Status:** in review, 1 Nov 2026. The owner accepted every lean, C1 to C8, on 1 Nov 2026. Built in migration `6_4_change_sets`; tests in `6_4_change_sets.test.sql` (68); UI `apps/web/src/Security.tsx` (Vitest `Security.test.tsx`, 11).
+
+**As built (differences from the design below):**
+- The live table keeps its grants: with no write policy a direct insert is refused (42501) and a direct update touches no row, as for the Auditor today. A revoke would have turned the 1.6 "Auditor cannot update" checks into errors for no gain.
+- One shared check helper `private.check_security_manage()` (manage and `tenant_can_write`), not callable by clients.
+- Tests changed because of C2: 1.3 "admin grants an operation" now expects the refusal; 6.3 saves through draft then activate; 1.6 seeds a change set row for the tenant B coverage check.
+- The grid hint under Save says saved changes go to the draft.
 
 **Goal:** group policy edits are drafted, reviewed as a diff and activated together, in one transaction, with audit (security-model.md §2.6, §9). Nothing applies until activated.
 

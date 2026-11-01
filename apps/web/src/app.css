@@ -1051,3 +1051,12 @@ a.kpi:focus-visible {
   margin: 2px var(--space-6) 2px 0;
   white-space: nowrap;
 }
+
+/* 6.4: the draft banner under the Security header (screens: .bn). */
+.banner {
+  margin: 0 0 var(--space-5);
+  padding: var(--space-4) var(--space-6);
+  border-radius: var(--radius-xl);
+  background: var(--tag-warn-bg);
+  color: var(--tag-warn-text);
+}
