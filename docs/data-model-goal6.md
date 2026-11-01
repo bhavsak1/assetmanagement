@@ -1,6 +1,6 @@
-# Goal 6 data model: scope profiles and row scope (story 6.1)
+# Goal 6 data model: scope profiles and row scope (story 6.1), restricted fields (story 6.2)
 
-**Status:** in review, 1 Nov 2026. The owner accepted every lean, S1 to S9, on 1 Nov 2026. Built in migrations `6_1_scope_profile`, `6_1_scope_helpers`, `6_1_scope_enforcement`; tests in `6_1_scope.test.sql` (66); bench in `scripts/spike-6-1/bench.sql`.
+**Status:** done, accepted by the owner 1 Nov 2026 (PR #49). The owner accepted every lean, S1 to S9, on 1 Nov 2026. Built in migrations `6_1_scope_profile`, `6_1_scope_helpers`, `6_1_scope_enforcement`; tests in `6_1_scope.test.sql` (66); bench in `scripts/spike-6-1/bench.sql`.
 
 **As built (differences from the design below):**
 - **S3 fell back for the asset table, as §8 allowed.** The id set alone missed the list target (one site: 156 / 181 ms; two profiles: 221 / 258 ms). The asset table (`asset` policies, `asset_view`, search) now matches its own columns: `location_id = any (scope_locations) or category_id = any (scope_categories) or id in (scope_mixed_ids)`. Profiles with one dimension go through the arrays; a profile with both goes through the id set of its intersection. So it stays exact across profiles, with no "one profile per grant" limit. Children still use `scope_asset_ids` on `asset_id`. Numbers are in §8.
@@ -214,3 +214,86 @@ All within the targets. The first try (id set on the asset table too) missed: li
 - Vendor and criticality dimensions (S1 b), scoping master data (S7 b).
 - Any UI (6.3), secure field views beyond what exists (6.2), the explainer (6.5).
 - Staged activation of profile changes (6.4).
+
+---
+
+# Story 6.2: restricted fields (gap audit and design)
+
+**Status:** design, 1 Nov 2026. Waiting on the owner for R1 to R5.
+
+**Goal:** a restricted field (CLAUDE.md §7.7) never reaches a user who lacks its field domain, on any path. Most of this was built in 3.1, 4.1, 4.2 and 5.2. 6.2 audits it, closes the gaps and adds one test file that covers every field on every surface.
+
+## 13. Restricted fields
+
+| Field | Domain | Stored in | Read through |
+|---|---|---|---|
+| Asset purchase value, currency | `asset_financials` | `asset.purchase_value`, `purchase_currency` | `asset_view` (masked), `asset_history` (masked) |
+| Contract value, currency | `coverage_values` | `coverage.contract_value`, `contract_currency` | `coverage_view` (masked), `asset_coverage` (invoker over it) |
+| Service cost, currency | `service_values` | `service_record.cost_amount`, `cost_currency` | `service_record_view` (masked), `service_history` (invoker over it) |
+| Vendor tax IDs (GSTIN, PAN) | `vendor_tax_ids` | `vendor.custom_values` keys whose `field_definition` has that domain | `vendor_view` (`hidden_field_keys('vendor')`) |
+| Asset custom fields behind any domain | the field's domain | `asset.custom_values` | `asset_view`, `asset_history` (`hidden_field_keys('asset')`) |
+
+## 14. Audit: path by path
+
+| Path | State | Notes |
+|---|---|---|
+| Base table select | **Safe** | Column grants: `asset`, `vendor`, `coverage`, `service_record` grant select without the money and `custom_values` columns. A `where` or `returning` on them is refused for the same reason |
+| Masked views | **Safe** | The four views mask with `has_permission(<field domain>, 'view')`, once per statement. Custom keys go through `hidden_field_keys` |
+| 6.1 row scope on the views | **Safe** | `asset_view` and `service_record_view` carry the scope clause; `coverage_view` through `coverage_visible`. `vendor_view` is not scoped (S7, master data). Masking and scope are independent: a scoped user with the field domain sees the value only on in-scope rows |
+| Invoker functions (`list_assets`, `count_assets`, `asset_coverage`, `service_history`, `list_completions`, dashboard counts) | **Safe** | All read the masked views. No function sums or sorts by a restricted field |
+| Definer functions | **Safe** | None returns a restricted value. `asset_history` masks (`mask_asset_data`). `category_vendors` returns ids; `merge_vendor`, `complete_obligation`, `undo_completion` return void. `complete_obligation` inserts the cost through the table, so the trigger checks it |
+| Search | **Safe** | Trigram on name, tag and serial only. No restricted field is searchable |
+| Sort and filter on the views (PostgREST) | **Safe** | The column is the masked expression, so a filter on it sees null |
+| **Write triggers, money columns** | **Gap G1** | See §15 |
+| Write triggers, hidden custom keys | **Safe** | Hidden keys are restored from the old row before any check, so a guessed value changes nothing and raises nothing |
+| **`audit_log` (direct select)** | **Gap G2** | See §15 |
+| `asset_history` (Audit tab) | **Safe** | Definer, masks money and hidden keys, marks them hidden |
+| **Outbox payloads** | **Gap G3 (dormant)** | See §15 |
+| Exports | **None exist** | Excel import (Goal 8) and any export must read the masked views |
+| Storage | **Not a field path** | Attachments have their own entity domains; 6.1 scope applies |
+| UI | **Safe** | Asset detail and form, coverage and service screens show "Hidden" and never send a masked field (`canMoney`). No UI change needed |
+| Tax IDs as config | **Note** | Masked only if the tenant's GSTIN or PAN field uses `vendor_tax_ids`. The FK `(security_domain_id, entity)` allows `vendor_core` too. The demo tenant uses `vendor_tax_ids`. Template seeding is 7.1 |
+
+## 15. Gaps
+
+**G1. Equality oracle in the money write checks.** `check_asset_values`, `check_coverage` and `check_service_record` raise 42501 when a user without the field's view **changes** the value. So a user without view can send a guess: same as stored, the update passes; different, it fails. Sending null tells whether any value is stored. Starter groups that can do this today: Planner (purchase value, contract value), Technician (service cost). Equality only, but purchase values are often round numbers.
+
+**G2. `audit_log` returns raw rows.** `old_data` and `new_data` hold the full row: money, costs, every custom key. RLS gives data rows to `audit_log.view`. In the starter groups every holder of `audit_log.view` also holds all four field domains, so nobody leaks today. A tenant group such as "Compliance: audit log only" would see every purchase value and tax ID. Nothing in the app reads `audit_log` directly (the Audit tab uses `asset_history`).
+
+**G3. Outbox payloads carry raw rows.** `audit_row` writes `old` and `new` into `private.outbox_event`. Not reachable by any API role; no consumer until webhooks (9.3). `complete_obligation` leaves cost out of its own event, but the generic trigger on `service_record` still puts it in.
+
+## 16. Design
+
+**G1 fix [R1].** In the three triggers, split the check:
+- No field **view**: on update, keep the old value silently (`new.x := old.x`), the way hidden custom keys are kept. No error, so no oracle. On insert, a non-null value still raises (no stored value to probe).
+- View but no **update**: a changed value raises 42501, as today (they can see it, so nothing leaks).
+
+The UI never sends a masked field, so no screen changes. The error text for view-but-no-update stays the same, so `fieldErrors` keeps working.
+
+**G2 fix [R2].** Revoke `select (old_data, new_data)` on `public.audit_log` from `authenticated`; keep the other columns (who did what, when, to which record). Reads of the data go through definer functions that mask, as `asset_history` does. A masked tenant-wide reader comes with the story that builds an audit screen (6.5 access review, or later).
+
+**G3 [R3].** No change in 6.2. Write into story 9.3: webhook delivery resolves the subscriber to an identity and masks payloads with the same domains (CLAUDE.md §7.3).
+
+**Tests [R4].** New `6_2_restricted_fields.test.sql`:
+- For each field (purchase value, contract value, service cost, GSTIN, a restricted asset custom key): no grant reads null or no key, grant reads the value, on the base table (column refused), the masked view, and each invoker or definer reader over it.
+- G1: without view, an update with the right guess and with a wrong guess both pass and leave the value unchanged; with view and no update, a change raises.
+- G2: `select old_data from audit_log` refused for `authenticated`; other columns still readable.
+- 6.1 scope: a Pune-scoped user with the field domain sees the value on a Pune row, not on a Mumbai row.
+- `tests.cross_tenant` already runs for `asset`, `vendor`, `coverage`, `service_record` in their stories. 6.2 adds a check that another tenant's row never shows in any of the four views, with every grant held.
+
+**Migrations:** `6_2_money_write_checks` (three trigger functions, `create or replace`) and `6_2_audit_log_columns` (one revoke). No view or column changes, so types should not change; regenerated to confirm.
+
+## 17. DECIDE
+
+| # | Question | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| R1 | Money write check without view | **a)** Keep old value silently (as custom keys). **b)** Raise whenever the value is in the update, even if unchanged (breaks forms that send the whole row; ours do not). **c)** Leave as is, document | a. Closes the oracle, matches the custom-field rule, no UI change | Low: three trigger bodies |
+| R2 | `audit_log` raw data | **a)** Revoke the two data columns now; masked reader later with an audit screen. **b)** Build a masked `audit_log_view` now (per-table column map plus `hidden_field_keys`). **c)** Leave; document "grant `audit_log.view` only with the field domains" and test the starter grid | a. Default deny, one line, nothing in the app uses it. b builds a reader with no screen. c leaves the leak one custom group away | Low: a grant |
+| R3 | Outbox payloads | **a)** Defer to 9.3, written into the story. **b)** Strip restricted fields from every payload now | a. No consumer exists; the right mask depends on the subscriber's identity, which 9.3 defines | Low |
+| R4 | Test scope | **a)** One consolidated 6.2 file as §16. **b)** Gap tests only | a. The story's point is proof on every path | None |
+| R5 | Tax ID fields per tenant | **a)** Leave as tenant config; 7.1 templates seed GSTIN and PAN with `vendor_tax_ids`. **b)** Seed GSTIN and PAN definitions for every tenant now | a. CLAUDE.md §8: optional configurable fields, do not hard-code India | Low |
+
+## 18. Not in 6.2
+
+- A masked audit log reader or screen (R2 a), webhook payload masking (9.3), export paths (none yet).
+- Scoping vendors or the audit log (6.1 S7).
