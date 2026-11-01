@@ -1,4 +1,4 @@
-# Goal 6 data model: scope profiles and row scope (story 6.1), restricted fields (story 6.2), Security screen (story 6.3), change sets (story 6.4)
+# Goal 6 data model: scope profiles and row scope (story 6.1), restricted fields (story 6.2), Security screen (story 6.3), change sets (story 6.4), explainer and access review (story 6.5)
 
 **Status:** done, accepted by the owner 1 Nov 2026 (PR #49). The owner accepted every lean, S1 to S9, on 1 Nov 2026. Built in migrations `6_1_scope_profile`, `6_1_scope_helpers`, `6_1_scope_enforcement`; tests in `6_1_scope.test.sql` (66); bench in `scripts/spike-6-1/bench.sql`.
 
@@ -389,7 +389,7 @@ New group: the client inserts `security_group` (code derived from the name), the
 
 # Story 6.4: Draft, review, activate change sets (design)
 
-**Status:** in review, 1 Nov 2026. The owner accepted every lean, C1 to C8, on 1 Nov 2026. Built in migration `6_4_change_sets`; tests in `6_4_change_sets.test.sql` (68); UI `apps/web/src/Security.tsx` (Vitest `Security.test.tsx`, 11).
+**Status:** done, accepted by the owner 1 Nov 2026 (PR #52). The owner accepted every lean, C1 to C8, on 1 Nov 2026. Built in migration `6_4_change_sets`; tests in `6_4_change_sets.test.sql` (68); UI `apps/web/src/Security.tsx` (Vitest `Security.test.tsx`, 11).
 
 **As built (differences from the design below):**
 - The live table keeps its grants: with no write policy a direct insert is refused (42501) and a direct update touches no row, as for the Auditor today. A revoke would have turned the 1.6 "Auditor cannot update" checks into errors for no gain.
@@ -466,3 +466,100 @@ Fixed, not a choice: activation is one transaction; rebuild, version bump, row a
 ## 32. Not in 6.4
 
 - Drafting assignments and scope profiles (C1 b, c). A separate approver or segregation of duties (C3 b, c). Many drafts (C4 b). Scheduled activation. Rollback of an activated set (draft the old grid again instead).
+
+---
+
+# Story 6.5: "Why can this user see this?" explainer and access review report (design)
+
+**Status:** design, waiting for the owner (DECIDE E1 to E9 in §37).
+
+**Goal:** a security admin or auditor answers two questions with no SQL. (1) For one user, a domain and operation, and optionally one asset: does the user have access, and which assignment, group, policy and scope profile gives or blocks it? (2) Who holds which groups and scopes, filtered by a sensitive domain, as a file to hand to an auditor (security-model.md §3, §9).
+
+**Read-only.** No new table, no new write path, no policy change.
+
+**Reads with:** security-model.md §3, §9; §1 to §7 (scope), §13 (field domains), §19 to §21 (`security_members`, the screen), §27 (change sets) above.
+
+## 33. What already exists
+
+- `users_security.view` already reads every group, live policy, assignment, scope profile and rule, the open draft (`change_set_diff`), and member names (`security_members`). The Security screen loads most of it.
+- The scope helpers (`scope_rules` and the others) work for **the caller only** (`auth.uid()`). Nothing evaluates another user's scope.
+- `user_effective_permission` is `private`: the client cannot read another user's derived rows.
+
+So the access review needs no new database code if the browser joins what it already reads (E5 b). The explainer needs one function: another user's scope and the asset check must be worked out in the database.
+
+## 34. Explainer: `public.explain_access(p_user_id, p_domain, p_operation, p_asset_id default null)`
+
+Security definer, `stable`, fixed `search_path`, in a new migration `6_5_explain_access`.
+
+**Who may run it [E1]:** the caller needs `users_security.view`, and the target must be a member of the caller's current tenant. Otherwise it returns no rows (as `security_members`).
+
+**What it returns:** one row per live assignment of the target in the current tenant, plus one summary row:
+
+| Column | Meaning |
+|---|---|
+| `security_group_id`, `group_name`, `scope_profile_id`, `scope_profile_name`, `effective_from`, `effective_to` | The assignment |
+| `outcome` | `grants`, `no_policy` (the group does not hold the operation), `not_effective` (dates), `out_of_scope` (asset given, outside the profile), `empty_profile` (S4), `member_inactive` |
+| `draft` | `add` or `remove` when the open change set would change this group's grant for the operation, else null [E4] |
+
+Summary row (`security_group_id` null): `grants` if any assignment grants, else `denied`. Plus a `note`: tenant read-only (writes refused by `tenant_can_write`), or "scope does not apply to this domain" [E3].
+
+**How it decides:** from the raw graph (assignment, group, live `group_domain_policy`, membership, profile rules), per assignment, so it can say *why*. The summary is cross-checked against the target's rows in `user_effective_permission` (what enforcement reads). If they disagree, the summary says `denied` with note `rebuild_mismatch`, so a rebuild bug shows instead of a false "yes" [E2].
+
+**Scope for another user:** a new private helper `private.profile_scope(p_profile_id) returns table (locs uuid[], cats uuid[])`, the per-profile half of `scope_rules` (closure for locations, tree for categories, null when a dimension has no rule, no row when the profile has no live rule). The 6.1 hot-path helpers are **not** changed [E6].
+
+**The asker's own limits [E1]:**
+- Asset given: the function first checks that the **caller** sees the asset (`exists (select 1 from public.asset_view where id = p_asset_id)`, which runs the caller's own `asset_core.view` and scope). If not, it raises `asset not found`, as everywhere else (6.1 §6). So nobody learns that an asset outside their own scope exists, or where it is.
+- It returns only ids and names the caller already reads on the Security screen (groups, profiles, dates) and a yes or no. Never an asset field, never a restricted value.
+
+**Which domains scope applies to [E3]:** a fixed list in the function, the same as 6.1 §4: `asset_core`, `asset_lifecycle`, `obligation`, `service_record`, `coverage_contract` and the two attachment domains. For other domains an asset id is ignored and the note says scope does not apply.
+
+## 35. Access review report
+
+New tab **Access review** on the Security screen (the screen's tab list already shows it).
+
+- One row per live assignment: member, email, member status, group, scope profile ("Tenant-wide"), from, to, state (`active`, `future`, `ended`), and the sensitive domains the group grants (the field domains of §13: `asset_financials`, `coverage_values`, `service_values`, `vendor_tax_ids`) [E7].
+- Filters: domain (any can be picked; the four field domains first) [E7], group, and "current only" (default on).
+- Live grants only; the draft banner already says what is pending [E4].
+- **Export CSV**: builds the CSV in the browser from the filtered rows (a `Blob` and a download link). No dependency, no server, and the file holds only what is on screen [E8].
+- Shown with `users_security.view`, so the Auditor can run it.
+
+## 36. Explainer UI
+
+The header button **Why can this user see this?** (as in the screen) opens a panel: member, domain, operation (from the domain's operations), optional asset (the existing asset search, which only offers assets the caller sees). Result: a verdict line ("Asha can view Asset core on PMP-0042" or "cannot"), then the assignments with their outcome in plain words ("Plant Manager, scope Pune: grants", "Technician: group does not hold Update"), plus draft marks and notes. Shown with `users_security.view`.
+
+## 37. DECIDE
+
+| # | Question | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| E1 | Who may run the explainer, and on what | **a)** `users_security.view` holders, for any member of the tenant; an asset only if the caller sees it (else "asset not found"). **b)** Also any user for **themselves** ("why can't I see this?"). **c)** `users_security.manage` only | a. View holders already read every group, policy and assignment, so the only new fact is "this asset is in that user's scope", gated by the caller's own sight of the asset. b is a later add (one `or p_user_id = auth.uid()`) but shows a scoped user the shape of their scope. c locks out the Auditor, the main reader | Low: one condition |
+| E2 | Source of the verdict | **a)** Per-assignment reasons from the raw graph, summary checked against `user_effective_permission`; a mismatch shows as denied with a note. **b)** Graph only. **c)** Derived table only (no reasons) | a. Reasons need the graph; the truth is what enforcement reads. A mismatch is a rebuild bug and must show | Low: function body |
+| E3 | Where "scope applies to this domain" lives | **a)** A fixed list in the function, matching where 6.1 put the clause. **b)** A new column on `security_domain` | a. The clause is in policies (code), not data, so a column would claim config that drives nothing | Low |
+| E4 | Pending draft changes | **a)** Explainer marks each group the open draft would change for the operation; verdict stays live. Access review shows live only. **b)** Ignore drafts. **c)** Also a "verdict after activation" | a. One read of the draft item per group answers "will activating fix it?" with no second verdict to test | Low |
+| E5 | Access review data | **a)** A new invoker SQL function `access_review()`. **b)** The browser joins what the screen already reads (assignments, groups, live policies, profiles, `security_members`) | b. No new database surface to review; RLS already gates every read with `users_security.view`. a when the public API (Goal 9) needs the report | Low: add the function later |
+| E6 | Another user's scope | **a)** New `private.profile_scope(profile_id)`, used only by the explainer; 6.1 helpers unchanged. **b)** Rewrite `scope_rules` over it, one copy | a. The 6.1 helpers are on every read path and were benchmarked; changing them for a read-only tool means a new bench. Cost: the rule expansion exists twice (a test asserts they agree) | Low |
+| E7 | Sensitive-domain filter | **a)** Any domain; the four field domains listed first and shown as columns. **b)** The four field domains only | a. Same code; auditors also ask "who can manage security" | None: UI |
+| E8 | Export format | **a)** CSV built in the browser from the filtered rows. **b)** Excel `.xlsx` (needs a library). **c)** Server-side export | a. No dependency, opens in Excel, nothing new on the server; no custom service until Goal 8 | Low |
+| E9 | Audit explainer runs and exports | **a)** No: read-only, returns nothing the caller cannot already read. **b)** A `security` audit row per run or export | a. security-model §9 audits reads of restricted domains; neither tool returns a restricted value. b adds a write path to a read-only story | Low |
+
+## 38. Tests (`6_5_explain_access.test.sql`)
+
+- No rows without `users_security.view`; another tenant's user gives no rows.
+- Each outcome: grants, no_policy, not_effective (future and ended), out_of_scope (Pune manager, Mumbai asset), empty_profile, member_inactive.
+- Union: a scoped and a tenant-wide assignment, summary grants.
+- An asset the caller cannot see raises `asset not found` (a Pune-scoped auditor asking about a Mumbai asset).
+- Draft: a drafted revoke shows `remove`, a drafted grant `add`; verdict unchanged until activation.
+- Summary matches what the target really sees (`tests.act_as` the target, look for the asset in `asset_view`).
+- `profile_scope` agrees with `scope_rules` on the fixture profiles.
+- Vitest: explainer outcomes render; access review filters by domain; CSV has the header and filtered rows (quotes escaped).
+
+## 39. Build plan (after answers)
+
+1. Migration `6_5_explain_access` (`profile_scope`, `explain_access`), pgTAP, regenerate types.
+2. `Security.tsx`: header button and panel, Access review tab, CSV export; i18n; tokens. Vitest. Browser check on the local seed.
+3. Tracker 6.5 to In review, demo note, owner-review list (`explain_access`, `profile_scope`).
+
+## 40. Not in 6.5
+
+- Self-service "why can't I see this?" (E1 b), an `access_review()` SQL function (E5 a), Excel or server export (E8 b, c), audit of runs (E9 b).
+- Periodic access certification, segregation of duties (security-model §10, later).
+- An audit log reader (6.2 R2), the screen's Audit tab.
