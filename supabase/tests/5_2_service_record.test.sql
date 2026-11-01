@@ -127,8 +127,8 @@ select is(pg_temp.upd($$update public.service_record set notes = ' belt changed 
 select is((select notes from public.service_record), 'belt changed', 'notes trimmed');
 select throws_ok($$update public.service_record set done_on = pg_temp.d(-2)$$, '42501', null, 'done date has no grant (undo, then record again)');
 select throws_ok($$update public.service_record set deleted_at = now()$$, '42501', null, 'soft delete has no grant (undo is the action)');
-select throws_ok($$update public.service_record set cost_amount = 5, cost_currency = 'INR'$$, '42501', 'no permission to change service cost',
-  'cost correction needs service_values.update');
+select lives_ok($$update public.service_record set cost_amount = 5, cost_currency = 'INR'$$,
+  'cost without service_values.view is ignored, not refused (6.2 R1: no oracle)');
 select throws_ok($$update public.service_record set vendor_id = '00000000-0000-0000-0000-00000052e002'$$, '23514', null, 'inactive vendor refused');
 select throws_ok($$update public.service_record set done_by_user_id = '00000000-0000-0000-0000-0000000b0001'$$, '23514', null,
   'person outside the tenant refused');

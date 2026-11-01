@@ -126,7 +126,7 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | ID | Story | Open items | Status |
 |---|---|---|---|
 | 6.1 | Scope profiles (location, category) and row-level scope enforcement | OQ-24 | Done |
-| 6.2 | Secure views for restricted fields (purchase value, vendor tax IDs) | | Todo |
+| 6.2 | Secure views for restricted fields (purchase value, vendor tax IDs) | | In review |
 | 6.3 | Security screen: groups, domain policy grid (rendered from each domain's operations), assignments | | Todo |
 | 6.4 | Draft, review, activate change sets | OQ-22 | Todo |
 | 6.5 | "Why can this user see this?" explainer and access review report | | Todo |
@@ -159,7 +159,7 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 |---|---|---|---|
 | 9.1 | Outbox poller, in-app and email notifications | | Todo |
 | 9.2 | Public REST API `/v1`, API keys, integration users | | Todo |
-| 9.3 | Webhooks with signing and retries | | Todo |
+| 9.3 | Webhooks with signing and retries. Payloads masked by the subscriber identity's field domains (outbox rows carry raw values; 6.2 R3) | | Todo |
 | 9.4 | WhatsApp channel | OQ-14 | Todo |
 
 ### Goal 10: AI add-on
@@ -226,3 +226,4 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 | 28 Oct 2026 | Story 5.2 split: 5.2 service record, cost domain, complete and undo actions, dialog and Service history tab; 5.2b attachments on service records (storage policy change). Owner chose S0 a (docs/data-model-goal5.md §12) |
 | 28 Oct 2026 | Story 5.5 narrowed to the Locations status counts. The demo tenant seed is parked as BL-3: the owner checks Goal 5 on staging first. Owner accepted L1 to L6 (docs/data-model-goal5.md §15) |
 | 1 Nov 2026 | Backlog item BL-3 (demo tenant) moved into Goal 5 as story 5.6: the Goal 5 review point needs the demo tenant. Owner accepted B1 to B7 and named the five demo emails (demo users only) |
+| 1 Nov 2026 | Story 9.3 gains payload masking by field domain, moved from 6.2 (owner accepted R3, docs/data-model-goal6.md §17) |

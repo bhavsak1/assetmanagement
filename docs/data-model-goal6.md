@@ -219,7 +219,12 @@ All within the targets. The first try (id set on the asset table too) missed: li
 
 # Story 6.2: restricted fields (gap audit and design)
 
-**Status:** design, 1 Nov 2026. Waiting on the owner for R1 to R5.
+**Status:** in review, 1 Nov 2026. The owner accepted every lean, R1 to R5, on 1 Nov 2026. Built in migrations `6_2_money_write_checks`, `6_2_audit_log_columns`; tests in `6_2_restricted_fields.test.sql` (52).
+
+**As built (differences from the design below):**
+- R1 is one generic trigger, `private.keep_masked_values(domain, columns...)`, on update of the money columns of `asset`, `coverage` and `service_record`, named `a_keep_masked_values` so it fires before the `check_*` triggers (before triggers run in name order). The three `check_*` functions are unchanged: they now see no change from a user without view. Four older tests that asserted the old raise (3.3 x2, 4.2, 5.2) now assert "passes, value unchanged".
+- R2 replaces the table grant with a column list: a column revoke has no effect under a table-level grant. `select *` on `audit_log` is now refused for `authenticated`.
+- Types did not change.
 
 **Goal:** a restricted field (CLAUDE.md §7.7) never reaches a user who lacks its field domain, on any path. Most of this was built in 3.1, 4.1, 4.2 and 5.2. 6.2 audits it, closes the gaps and adds one test file that covers every field on every surface.
 
