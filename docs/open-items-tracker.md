@@ -99,7 +99,7 @@
 | OQ-19 | Backups and PITR add-on budget | Budget before first paying customer | Before first paying customer | Open |
 | OQ-20 | Data residency approach for global expansion and the first enterprise deal | Mumbai only for now | Before first enterprise deal | Open |
 | OQ-21 | AI model provider(s), fallback, and pricing of the stronger query model (unverified) | Claude primary, second provider as fallback | Before M4 | Open |
-| OQ-22 | Policy activation approval: single approver or a separate security administrator | Single approver for pilots | M1 | Open |
+| OQ-22 | Policy activation approval: single approver or a separate security administrator | Single approver for pilots. Used in 6.4 (C3 a): any security manager, the drafter too, activates; drafter and activator are recorded | M1 | Open |
 | OQ-23 | Token lifetime and permission-version refresh behaviour | Short token, version check on sensitive actions | M1 | Open |
 | OQ-24 | Scope dimensions beyond location, category, vendor and criticality | Not needed unless a pilot asks | M2 | Needs user input |
 | OQ-25 | Default security domain catalog and starter groups per industry template | Draft in M1 | M1 | Open |

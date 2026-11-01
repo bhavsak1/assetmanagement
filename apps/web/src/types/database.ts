@@ -527,6 +527,88 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"policy_change_set": {
+                  Row: {
+                    "activated_at": string | null,"activated_by": string | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"id": string,"status": string,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "activated_at"?: string | null,"activated_by"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"id"?: string,"status"?: string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "activated_at"?: string | null,"activated_by"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"id"?: string,"status"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "policy_change_set_activated_by_fkey"
+      columns: ["activated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "policy_change_set_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "policy_change_set_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "policy_change_set_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"policy_change_set_item": {
+                  Row: {
+                    "before_ids": (string)[] | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"id": string,"operation_ids": (string)[],"policy_change_set_id": string,"security_group_id": string,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "before_ids"?: (string)[] | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"id"?: string,"operation_ids": (string)[],"policy_change_set_id": string,"security_group_id": string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "before_ids"?: (string)[] | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"id"?: string,"operation_ids"?: (string)[],"policy_change_set_id"?: string,"security_group_id"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "policy_change_set_item_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "policy_change_set_item_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "policy_change_set_item_tenant_id_policy_change_set_id_fkey"
+      columns: ["tenant_id","policy_change_set_id"]
+isOneToOne: false
+      referencedRelation: "policy_change_set"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "policy_change_set_item_tenant_id_security_group_id_fkey"
+      columns: ["tenant_id","security_group_id"]
+isOneToOne: false
+      referencedRelation: "security_group"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "policy_change_set_item_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"rls_sample": {
                   Row: {
                     "created_at": string,"created_by": string | null,"deleted_at": string | null,"id": string,"name": string,"parent_id": string | null,"tenant_id": string,"updated_at": string,"updated_by": string | null
@@ -1353,7 +1435,10 @@ isOneToOne: false
                 }
           }
           Functions: {
-            "allowed_asset_statuses":
+            "activate_change_set":
+{ Args: { "p_change_set_id": string }; Returns: undefined
+                           },
+"allowed_asset_statuses":
 { Args: { "p_asset_id": string }; Returns: string[]
                            },
 "asset_attachments":
@@ -1387,6 +1472,11 @@ isOneToOne: false
                            } |
 { Args: { "p_asset_id": string,"p_reason"?: string,"p_status_id": string }; Returns: undefined
                            },
+"change_set_diff":
+{ Args: { "p_change_set_id": string }; Returns: {
+              "change": string,"domain_code": string,"group_name": string,"operation_code": string,"security_group_id": string
+            }[]
+                           },
 "complete_obligation":
 { Args: { "p_certificate_expiry"?: string,"p_cost"?: number,"p_currency"?: string,"p_done_by"?: string,"p_done_on": string,"p_notes"?: string,"p_obligation_id": string,"p_outcome"?: string,"p_vendor_id"?: string }; Returns: string
                            },
@@ -1395,6 +1485,9 @@ isOneToOne: false
                            },
 "create_asset_with_warranty":
 { Args: { "p_asset": Json,"p_coverages": Json }; Returns: string
+                           },
+"discard_change_set":
+{ Args: { "p_change_set_id": string }; Returns: undefined
                            },
 "field_domains":
 { Args: { "p_entity": string }; Returns: {

@@ -132,12 +132,13 @@ select throws_ok(
   '42501', null, 'admin cannot turn a group into a system group'
 );
 select throws_ok($$delete from public.security_group where id = '00000000-0000-0000-0000-0000000007a1'$$, '42501', null, 'no hard delete of a group');
-select lives_ok(
+-- 6.4 [C2]: live grants change only through an activated change set (6_4_change_sets.test.sql).
+select throws_ok(
   $$insert into public.group_domain_policy (tenant_id, security_group_id, domain_operation_id)
     values ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-0000000007a1', pg_temp.op('asset_core', 'delete'))$$,
-  'admin grants an operation'
+  '42501', null, 'admin cannot grant an operation directly'
 );
-select ok(private.has_permission('asset_core', 'delete'), 'new grant applies in the same transaction');
+select ok(not private.has_permission('asset_core', 'delete'), 'the refused grant does not apply');
 select throws_ok(
   $$insert into public.group_domain_policy (tenant_id, security_group_id, domain_operation_id)
     values ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-0000000007a5', pg_temp.op('asset_core', 'view'))$$,

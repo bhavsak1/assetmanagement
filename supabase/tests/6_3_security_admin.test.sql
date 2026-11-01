@@ -39,6 +39,15 @@ create function pg_temp.version(p_user uuid) returns int language sql as $$
   select permission_version from public.tenant_membership
   where tenant_id = '00000000-0000-0000-0000-00000000000a' and user_id = p_user;
 $$;
+-- 6.4: the grid now writes a draft; save = draft, then activate it (6_4_change_sets.test.sql).
+create function pg_temp.save(p_group uuid, p_ops uuid[]) returns void language plpgsql as $$
+declare v uuid;
+begin
+  perform public.set_group_policies(p_group, p_ops);
+  select id into v from public.policy_change_set where status = 'draft';
+  if v is not null then perform public.activate_change_set(v); end if;
+end;
+$$;
 create temp table v0 as select pg_temp.version('00000000-0000-0000-0000-0000000000a1') as v;
 grant select on v0 to authenticated;
 
@@ -57,7 +66,7 @@ select is((select display_name from public.security_members() where user_id = '0
 select throws_ok($$select public.set_group_policies('00000000-0000-0000-0000-0000000063b1', pg_temp.ops('asset_core', '{view}'))$$,
   '42501', 'not allowed', 'set policies: view only is refused');
 select tests.act_as('00000000-0000-0000-0000-0000000a0001', '00000000-0000-0000-0000-00000000000a');
-select lives_ok($$select pg_temp.at_commit($q$select public.set_group_policies('00000000-0000-0000-0000-0000000063b1', pg_temp.ops('asset_core', '{view,update}'))$q$)$$,
+select lives_ok($$select pg_temp.at_commit($q$select pg_temp.save('00000000-0000-0000-0000-0000000063b1', pg_temp.ops('asset_core', '{view,update}'))$q$)$$,
   'set policies: admin grants view and update');
 select results_eq($$select pg_temp.live('00000000-0000-0000-0000-0000000063b1')$$, array['update', 'view'], 'set policies: two live grants');
 reset role;
@@ -71,12 +80,12 @@ create temp table view_row as
   where p.security_group_id = '00000000-0000-0000-0000-0000000063b1' and p.deleted_at is null and d.code = 'asset_core' and o.code = 'view';
 grant select on view_row to authenticated;
 select tests.act_as('00000000-0000-0000-0000-0000000a0001', '00000000-0000-0000-0000-00000000000a');
-select lives_ok($$select public.set_group_policies('00000000-0000-0000-0000-0000000063b1', pg_temp.ops('asset_core', '{view,create}'))$$,
+select lives_ok($$select pg_temp.save('00000000-0000-0000-0000-0000000063b1', pg_temp.ops('asset_core', '{view,create}'))$$,
   'set policies: swap update for create');
 select results_eq($$select pg_temp.live('00000000-0000-0000-0000-0000000063b1')$$, array['create', 'view'], 'set policies: update removed, create added');
 select ok(exists (select 1 from public.group_domain_policy where id = (select id from view_row) and deleted_at is null),
   'set policies: an unchanged grant keeps its row');
-select lives_ok($$select public.set_group_policies('00000000-0000-0000-0000-0000000063b1', pg_temp.ops('asset_core', '{view,create}'))$$,
+select lives_ok($$select pg_temp.save('00000000-0000-0000-0000-0000000063b1', pg_temp.ops('asset_core', '{view,create}'))$$,
   'set policies: same set again');
 select is((select count(*) from public.group_domain_policy where security_group_id = '00000000-0000-0000-0000-0000000063b1'),
   3::bigint, 'set policies: the same set writes no row');
@@ -84,7 +93,7 @@ select throws_ok($$select public.set_group_policies('00000000-0000-0000-0000-000
   '42501', 'system groups cannot be edited', 'set policies: system group refused');
 select throws_ok($$select public.set_group_policies((select id from public.security_group where code = 'tenant_admin' and tenant_id = '00000000-0000-0000-0000-00000000000b'), '{}')$$,
   'P0002', 'group not found', 'set policies: another tenant''s group is not found');
-select lives_ok($$select public.set_group_policies('00000000-0000-0000-0000-0000000063b1', null)$$, 'set policies: null clears');
+select lives_ok($$select pg_temp.save('00000000-0000-0000-0000-0000000063b1', null)$$, 'set policies: null clears');
 select is_empty($$select pg_temp.live('00000000-0000-0000-0000-0000000063b1')$$, 'set policies: no live grant left');
 
 -- Group delete with live assignments [G7].
@@ -114,7 +123,7 @@ create function pg_temp.admin_ops_without_manage() returns uuid[] language sql a
   where g.tenant_id = '00000000-0000-0000-0000-00000000000a' and g.code = 'tenant_admin' and p.deleted_at is null
     and p.domain_operation_id <> all (pg_temp.ops('users_security', '{manage}'));
 $q$;
-select throws_ok($$select pg_temp.at_commit($q$select public.set_group_policies(id, pg_temp.admin_ops_without_manage())
+select throws_ok($$select pg_temp.at_commit($q$select pg_temp.save(id, pg_temp.admin_ops_without_manage())
     from public.security_group where tenant_id = '00000000-0000-0000-0000-00000000000a' and code = 'tenant_admin'$q$)$$,
   '42501', 'last security admin', 'lock-out: revoking manage from the last admin group');
 select throws_ok($$select pg_temp.at_commit($q$update public.user_group_assignment set deleted_at = now()
