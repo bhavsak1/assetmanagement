@@ -128,8 +128,8 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | 6.1 | Scope profiles (location, category) and row-level scope enforcement | OQ-24 | Done |
 | 6.2 | Secure views for restricted fields (purchase value, vendor tax IDs) | | Done |
 | 6.3 | Security screen: groups, domain policy grid (rendered from each domain's operations), assignments | | Done |
-| 6.4 | Draft, review, activate change sets | OQ-22 | In review |
-| 6.5 | "Why can this user see this?" explainer and access review report | | Todo |
+| 6.4 | Draft, review, activate change sets | OQ-22 | Done |
+| 6.5 | "Why can this user see this?" explainer and access review report | | In review |
 
 ### Goal 7: Onboarding and templates
 **Review point:** a new tenant is usable within minutes.

@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { groupCode, securityError, SecurityPage } from './Security'
+import { groupCode, securityError, SecurityPage, toCsv } from './Security'
 import { t } from './i18n'
 
 const db = vi.hoisted(() => ({
@@ -15,7 +15,7 @@ const db = vi.hoisted(() => ({
 vi.mock('./supabase', () => {
   const chain = (table: string) => {
     const q: Record<string, unknown> = {}
-    for (const m of ['select', 'eq', 'is', 'order', 'single']) q[m] = () => q
+    for (const m of ['select', 'eq', 'is', 'order', 'single', 'limit']) q[m] = () => q
     for (const op of ['insert', 'update'])
       q[op] = (values: unknown) => {
         db.writes.push({ table, op, values })
@@ -200,4 +200,57 @@ test('change sets: view only sees the draft but cannot activate', async () => {
   await act(async () => button(s.tabs.changes)!.click())
   expect(container.textContent).toContain(s.domains.asset_core)
   expect(button(s.changes.activate)).toBeUndefined()
+})
+
+test('csv: every cell quoted, quotes doubled, formulas defused', () => {
+  expect(toCsv([['Name', 'Note'], ['Priya "P"', '=SUM(A1)']])).toBe(['"Name","Note"', `"Priya ""P""","'=SUM(A1)"`].join('\r\n'))
+})
+
+test('access review: rows with sensitive fields, filtered by domain', async () => {
+  ;(db.results.security_domain as { data: unknown[] }).data.push({ id: 'd4', code: 'asset_financials', kind: 'field', description: 'Money', domain_operation: [{ id: 'o-fin', code: 'view', sort_order: 1 }] })
+  db.results.group_domain_policy = { data: [{ security_group_id: 'g1', domain_operation_id: 'o-fin' }], error: null }
+  await render(true, false)
+  await act(async () => button(s.tabs.review)!.click())
+  const cells = [...container.querySelectorAll('tbody td')].map((td) => td.textContent)
+  expect(cells).toEqual(['Priya', 'priya@example.com', s.review.memberStatuses.active, 'Plant Manager', s.assignments.tenantWide, '2026-10-01', s.assignments.open, s.review.states.active, s.domains.asset_financials])
+  const filter = container.querySelector<HTMLSelectElement>(`select[aria-label="${s.review.domain}"]`)!
+  expect(filter.querySelector('optgroup')!.label).toBe(s.review.sensitive)
+  filter.value = 'asset_lifecycle'
+  await act(async () => filter.dispatchEvent(new Event('change', { bubbles: true })))
+  expect(container.textContent).toContain(s.review.none)
+  expect(button(s.review.export)!.disabled).toBe(true)
+})
+
+test('explainer: verdict and the reason per assignment', async () => {
+  await render(true, false)
+  await act(async () => button(s.explain.open)!.click())
+  db.rpc.mockImplementation((name: string) =>
+    name === 'explain_access'
+      ? {
+          data: [
+            { group_name: 'Plant Manager', scope_profile_name: 'Pune plant', effective_from: '2026-10-01T00:00:00Z', effective_to: null, outcome: 'out_of_scope', draft: 'add', note: null },
+            { group_name: null, outcome: 'denied', draft: null, note: null },
+          ],
+          error: null,
+        }
+      : { data: [], error: null },
+  )
+  const member = container.querySelector<HTMLSelectElement>('select[name="user"]')!
+  member.value = 'u1'
+  await act(async () => container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  expect(db.rpc).toHaveBeenCalledWith('explain_access', { p_user_id: 'u1', p_domain: 'asset_core', p_operation: 'view', p_asset_id: undefined })
+  expect(container.querySelector('[role="status"]')!.textContent).toContain(s.explain.cannot.replace('{name}', 'Priya').replace('{op}', s.ops.view.toLowerCase()).replace('{domain}', s.domains.asset_core))
+  expect(container.textContent).toContain(s.explain.outcomes.out_of_scope)
+  expect(container.textContent).toContain(s.explain.drafts.add)
+})
+
+test('explainer: an asset tag the caller cannot see is not found', async () => {
+  db.results.asset_view = { data: [], error: null }
+  await render(true, false)
+  await act(async () => button(s.explain.open)!.click())
+  container.querySelector<HTMLSelectElement>('select[name="user"]')!.value = 'u1'
+  container.querySelector<HTMLInputElement>('input[name="tag"]')!.value = 'MUM-1'
+  await act(async () => container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  expect(container.querySelector('[role="alert"]')!.textContent).toBe(s.explain.assetNotFound)
+  expect(db.rpc).not.toHaveBeenCalledWith('explain_access', expect.anything())
 })

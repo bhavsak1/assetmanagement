@@ -1489,6 +1489,11 @@ isOneToOne: false
 "discard_change_set":
 { Args: { "p_change_set_id": string }; Returns: undefined
                            },
+"explain_access":
+{ Args: { "p_asset_id"?: string,"p_domain": string,"p_operation": string,"p_user_id": string }; Returns: {
+              "draft": string,"effective_from": string,"effective_to": string,"group_name": string,"note": string,"outcome": string,"scope_profile_id": string,"scope_profile_name": string,"security_group_id": string
+            }[]
+                           },
 "field_domains":
 { Args: { "p_entity": string }; Returns: {
               "code": string,"id": string

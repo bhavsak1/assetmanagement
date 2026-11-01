@@ -936,6 +936,7 @@
       "groups": "Groups",
       "assignments": "Assignments",
       "profiles": "Scope profiles",
+      "review": "Access review",
       "changes": "Change sets"
     },
     "groups": {
@@ -1072,6 +1073,75 @@
         "activated": "Activated",
         "discarded": "Discarded"
       }
+    },
+    "explain": {
+      "open": "Why can this user see this?",
+      "title": "Why can this user see this?",
+      "intro": "Pick a member and an operation. Add an asset tag to check row scope for one asset.",
+      "member": "Member",
+      "domain": "Domain",
+      "operation": "Operation",
+      "asset": "Asset tag (optional)",
+      "run": "Explain",
+    "yes": "Yes",
+    "no": "No",
+      "close": "Close",
+      "can": "{name} can {op} {domain}",
+      "cannot": "{name} cannot {op} {domain}",
+      "onAsset": " on {tag}",
+      "assignment": "Assignment",
+      "scope": "Scope",
+      "result": "Result",
+      "draft": "Pending draft",
+      "none": "No assignments.",
+      "assetNotFound": "Asset not found.",
+      "outcomes": {
+        "grants": "Grants",
+        "no_policy": "Group does not hold this operation",
+        "not_effective": "Not in its effective dates",
+        "out_of_scope": "Asset is outside this scope",
+        "empty_profile": "Scope profile has no rules, grants nothing",
+        "member_inactive": "Member is disabled"
+      },
+      "drafts": {
+        "add": "Draft adds this operation",
+        "remove": "Draft removes this operation"
+      },
+      "notes": {
+        "rebuild_mismatch": "Stored permissions disagree with the policies. Report this to support.",
+        "tenant_read_only": "The company is read-only, so writes are refused.",
+        "scope_not_applicable": "Scope does not apply to this domain."
+      }
+    },
+    "review": {
+      "intro": "Who holds which groups and scopes. Live policies only.",
+      "domain": "Domain",
+      "anyDomain": "Any domain",
+      "sensitive": "Sensitive fields",
+      "other": "Other domains",
+      "group": "Group",
+      "anyGroup": "Any group",
+      "current": "Current only",
+      "export": "Export CSV",
+      "fileName": "access-review.csv",
+      "member": "Member",
+      "email": "Email",
+      "memberStatus": "Member status",
+      "scope": "Scope",
+      "from": "From",
+      "to": "To",
+      "state": "State",
+      "fields": "Sensitive fields",
+      "states": {
+        "active": "Active",
+        "future": "Future",
+        "ended": "Ended"
+      },
+      "memberStatuses": {
+        "active": "Active",
+        "disabled": "Disabled"
+      },
+      "none": "No assignments match."
     }
   }
 }
