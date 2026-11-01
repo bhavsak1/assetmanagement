@@ -11,6 +11,7 @@ import { DashboardPage } from './Dashboard'
 import { LocationsPage } from './Locations'
 import { MaintenancePage } from './Maintenance'
 import { SettingsPage } from './Settings'
+import { SecurityPage } from './Security'
 import { VendorsPage } from './Vendors'
 import { t } from './i18n'
 import { supabase } from './supabase'
@@ -327,7 +328,7 @@ export function App() {
       <Route element={session ? signedIn : <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />}>
         {navGroups.flatMap(({ items }) =>
           items
-            .filter((key) => key !== 'dashboard' && key !== 'assets' && key !== 'maintenance' && key !== 'categories' && key !== 'locations' && key !== 'settings' && key !== 'vendors' && key !== 'coverage')
+            .filter((key) => key !== 'dashboard' && key !== 'assets' && key !== 'maintenance' && key !== 'categories' && key !== 'locations' && key !== 'settings' && key !== 'vendors' && key !== 'coverage' && key !== 'security')
             .map((key) => <Route key={key} path={`/${key}`} element={<EmptyPage page={key} />} />),
         )}
         <Route path="/dashboard" element={<DashboardPage tenantId={tenantId ?? ''} can={can} />} />
@@ -353,6 +354,7 @@ export function App() {
           path="/settings"
           element={<SettingsPage tenantId={tenantId ?? ''} canView={can('tenant_settings', 'view')} canManage={can('tenant_settings', 'manage')} />}
         />
+        <Route path="/security" element={<SecurityPage tenantId={tenantId ?? ''} canView={can('users_security', 'view')} canManage={can('users_security', 'manage')} />} />
         <Route path="/assets/:assetId" element={<AssetDetailPage can={can} />} />
         <Route path="/assets/:assetId/label" element={<AssetLabelPage />} />
         <Route path="/q/:assetId" element={<ScanPage />} />

@@ -1,4 +1,4 @@
-# Goal 6 data model: scope profiles and row scope (story 6.1), restricted fields (story 6.2)
+# Goal 6 data model: scope profiles and row scope (story 6.1), restricted fields (story 6.2), Security screen (story 6.3)
 
 **Status:** done, accepted by the owner 1 Nov 2026 (PR #49). The owner accepted every lean, S1 to S9, on 1 Nov 2026. Built in migrations `6_1_scope_profile`, `6_1_scope_helpers`, `6_1_scope_enforcement`; tests in `6_1_scope.test.sql` (66); bench in `scripts/spike-6-1/bench.sql`.
 
@@ -219,7 +219,7 @@ All within the targets. The first try (id set on the asset table too) missed: li
 
 # Story 6.2: restricted fields (gap audit and design)
 
-**Status:** in review, 1 Nov 2026. The owner accepted every lean, R1 to R5, on 1 Nov 2026. Built in migrations `6_2_money_write_checks`, `6_2_audit_log_columns`; tests in `6_2_restricted_fields.test.sql` (52).
+**Status:** done, accepted by the owner 1 Nov 2026 (PR #50). The owner accepted every lean, R1 to R5, on 1 Nov 2026. Built in migrations `6_2_money_write_checks`, `6_2_audit_log_columns`; tests in `6_2_restricted_fields.test.sql` (52).
 
 **As built (differences from the design below):**
 - R1 is one generic trigger, `private.keep_masked_values(domain, columns...)`, on update of the money columns of `asset`, `coverage` and `service_record`, named `a_keep_masked_values` so it fires before the `check_*` triggers (before triggers run in name order). The three `check_*` functions are unchanged: they now see no change from a user without view. Four older tests that asserted the old raise (3.3 x2, 4.2, 5.2) now assert "passes, value unchanged".
@@ -302,3 +302,85 @@ The UI never sends a masked field, so no screen changes. The error text for view
 
 - A masked audit log reader or screen (R2 a), webhook payload masking (9.3), export paths (none yet).
 - Scoping vendors or the audit log (6.1 S7).
+
+---
+
+# Story 6.3: Security screen (design)
+
+**Status:** in review, 1 Nov 2026. The owner accepted every lean, G1 to G8, on 1 Nov 2026. Built in migration `6_3_security_admin`; tests in `6_3_security_admin.test.sql` (29); UI `apps/web/src/Security.tsx` (Vitest `Security.test.tsx`, 8).
+
+**As built (differences from the design below):**
+- `set_group_policies` also checks manage, the tenant and `system` up front, so a refusal is an error instead of RLS's silent no-op on the update. RLS still decides.
+- The 1.4 `rls_sample` domain is hidden from the grid (not business data; 1.6 leaves it out of every group).
+- Assignment dates show as the UTC calendar date (shortcut noted in the code) until the shell holds the tenant's date format.
+
+**Goal:** a security admin manages groups, each group's domain policies, assignments (with a scope profile) and scope profiles from one screen, with no SQL. Closes the Goal 6 review point: create a Pune-only Plant Manager in the UI and watch Mumbai assets disappear.
+
+**Reads with:** data-model-goal1.md §2.5 to §2.11, D5, D6, D9; migrations `1_2_security_tables`, `1_3_*`, `1_5_audit_triggers`, `1_6_starter_groups`, `1_7_rebuild_triggers`, `6_1_scope_profile`; §1 to §7 above.
+
+## 19. What already exists
+
+| Change | Path today | Audit | Rebuild and version bump |
+|---|---|---|---|
+| Create, rename, soft delete group | `security_group` insert / update (RLS: `users_security.manage`, `tenant_can_write`, not `system`) | yes, `security` | on delete only (1.3 trigger on `deleted_at`) |
+| Grant / revoke an operation | `group_domain_policy` insert / update of `deleted_at` (same RLS, not a `system` group) | yes | yes, once per statement (1.7 G1) |
+| Assign, end, remove, set scope | `user_group_assignment` insert / update (RLS) | yes | yes, row trigger |
+| Profiles and rules | `scope_profile`, `scope_profile_rule` insert / update (RLS) | yes | no bump (S8: the scope helpers read rules live) |
+| Read the catalog | `security_domain`, `domain_operation` select with `users_security.view` | n/a | n/a |
+
+So every write the screen needs is already guarded, audited and rebuilt. Missing: a member list with names (`user_profile` is own row only), the lock-out guard, and one write path for the grid that 6.4 can redirect.
+
+## 20. Screen (matches Security.dc.html)
+
+Route `/security`, sidebar Admin > Security. Shown with `users_security.view`; every control that writes needs `users_security.manage` (the Auditor sees it read-only). Header "Security", subtitle "Roles, domain policies and data scope". No "Review and activate", no draft banner, no "Why can this user see this?" (6.4, 6.5).
+
+Tabs [G1]:
+1. **Groups.** Left card: the group list and "New group". Right card: "<Group> · domain policies", the grid. One row per domain, its operations from `domain_operation` [G2]. Edits stay local until **Save** (one call) [G3]. A `system` group is read-only. Rename and Delete in the card header.
+2. **Assignments.** Table: member, group, scope profile ("Tenant-wide" when null), from, to. "Add assignment": member, group, scope (profile picker), from, to. Row actions: change scope, end now, remove.
+3. **Scope profiles.** Profile list; detail card as in the screen ("Locations ... and descendants", "Categories All", "Assigned to N users"), rules edited with the existing location tree and category pickers. New, rename, delete (the 6.1 in-use trigger already blocks deleting an assigned profile).
+
+Labels: domain and operation names go through i18n (`security.domain.<code>`, `security.op.<code>`), falling back to `security_domain.description` and the raw code, so a new domain (a migration seed) shows with no code change (CLAUDE.md §7.10).
+
+## 21. Database changes (migration `6_3_security_admin`)
+
+1. **`public.security_members()`**: security definer, `stable`, fixed `search_path`. Returns `user_id, display_name, email, status` for the current tenant's live memberships; nothing without `users_security.view` [G4].
+2. **`public.set_group_policies(p_group_id uuid, p_operation_ids uuid[])`**: security **invoker**, so RLS does the permission, tenant and `system` checks. One statement soft-deletes live rows not in the set, one inserts the missing ones. Unchanged grants keep their row. One save rebuilds each member at most twice (1.7 G1); audit is row by row as today. **6.4 hook:** this is the only grid write path, and 6.4 changes its body to write a draft change set. Nothing else is added for 6.4.
+3. **Lock-out guard** `private.check_security_admin_left()`: constraint trigger, `deferrable initially deferred`, after update or delete on `group_domain_policy`, `user_group_assignment`, `security_group`, `tenant_membership`. At commit (the rebuild has run) it raises `42501 last security admin` when the tenant has no row in `user_effective_permission` for `users_security.manage` with `effective_from <= now()` and `effective_to is null` [G5] (the rebuild only writes rows for active members). Inserts never remove a manager, so they are not watched and provisioning (seed groups, then assign) passes. It applies only when `auth.uid()` is not null [G6].
+4. **Group delete with live assignments** blocked by a `before update of deleted_at` trigger, as for scope profiles in 6.1 [G7].
+5. No policy changes, no new domain.
+
+New group: the client inserts `security_group` (code derived from the name), then, if "Copy from" is picked, calls `set_group_policies` with the source group's operation ids [G8]. No new function.
+
+## 22. Tests (`6_3_security_admin.test.sql`)
+
+- `security_members`: no grant returns nothing; view returns this tenant's members only.
+- `set_group_policies`: refused without manage; adds and removes the right rows; unchanged grants keep their row id; the member's effective permissions and `permission_version` move; refused for a `system` group and for another tenant's group; idempotent.
+- Lock-out: each way to lose the last manager raises, and passes when a second manager exists: revoke `users_security.manage`, remove the assignment, set its `effective_to`, disable or delete the membership, delete the group. Postgres (no `auth.uid()`) is not blocked. Provisioning inserts pass.
+- Group delete: refused with live assignments, allowed without.
+- `tests.cross_tenant` already covers the five security tables.
+- Review point in SQL: a Pune-scoped Plant Manager made only through the paths the UI uses sees no Mumbai asset.
+- Vitest: the grid sends the right set on Save, read-only for view-only users, the scope picker on an assignment.
+
+## 23. DECIDE
+
+| # | Question | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| G1 | Tabs | **a)** Groups, Assignments, Scope profiles. Access review, Change sets and Audit hidden until 6.4, 6.5 and an audit screen. **b)** All five as in the screen, the later ones empty | a. No dead tabs. Scope profiles need their own tab: scope is per assignment, not per group as the screen's card suggests | None |
+| G2 | Grid columns | **a)** One row per domain with its own operations inline as labelled checkboxes. **b)** Fixed View / Create / Update / Delete as in the screen, plus an "Other" column for execute, manage, run, review, commit, undo, complete, ask, save, share. **c)** One column per distinct operation (about 15, mostly blank) | a. Domains have different operation sets; a renders "from each domain's operations" with no gaps and no code change for a new operation. CRUD domains still look like the screen | Low: UI only |
+| G3 | Grid save | **a)** Local edits, one Save calls `set_group_policies` (one transaction). **b)** Each checkbox writes at once | a. One rebuild per save, one lock-out check, one place for 6.4 to turn into a draft | Low |
+| G4 | Member names | **a)** Definer `security_members()` gated by `users_security.view`. **b)** A co-member `user_profile` select policy with `users_security.view` | a. Exposes four columns for the current tenant only. b adds a cross-table check to every `user_profile` read | Low |
+| G5 | Who counts as "can manage security" for the guard | **a)** Active member holding `users_security.manage` now and open-ended (`effective_to is null`). **b)** Holding it now, any end date | a. With b, an admin can end their only assignment tomorrow and the tenant locks itself out with no further change. Scoped grants count (scope does not limit `users_security`) | Low: one condition |
+| G6 | Guard for system jobs | **a)** Only user-driven changes (`auth.uid()` not null). **b)** Always | a. Provisioning and support scripts (postgres) must be able to repair a tenant; they bypass RLS anyway | Low |
+| G7 | Delete a group with live assignments | **a)** Blocked: "remove its assignments first", as scope profiles. **b)** Allowed: members lose the grants at once | a. A misclick would silently strip access from every member | Low: one trigger |
+| G8 | "New group from template" | **a)** "New group" with an optional "Copy from" any group (the starters are already each tenant's templates). **b)** Re-seed from the 1.6 starter templates (new function; `seed_starter_groups` skips templates already used) | a. No new function. Industry templates are 7.1 | Low |
+
+## 24. Build plan (after answers)
+
+1. Migration `6_3_security_admin` (§21), pgTAP `6_3_security_admin.test.sql` (§22), regenerate types.
+2. `apps/web/src/Security.tsx` (three tabs), route, i18n keys, tokens only. Vitest. Browser check on the local seed.
+3. Tracker 6.3 to In review, demo note, owner-review list (lock-out trigger, `security_members`, `set_group_policies`, group delete trigger).
+
+## 25. Not in 6.3
+
+- Drafts, review and activate, change sets, OQ-22 (6.4). The explainer and access review (6.5). An audit log reader (6.2 R2).
+- Inviting or creating users and disabling members (provisioning, OQ-16). Segregation of duties.

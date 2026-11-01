@@ -1037,3 +1037,17 @@ a.kpi:focus-visible {
 .filter-panel.sheet .panel-actions .btn {
   flex: 1;
 }
+
+/* 6.3: the domain policy grid. Each domain lists its own operations. */
+.grid th[scope='row'] {
+  font-weight: var(--weight-regular);
+  white-space: nowrap;
+}
+
+.op {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin: 2px var(--space-6) 2px 0;
+  white-space: nowrap;
+}
