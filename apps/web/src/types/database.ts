@@ -1471,6 +1471,11 @@ isOneToOne: false
 "preview_asset_tag":
 { Args: { "p_category_id"?: string,"p_location_id"?: string,"p_pattern": string }; Returns: string
                            },
+"security_members":
+{ Args: Record<PropertyKey, never>; Returns: {
+              "display_name": string,"email": string,"status": string,"user_id": string
+            }[]
+                           },
 "select_tenant":
 { Args: { "p_tenant_id": string }; Returns: undefined
                            },
@@ -1486,6 +1491,9 @@ isOneToOne: false
                            },
 "set_asset_tag_pattern":
 { Args: { "p_pattern": string }; Returns: undefined
+                           },
+"set_group_policies":
+{ Args: { "p_group_id": string,"p_operation_ids": (string)[] }; Returns: undefined
                            },
 "transfer_asset":
 { Args: { "p_asset_id": string,"p_reason": string,"p_to_location_id": string }; Returns: undefined
