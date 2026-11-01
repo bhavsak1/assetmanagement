@@ -118,14 +118,14 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | 5.3 | Maintenance screen: overdue, due soon, scheduled, completed | | Done |
 | 5.4 | Dashboard KPIs, upcoming list, assets by location | | Done |
 | 5.5 | Locations status counts (demo seed moved to 5.6) | | Done |
-| 5.6 | Demo tenant seed on staging (`scripts/demo-tenant.sql`): a separate demo tenant with realistic data, re-runnable, linking 5 demo users | OQ-16 | In review |
+| 5.6 | Demo tenant seed on staging (`scripts/demo-tenant.sql`): a separate demo tenant with realistic data, re-runnable, linking 5 demo users | OQ-16 | Done |
 
 ### Goal 6: Security admin UI and scope
 **Review point:** you create a Pune-only Plant Manager and verify through the UI that Mumbai assets disappear.
 
 | ID | Story | Open items | Status |
 |---|---|---|---|
-| 6.1 | Scope profiles (location, category) and row-level scope enforcement | OQ-24 | Todo |
+| 6.1 | Scope profiles (location, category) and row-level scope enforcement | OQ-24 | In review |
 | 6.2 | Secure views for restricted fields (purchase value, vendor tax IDs) | | Todo |
 | 6.3 | Security screen: groups, domain policy grid (rendered from each domain's operations), assignments | | Todo |
 | 6.4 | Draft, review, activate change sets | OQ-22 | Todo |

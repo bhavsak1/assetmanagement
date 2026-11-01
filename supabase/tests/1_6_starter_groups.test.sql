@@ -164,6 +164,11 @@ select 'attachments', r.tenant_id || '/service_record/' || r.id || '/' || r.id, 
 from public.service_record r;
 insert into public.service_record_attachment (id, tenant_id, service_record_id, file_name)
 select r.id, r.tenant_id, r.id, 'row' from public.service_record r;
+-- 6.1: a scope profile with one location rule.
+insert into public.scope_profile (id, tenant_id, name)
+select l.id, l.tenant_id, 'row' from public.location l where l.name in ('a-site', 'b-site');
+insert into public.scope_profile_rule (tenant_id, scope_profile_id, dimension, location_id)
+select l.tenant_id, l.id, 'location', l.id from public.location l where l.name in ('a-site', 'b-site');
 select is(array(select name from tenant_table where pg_temp.count_rows(name, $$tenant_id = '00000000-0000-0000-0000-00000000000b'$$) = 0 order by 1),
           '{}', 'every public tenant_id table holds tenant B rows to hide');
 -- One test per tenant A user, each acting as that user over every table. Plain queries, so RLS decides.

@@ -96,6 +96,14 @@ npm run db:reset
 cat scripts/spike-1-7/01_setup.sql scripts/spike-1-7/02_data.sql scripts/spike-1-7/03_bench.sql scripts/spike-1-7/04_fixes.sql | docker exec -i supabase_db_assetly psql -U postgres -v ON_ERROR_STOP=1 -q
 ```
 
+### Scope performance check (story 6.1, local only)
+
+Loads 200k assets into one tenant and times list, count, search and location tiles for a tenant-wide user and three scoped users (about 1.5 min). It runs in one transaction and rolls back. Numbers are in `docs/data-model-goal6.md` §8.
+
+```bash
+docker exec -i supabase_db_assetly psql -U postgres -q -v ON_ERROR_STOP=1 < scripts/spike-6-1/bench.sql
+```
+
 ### CI
 
 `.github/workflows/ci.yml` runs on every pull request: a fresh `db reset`, `supabase test db`, and a check that the committed types match the schema. The web lint, typecheck and build job comes in story 0.3.

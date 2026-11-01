@@ -609,6 +609,88 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"scope_profile": {
+                  Row: {
+                    "created_at": string,"created_by": string | null,"deleted_at": string | null,"id": string,"name": string,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"id"?: string,"name": string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"id"?: string,"name"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "scope_profile_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "scope_profile_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "scope_profile_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"scope_profile_rule": {
+                  Row: {
+                    "category_id": string | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"dimension": string,"id": string,"location_id": string | null,"scope_profile_id": string,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "category_id"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"dimension": string,"id"?: string,"location_id"?: string | null,"scope_profile_id": string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "category_id"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"dimension"?: string,"id"?: string,"location_id"?: string | null,"scope_profile_id"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "scope_profile_rule_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "scope_profile_rule_tenant_id_category_id_fkey"
+      columns: ["tenant_id","category_id"]
+isOneToOne: false
+      referencedRelation: "asset_category"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "scope_profile_rule_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "scope_profile_rule_tenant_id_location_id_fkey"
+      columns: ["tenant_id","location_id"]
+isOneToOne: false
+      referencedRelation: "location"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "scope_profile_rule_tenant_id_scope_profile_id_fkey"
+      columns: ["tenant_id","scope_profile_id"]
+isOneToOne: false
+      referencedRelation: "scope_profile"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "scope_profile_rule_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"security_domain": {
                   Row: {
                     "code": string,"created_at": string,"description": string,"entity": string,"id": string,"is_system": boolean,"kind": string,"updated_at": string
@@ -865,14 +947,14 @@ isOneToOne: false
                   ]
                 },"user_group_assignment": {
                   Row: {
-                    "created_at": string,"created_by": string | null,"deleted_at": string | null,"effective_from": string,"effective_to": string | null,"id": string,"security_group_id": string,"tenant_id": string,"updated_at": string,"updated_by": string | null,"user_id": string
+                    "created_at": string,"created_by": string | null,"deleted_at": string | null,"effective_from": string,"effective_to": string | null,"id": string,"scope_profile_id": string | null,"security_group_id": string,"tenant_id": string,"updated_at": string,"updated_by": string | null,"user_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"effective_from"?: string,"effective_to"?: string | null,"id"?: string,"security_group_id": string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null,"user_id": string
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"effective_from"?: string,"effective_to"?: string | null,"id"?: string,"scope_profile_id"?: string | null,"security_group_id": string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null,"user_id": string
                   }
                   Update: {
-                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"effective_from"?: string,"effective_to"?: string | null,"id"?: string,"security_group_id"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null,"user_id"?: string
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"effective_from"?: string,"effective_to"?: string | null,"id"?: string,"scope_profile_id"?: string | null,"security_group_id"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null,"user_id"?: string
                   }
                   Relationships: [
                     {
@@ -881,6 +963,12 @@ isOneToOne: false
 isOneToOne: false
       referencedRelation: "user_profile"
       referencedColumns: ["id"]
+    },{
+      foreignKeyName: "user_group_assignment_tenant_id_scope_profile_id_fkey"
+      columns: ["tenant_id","scope_profile_id"]
+isOneToOne: false
+      referencedRelation: "scope_profile"
+      referencedColumns: ["tenant_id","id"]
     },{
       foreignKeyName: "user_group_assignment_tenant_id_security_group_id_fkey"
       columns: ["tenant_id","security_group_id"]
