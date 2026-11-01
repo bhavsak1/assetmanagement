@@ -307,7 +307,12 @@ The UI never sends a masked field, so no screen changes. The error text for view
 
 # Story 6.3: Security screen (design)
 
-**Status:** design, 1 Nov 2026. Waiting for the owner on G1 to G8.
+**Status:** in review, 1 Nov 2026. The owner accepted every lean, G1 to G8, on 1 Nov 2026. Built in migration `6_3_security_admin`; tests in `6_3_security_admin.test.sql` (29); UI `apps/web/src/Security.tsx` (Vitest `Security.test.tsx`, 8).
+
+**As built (differences from the design below):**
+- `set_group_policies` also checks manage, the tenant and `system` up front, so a refusal is an error instead of RLS's silent no-op on the update. RLS still decides.
+- The 1.4 `rls_sample` domain is hidden from the grid (not business data; 1.6 leaves it out of every group).
+- Assignment dates show as the UTC calendar date (shortcut noted in the code) until the shell holds the tenant's date format.
 
 **Goal:** a security admin manages groups, each group's domain policies, assignments (with a scope profile) and scope profiles from one screen, with no SQL. Closes the Goal 6 review point: create a Pune-only Plant Manager in the UI and watch Mumbai assets disappear.
 
