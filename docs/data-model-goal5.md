@@ -493,7 +493,9 @@ Export, the AI card, totals by status (D1 a), an exact 30-day link (D4 b), a cha
 
 ## 15. Story 5.5: Locations status counts, demo seed
 
-**Status:** in review, 28 Oct 2026. The owner accepted the leans L1 to L6 on 28 Oct 2026. Part B (the demo tenant, §15.2) is parked as BL-3: the owner checks Goal 5 on staging first. B1 to B7 stay open.
+**Status:** in review, 28 Oct 2026. The owner accepted the leans L1 to L6 on 28 Oct 2026. Part B (the demo tenant, §15.2) was parked as BL-3 and is now story 5.6: the owner accepted every B lean on 1 Nov 2026 and named the five demo emails (`bhavsar.krunal.h+demo-<admin|manager|planner|tech|auditor>@gmail.com`, demo users only).
+
+**As built (5.6):** `scripts/demo-tenant.sql` and the read-only `scripts/demo-tenant-check.sql`. Differences from §15.2: the retired slug carries seconds (`-r<yyyymmddhh24miss>`), so two runs in one minute do not clash; service outcomes use the 5.2 values (pass, fail, or none), with "issues found" in the notes; the chiller AMC covers chillers only, so the expiring tile stays near 20.
 
 **As built (Part A):** migration `5_5_location_status_counts`; tests `5_5_location_status_counts.test.sql` (11); web `Locations.tsx` (`rollUp`, tiles, row totals; 3 new tests) and `Maintenance.tsx` (`?location_id=`, 1 new test). The 200k EXPLAIN was not rerun: the read is the 5.4 `location_asset_counts` query with five `filter` counts in the same single pass (5.4 bench about 210 ms).
 

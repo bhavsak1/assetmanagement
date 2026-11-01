@@ -62,6 +62,31 @@ Staging test users (one tenant each, until the "Choose company" screen exists):
 
 The web app does not call `select_tenant()` yet, so a fresh token has no `tenant_id` and tenant data stays hidden until that call and a session refresh.
 
+### Demo tenant (story 5.6)
+
+`scripts/demo-tenant.sql` builds "Demo Manufacturing Pvt Ltd" (slug `demo-manufacturing`; INR, en-IN, Asia/Kolkata): 3 plants and 14 locations, 21 categories with warranty terms and default obligations, two tenant statuses (Standby, Under repair), 8 vendors with contacts and GSTIN, 150 assets, warranties and 4 AMCs (some expiring, expired, never covered), 285 obligations (about 10% overdue, 10% due soon) and about 440 service records. No attachments. Dates are relative to today, so the dashboard stays live until the next run.
+
+It is one all-or-nothing DO block run as postgres. It never creates auth users or handles passwords.
+
+```bash
+docker exec -i supabase_db_assetly psql -U postgres -v ON_ERROR_STOP=1 < scripts/demo-tenant.sql
+docker exec -i supabase_db_assetly psql -U postgres < scripts/demo-tenant-check.sql
+```
+
+On staging, run the same file as postgres (Supabase MCP `execute_sql`, or psql with the DB password), then `scripts/demo-tenant-check.sql`.
+
+- **Reset:** run it again. The old copy is renamed `Demo Manufacturing (retired …)`, slug `demo-manufacturing-r<timestamp>`, suspended, and its memberships disabled (the audit log is append-only, so nothing is deleted). A fresh copy is built.
+- **Guard:** it touches only the tenant with slug `demo-manufacturing` and name `Demo Manufacturing Pvt Ltd`, and stops otherwise. It also stops if a demo email is a member of any non-demo tenant.
+- **Logins:** add these in the dashboard first (Authentication, Add user, auto-confirm). A missing one is skipped with a NOTICE; run again after adding it.
+
+| User | Group |
+|---|---|
+| bhavsar.krunal.h+demo-admin@gmail.com | Tenant Admin |
+| bhavsar.krunal.h+demo-manager@gmail.com | Plant Manager |
+| bhavsar.krunal.h+demo-planner@gmail.com | Planner |
+| bhavsar.krunal.h+demo-tech@gmail.com | Technician |
+| bhavsar.krunal.h+demo-auditor@gmail.com | Auditor |
+
 ### RLS performance spike (story 1.7, local only)
 
 Loads about 1M assets into the local database (about 3 min), then times the RLS queries (about 20 min). Never run it on staging or in CI. Results and plans land in `spike.result`; the write-up is `docs/spike-1-7-rls-performance.md`. `npm run db:reset` removes it all.
