@@ -127,8 +127,8 @@ select is((select reference from public.coverage_view where id = '00000000-0000-
 select throws_ok($$insert into public.coverage (tenant_id, coverage_type, vendor_id, start_date, end_date, contract_value, contract_currency) values
   ('00000000-0000-0000-0000-00000000000a', 'amc', '00000000-0000-0000-0000-00000042e002', '2026-01-01', '2026-12-31', 5, 'INR')$$,
   '42501', 'no permission to change contract value', 'create: value refused without coverage_values.update');
-select throws_ok($$update public.coverage set contract_value = 5 where id = '00000000-0000-0000-0000-00000042f001'$$,
-  '42501', 'no permission to change contract value', 'update: value change refused without coverage_values.update');
+select lives_ok($$update public.coverage set contract_value = 5 where id = '00000000-0000-0000-0000-00000042f001'$$,
+  'update: value without coverage_values.view is ignored, not refused (6.2 R1: no oracle)');
 select isnt_empty($$update public.coverage set notes = 'renewal due' where id = '00000000-0000-0000-0000-00000042f001' returning 1$$,
   'update: notes saved, hidden value kept');
 select throws_ok($$update public.coverage set vendor_id = '00000000-0000-0000-0000-00000042e003' where id = '00000000-0000-0000-0000-00000042f001'$$,

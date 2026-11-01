@@ -3,7 +3,7 @@
 -- cannot be removed, cross-tenant category and location are refused, mandatory missing is refused.
 -- Uses the seed (tenant A active, B read_only; a1 in A and B, no groups) and supabase/test_harness.sql.
 begin;
-select plan(13);
+select plan(15);
 
 -- Fixtures, as postgres before any act_as: no signed-in user, so the user rules do not apply.
 insert into public.asset_category (id, tenant_id, name) values
@@ -30,20 +30,25 @@ select lives_ok(
   $$update public.asset set name = 'Pump 01A', custom_values = '{"head_m": 32, "pump_no": "P1"}'
     where id = '00000000-0000-0000-0000-0000000033a1'$$,
   'save without the hidden key and money columns');
-select throws_ok(
+select lives_ok(
   $$update public.asset set purchase_value = null, purchase_currency = null where id = '00000000-0000-0000-0000-0000000033a1'$$,
-  '42501', 'no permission to change purchase value', 'cannot blank money it cannot see');
+  'blanking money it cannot see is ignored, not refused (6.2 R1: no oracle)');
 reset role;
 select is((select purchase_value from public.asset where id = '00000000-0000-0000-0000-0000000033a1'), 5000.0000, 'purchase value unchanged');
 select is((select custom_values from public.asset where id = '00000000-0000-0000-0000-0000000033a1'),
           '{"head_m": 32, "cost_rate": 12, "pump_no": "P1"}'::jsonb, 'hidden key kept, visible key changed');
 
--- update on asset_financials without view: still blind, so still refused (3.3 gap 2).
+-- update on asset_financials without view: still blind, so the stored value is kept (3.3 gap 2, 6.2 R1).
 select tests.grant('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-0000000000a1', 'asset_financials', '{update}');
 select tests.act_as('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-00000000000a');
-select throws_ok(
+select lives_ok(
   $$update public.asset set purchase_value = 1 where id = '00000000-0000-0000-0000-0000000033a1'$$,
-  '42501', 'no permission to change purchase value', 'update without view cannot overwrite money');
+  'update without view: no error (6.2 R1)');
+select is((select purchase_value from public.asset_view where id = '00000000-0000-0000-0000-0000000033a1'), null,
+  'still masked');
+reset role;
+select is((select purchase_value from public.asset where id = '00000000-0000-0000-0000-0000000033a1'), 5000.0000,
+  'update without view cannot overwrite money');
 
 -- view on asset_financials, no update: cost_rate is read-only on the form (3.3 gap 1).
 reset role;
