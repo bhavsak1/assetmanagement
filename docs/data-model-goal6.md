@@ -1,4 +1,4 @@
-# Goal 6 data model: scope profiles and row scope (story 6.1), restricted fields (story 6.2), Security screen (story 6.3)
+# Goal 6 data model: scope profiles and row scope (story 6.1), restricted fields (story 6.2), Security screen (story 6.3), change sets (story 6.4)
 
 **Status:** done, accepted by the owner 1 Nov 2026 (PR #49). The owner accepted every lean, S1 to S9, on 1 Nov 2026. Built in migrations `6_1_scope_profile`, `6_1_scope_helpers`, `6_1_scope_enforcement`; tests in `6_1_scope.test.sql` (66); bench in `scripts/spike-6-1/bench.sql`.
 
@@ -307,7 +307,7 @@ The UI never sends a masked field, so no screen changes. The error text for view
 
 # Story 6.3: Security screen (design)
 
-**Status:** in review, 1 Nov 2026. The owner accepted every lean, G1 to G8, on 1 Nov 2026. Built in migration `6_3_security_admin`; tests in `6_3_security_admin.test.sql` (29); UI `apps/web/src/Security.tsx` (Vitest `Security.test.tsx`, 8).
+**Status:** done, accepted by the owner 1 Nov 2026 (PR #51). The owner accepted every lean, G1 to G8, on 1 Nov 2026. Built in migration `6_3_security_admin`; tests in `6_3_security_admin.test.sql` (29); UI `apps/web/src/Security.tsx` (Vitest `Security.test.tsx`, 8).
 
 **As built (differences from the design below):**
 - `set_group_policies` also checks manage, the tenant and `system` up front, so a refusal is an error instead of RLS's silent no-op on the update. RLS still decides.
@@ -384,3 +384,79 @@ New group: the client inserts `security_group` (code derived from the name), the
 
 - Drafts, review and activate, change sets, OQ-22 (6.4). The explainer and access review (6.5). An audit log reader (6.2 R2).
 - Inviting or creating users and disabling members (provisioning, OQ-16). Segregation of duties.
+
+---
+
+# Story 6.4: Draft, review, activate change sets (design)
+
+**Status:** design, waiting for the owner's answers to C1 to C8 (§29).
+
+**Goal:** group policy edits are drafted, reviewed as a diff and activated together, in one transaction, with audit (security-model.md §2.6, §9). Nothing applies until activated.
+
+**Reads with:** security-model.md §2.6, §7 (`policy_change_set`), §9; data-model-goal1.md D9 (no status column on the live rows); §19 to §25 above; migration `6_3_security_admin`.
+
+**Open items used:** OQ-22, lean "single approver for pilots" (C3). Not settled here.
+
+## 26. What 6.3 already gives us
+
+- `set_group_policies(group, operation_ids)` is the only grid write path. It was left as the 6.4 hook.
+- The live writes on `group_domain_policy` already rebuild `user_effective_permission`, bump `permission_version`, write the `security` audit row, and run the deferred lock-out guard at commit.
+
+So activation can **replay the draft through the same live writes**. Rebuild, version bump, row audit and the lock-out guard come for free. 6.4 adds a place to hold the draft, the diff, and the activate and discard actions.
+
+## 27. Design
+
+1. **Tables** (standard columns, RLS, audit trigger `security`):
+   - `policy_change_set`: `status` (`draft`, `activated`, `discarded`), `activated_by`, `activated_at`. Partial unique: one `draft` per tenant [C4].
+   - `policy_change_set_item`: `policy_change_set_id`, `security_group_id`, `operation_ids uuid[]` (the group's wanted set), `before_ids uuid[]` (filled at activation, for history) [C5, C8]. Unique `(policy_change_set_id, security_group_id)`. Composite FKs.
+   - Select with `users_security.view`. No insert, update or delete policies: writes go through the functions below [C2].
+2. **`set_group_policies`** keeps its signature, so the UI call does not change. New body: open the tenant's draft if none, then upsert the item for the group. If the wanted set equals the live set, the item is removed (this is also "revert this group"). Same checks as 6.3 (manage, `tenant_can_write`, group live, not `system`). Becomes security definer, because tenants can no longer write the draft tables directly.
+3. **`activate_change_set(p_id)`**: definer, checks manage and `tenant_can_write`, locks the draft row (`for update`). For each item whose group is still live [C6]: store `before_ids`, then run the 6.3 diff (soft-delete removed grants, insert added ones). Set `activated`, `activated_by`, `activated_at`. One transaction. At commit the 6.3 guard raises `last security admin` if the result locks the tenant out, and the whole activation rolls back; the draft stays.
+4. **`discard_change_set(p_id)`**: sets `discarded`. Any manager.
+5. **Live table locked** [C2]: drop the `insert` and `update` policies on `group_domain_policy`. Only `activate_change_set` (definer) and postgres write live grants. Group create, rename and delete stay direct (a new group has no grants; delete is blocked while assigned, G7).
+6. **`change_set_diff(p_id)`**: invoker, `stable`. Rows of `group, domain, operation, change ('add' | 'remove')`: wanted vs live for a draft, wanted vs `before_ids` for history. One function for the review screen and the history.
+
+## 28. Screen (matches Security in assetly-screens.html)
+
+- Header gets **Review and activate** (primary, manage only, shown when the draft has items).
+- Banner under the header: "N draft policy changes pending. Nothing applies until activated." N = diff rows.
+- Groups tab: the grid loads the draft set for the group when there is one, with a "Draft" tag by the title (the screen's "Version 4 · draft", without a version number [C7]). Save writes to the draft. A "Revert" button sets the group back to live.
+- New **Change sets** tab [C7]: the open draft's diff grouped by group (`+ Asset core · Create`, `− Vendor core · Delete`), Activate and Discard; then a history list (date, drafted by, activated by, groups changed), each row expands to its diff [C8]. Activate asks for a confirm.
+- "Copy from" on a new group now drafts the copy; the new group's grants apply on activation.
+
+## 29. DECIDE
+
+| # | Question | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| C1 | Which edits go through a change set | **a)** Group policies only (the grid). Assignments, scope profiles and rules stay direct. **b)** Policies and assignments. **c)** Everything on the screen | a. "Policy change set" is about policies, and the screen drafts only the grid. Assignments are daily work (a new technician should not wait for an activation). Known gap: assignment and scope edits still change access at once. They stay audited, and the lock-out guard still covers them | Medium: b or c add item kinds and diff code, and lock more tables |
+| C2 | Block direct writes to `group_domain_policy` | **a)** Yes: drop its insert and update policies; only activation writes. **b)** No: the draft is a UI convention | a. Enforce in the database (CLAUDE.md §7.2). With b, any manager can skip review through the REST API | Low: re-add two policies |
+| C3 | Can the drafter activate their own draft (OQ-22) | **a)** Yes. Any manager activates after reviewing the diff; drafter and activator are both recorded. **b)** No: a different manager must activate. **c)** A tenant setting choosing a or b | a. OQ-22 lean is single approver for pilots, and a pilot often has one admin; b would block every change for them. c when a customer asks | Low: one check, later a setting |
+| C4 | How many drafts | **a)** One shared draft per tenant; any manager adds to it. **b)** Many drafts, one per author, with a conflict check at activation (refuse when a group changed since the draft read it) | a. No conflicts to handle: two managers editing the same group edit the same item, last save wins, and the diff shows the result before anyone activates. Matches the screen's single banner. b needs a base snapshot, a conflict error and a draft picker | Medium: a column, a check and UI |
+| C5 | Draft item shape | **a)** The group's whole wanted set (`uuid[]`), diff computed against live. **b)** One row per add or remove | a. Same input as `set_group_policies` today; no stale add/remove rows; diff is one query | Low |
+| C6 | Draft item for a group deleted before activation | **a)** Skipped at activation and hidden from the diff. **b)** Activation fails until it is removed | a. The group is gone; nothing to apply. Delete is already blocked while the group is assigned | Low |
+| C7 | Review UI | **a)** Change sets tab with a grouped add/remove list, banner, Review and activate button, Draft tag on the grid; no version numbers. **b)** Also a side-by-side before/after grid. **c)** Version numbers per group | a. The list is what the banner counts; b and c are more UI for little gain at pilot size | Low: UI only |
+| C8 | Keep history of activated and discarded sets | **a)** Yes: rows stay, `before_ids` stored at activation, history list on the tab. **b)** Only the row-level audit log | a. One column; shows "what changed in set X" without the audit log, which has no reader yet | Low |
+
+Fixed, not a choice: activation is one transaction; rebuild, version bump, row audit and the lock-out guard are the existing triggers; a lock-out rolls the whole activation back and keeps the draft.
+
+## 30. Tests (`6_4_change_sets.test.sql`)
+
+- `set_group_policies`: refused without manage, for a `system` group and another tenant's group; opens one draft; live grants and `permission_version` unchanged; saving the live set removes the item.
+- Direct insert or update on `group_domain_policy` refused for a manager.
+- `change_set_diff`: right adds and removes; deleted group hidden.
+- `activate_change_set`: refused without manage and on a read-only tenant; applies every item; members' effective permissions and `permission_version` move; status, `activated_by`, `before_ids` set; second activate refused; drafter can activate (C3 a).
+- Lock-out: a draft that revokes the last manager's `users_security.manage` fails at commit; the draft stays open.
+- `discard_change_set`: status set; nothing applied; the next save opens a fresh draft.
+- One draft per tenant; `tests.cross_tenant` for both new tables.
+- The 6.3 tests that wrote live grants through `set_group_policies` now activate after.
+- Vitest: Save writes the draft; banner count; Activate and Discard; read-only for view users.
+
+## 31. Build plan (after answers)
+
+1. Migration `6_4_change_sets` (§27), pgTAP (§30), regenerate types.
+2. `Security.tsx`: banner, Review and activate, Draft tag, Revert, Change sets tab; i18n; tokens. Vitest. Browser check on the local seed.
+3. Tracker 6.4 to In review, OQ-22 note, demo note, owner-review list.
+
+## 32. Not in 6.4
+
+- Drafting assignments and scope profiles (C1 b, c). A separate approver or segregation of duties (C3 b, c). Many drafts (C4 b). Scheduled activation. Rollback of an activated set (draft the old grid again instead).
