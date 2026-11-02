@@ -13,13 +13,21 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npx supabase db start
+      # ES256 like staging (8.1); Auth and the REST gateway are needed by the services/api tests
+      - run: npm run db:signing-key
+      - run: npx supabase start -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
       - name: Fresh database from migrations
         run: |
           npx supabase db reset
           # reset restarts Postgres; wait until it accepts connections
           timeout 60 bash -c 'until docker exec supabase_db_assetly pg_isready -U postgres; do sleep 1; done'
       - run: npx supabase test db
+      - name: Service tests (services/api, includes the tenant-leak test)
+        working-directory: services/api
+        run: |
+          npm ci
+          export SUPABASE_ANON_KEY=$(npx --prefix ../.. supabase status -o env | grep '^ANON_KEY=' | cut -d= -f2- | tr -d '"')
+          npm test
       - name: List tenant tables without a cross-tenant test
         # shortcut: warns only, since the 1.1 and 1.2 tables have hand-written tests; make it fail once they use the harness
         run: |
@@ -50,3 +58,20 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: services/api/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: docker build -t assetly-api:ci .

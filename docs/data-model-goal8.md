@@ -1,6 +1,6 @@
 # Goal 8 data model: custom service skeleton (story 8.1)
 
-**Status:** design, waiting for the owner's answers to §10 (DECIDE G1 to G10). Nothing built yet.
+**Status:** built 2 Nov 2026, 8.1 In review; staging deploy waits for the owner's GCP setup (§9). Decided 2 Nov 2026. The owner chose **Fastify** for G1 (after a wider framework comparison with a long-term enterprise view: maturity, OpenJS Foundation governance, official plugins, Node streams; Hono's run-anywhere strength is unused on Cloud Run) and accepted the leans for G2 to G10.
 
 **Goal:** a small TypeScript service runs on Cloud Run staging. It has a health endpoint and one authenticated endpoint that proves RLS works through the service. A test proves pooled connections never leak tenant context. CI lints, typechecks, tests and builds the Docker image.
 
@@ -11,7 +11,7 @@
 
 **Reads with:** technical-architecture.md §2, §5, §6; security-model.md; CLAUDE.md §3, §6, §14.
 
-**Open items used:** D1 and OQ-28 (framework, query layer). Leans below; the owner decides in §10.
+**Open items used:** D1 and OQ-28, decided by the owner 2 Nov 2026 (§10): Fastify, plain `pg`.
 
 **Facts checked (2 Nov 2026):**
 - `private.current_tenant_id()` reads `auth.jwt() ->> 'tenant_id'`, and `auth.jwt()` reads the setting `request.jwt.claims`. So any connection that sets that setting and the role `authenticated` gets the same RLS as PostgREST.
@@ -21,6 +21,14 @@
 
 ---
 
+**As built (differences from the design below):**
+- Role and claims are set in one statement: `select set_config('role', 'authenticated', true), set_config('request.jwt.claims', $1, true)`, as PostgREST does. Same effect as `set local role`.
+- The local signing key is made by `scripts/gen-signing-key.mjs` (`npm run db:signing-key`), not `supabase gen signing-key`: the CLI command fails once `config.toml` points at a file that does not exist yet.
+- CI starts Auth and the REST gateway too (`supabase start -x ...` instead of `db start`), since the service tests sign in for real tokens.
+- The deployer service account needs `roles/run.admin`, not `run.developer`: `--allow-unauthenticated` sets the service's IAM policy.
+- pgTAP checks rights with `has_table_privilege` and `pg_has_role` rather than `set role assetly_api` (pgTAP functions are not callable as that role).
+- Tests: `supabase/tests/8_1_api_role.test.sql` (6) and `services/api/test` (9, Node's own test runner). Mutation check: making the settings session-level fails the leak test.
+
 ## 1. Framework and query layer
 
 | Option | For | Against |
@@ -29,7 +37,7 @@
 | Fastify | Mature, fast, big plugin set, JSON schema validation | Node only; plugin style is more ceremony |
 | NestJS | Enforced structure, DI | Heavy boilerplate for a solo builder; slow cold start hurts scale to zero |
 
-**Lean: Hono** (with `@hono/node-server` on Node 24).
+Earlier lean: Hono. **Decided: Fastify** (G1), on Node 24.
 
 | Option | For | Against |
 |---|---|---|
@@ -91,7 +99,7 @@ services/api/
   tsconfig.json        strict, noEmit, erasableSyntaxOnly
   eslint.config.js
   src/index.ts         reads env, starts the server
-  src/app.ts           Hono routes: GET /health, GET /me
+  src/app.ts           Fastify routes: GET /health, GET /me
   src/auth.ts          JWT verification (jose, JWKS)
   src/db.ts            pg pool and withUser() (the one data layer)
   test/*.test.ts       node:test, real local Supabase
@@ -160,6 +168,8 @@ Then in Cloud Shell (replace `PROJECT`):
 gcloud config set project PROJECT
 gcloud services enable run.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com iamcredentials.googleapis.com sts.googleapis.com
 gcloud artifacts repositories create assetly --repository-format=docker --location=asia-northeast1
+echo '[{"name":"keep-3","action":{"type":"Keep"},"mostRecentVersions":{"keepCount":3}},{"name":"delete-rest","action":{"type":"Delete"},"condition":{"tagState":"any"}}]' > /tmp/cleanup.json
+gcloud artifacts repositories set-cleanup-policies assetly --location=asia-northeast1 --policy=/tmp/cleanup.json --no-dry-run
 gcloud iam service-accounts create assetly-api-run
 gcloud iam service-accounts create assetly-api-deploy
 PN=$(gcloud projects describe PROJECT --format='value(projectNumber)')
@@ -171,7 +181,7 @@ gcloud iam workload-identity-pools providers create-oidc github --location=globa
 gcloud iam service-accounts add-iam-policy-binding assetly-api-deploy@PROJECT.iam.gserviceaccount.com \
   --role=roles/iam.workloadIdentityUser \
   --member="principalSet://iam.googleapis.com/projects/$PN/locations/global/workloadIdentityPools/github/attribute.repository/bhavsak1/assetmanagement"
-gcloud projects add-iam-policy-binding PROJECT --role=roles/run.developer --member=serviceAccount:assetly-api-deploy@PROJECT.iam.gserviceaccount.com
+gcloud projects add-iam-policy-binding PROJECT --role=roles/run.admin --member=serviceAccount:assetly-api-deploy@PROJECT.iam.gserviceaccount.com
 gcloud artifacts repositories add-iam-policy-binding assetly --location=asia-northeast1 --role=roles/artifactregistry.writer --member=serviceAccount:assetly-api-deploy@PROJECT.iam.gserviceaccount.com
 gcloud iam service-accounts add-iam-policy-binding assetly-api-run@PROJECT.iam.gserviceaccount.com --role=roles/iam.serviceAccountUser --member=serviceAccount:assetly-api-deploy@PROJECT.iam.gserviceaccount.com
 ```
@@ -184,13 +194,13 @@ gcloud secrets versions add assetly-api-db-url --data-file=-   # paste postgres:
 gcloud secrets add-iam-policy-binding assetly-api-db-url --role=roles/secretmanager.secretAccessor --member=serviceAccount:assetly-api-run@PROJECT.iam.gserviceaccount.com
 ```
 
-Then give me the project ID and project number (not secrets); I put them in `deploy-api.yml` as plain values.
+Then in GitHub: **Settings > Secrets and variables > Actions > Variables**, add `GCP_PROJECT_ID` and `GCP_PROJECT_NUMBER` (not secrets). Run **Actions > Deploy API (staging) > Run workflow**. Its last step calls `/health`.
 
 ## 10. DECIDE
 
 | # | Decision | Options | Lean | Cost to reverse |
 |---|---|---|---|---|
-| G1 | Framework | a Hono, b Fastify, c NestJS | a | Medium: routes and middleware rewritten; data layer kept |
+| G1 | Framework | a Hono, b Fastify, c NestJS | **b (owner)** | Medium: routes and middleware rewritten; data layer kept |
 | G2 | Query layer | a plain `pg`, b Kysely, c Drizzle | a, revisit at 8.6 or 9.2 | Low: Kysely runs on the same pool |
 | G3 | Tenant context | a own role `assetly_api` (noinherit, member of `authenticated` only) plus `SET LOCAL` per transaction, b forward the JWT to PostgREST | a | Medium: the data layer changes; routes do not |
 | G4 | Token check | a JWKS only, ES256 locally too (git-ignored local key, CI generates one), b call `/auth/v1/user` every request, c JWKS on staging and HS256 secret locally | a | Low: one module |

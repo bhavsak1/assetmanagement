@@ -28,7 +28,7 @@
 
 | # | Decision | Needed by | Status |
 |---|---|---|---|
-| D1 | Service framework for M3 (Hono or Fastify preferred, NestJS acceptable) and query layer (Drizzle or Kysely). Same as OQ-28. Host decided 2 Nov 2026: Google Cloud Run (see OQ-28). Framework and query layer: `data-model-goal8.md` §1 | Start of Goal 8 | Host decided; framework open |
+| D1 | Service framework for M3 (Hono or Fastify preferred, NestJS acceptable) and query layer (Drizzle or Kysely). Same as OQ-28. Host decided 2 Nov 2026: Google Cloud Run (see OQ-28). Framework Fastify, query layer plain `pg` (owner, 2 Nov 2026, `data-model-goal8.md` §10) | Start of Goal 8 | Decided |
 | D2 | Draft `CLAUDE.md` as story 0.1 (tenancy, migration, RLS, naming rules) | Before 0.1 | Open |
 
 ---
@@ -146,7 +146,7 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 
 | ID | Story | Open items | Status |
 |---|---|---|---|
-| 8.1 | Custom service skeleton, deployed, using user token or `SET LOCAL` tenant context | D1, OQ-28 | In progress |
+| 8.1 | Custom service skeleton, deployed, using user token or `SET LOCAL` tenant context | D1, OQ-28 | In review |
 | 8.2 | Upload and streaming parse into staged rows | | Todo |
 | 8.3 | Column mapping step (pluggable) and mapping templates | | Todo |
 | 8.4 | Deterministic validation and dry run | | Todo |
