@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "db:start": "supabase start",
+    "db:signing-key": "node scripts/gen-signing-key.mjs",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
     "db:test": "supabase test db",

@@ -35,7 +35,7 @@ Some older text is out of date. When documents disagree:
 - **Database, auth, storage:** Supabase (managed Postgres, Auth, Storage), region Mumbai (ap-south-1). One shared database for all tenants. One Supabase project per environment, never one per tenant.
 - **Frontend:** React, TypeScript (strict), Vite, single-page app, responsive PWA. All visible text goes through i18n. English only for now.
 - **Backend logic:** Postgres first (SQL functions, RLS, triggers, `pg_cron`). React calls Supabase directly with the user's token.
-- **Custom service:** does not exist until Goal 8. Do not create a `services/` folder, a server, or an API layer before then. The framework and query layer are still open (D1, OQ-28). Do not choose them yourself.
+- **Custom service:** `services/api`, from story 8.1. Fastify on Node 24 (TypeScript run directly), plain `pg`, Docker on Google Cloud Run (D1, OQ-28, `docs/data-model-goal8.md`). All database access goes through `withUser` in `src/db.ts`: role `assetly_api`, `set local` role and claims per transaction. No other server or API layer.
 - **Queues, search, vectors, events:** Postgres only (`pg-boss` or `pg_cron`, full-text and trigram, `pgvector`, a transactional outbox table). No Redis, OpenSearch, Kafka, Kubernetes or microservices.
 - **Environments:** one hosted staging environment plus local. No production project yet.
 - **Portability:** everything is a plain SQL migration in git. Avoid Supabase-only features for core business logic, so a later move to RDS or self-hosting stays a migration, not a rewrite.
@@ -44,6 +44,7 @@ Some older text is out of date. When documents disagree:
 
 ```
 apps/web/            React app (Vite)
+services/api/        Custom service (Goal 8 on): import, later /v1 API, webhooks, AI gateway
 supabase/
   migrations/        SQL migrations (the only way the schema changes)
   tests/             SQL tests (pgTAP, run with `supabase test db`)

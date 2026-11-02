@@ -106,3 +106,6 @@ begin
   end loop;
 end;
 $$;
+
+-- LOCAL SERVICE ROLE PASSWORD (story 8.1). Test value for services/api; staging sets its own.
+alter role assetly_api password 'assetly-local-api';

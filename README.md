@@ -10,6 +10,7 @@ Needs Docker Desktop (running) and Node 24. The Supabase CLI is pinned in `packa
 
 ```bash
 npm install
+npm run db:signing-key   # once: local ES256 Auth key, git-ignored (story 8.1)
 npm run db:start    # local Supabase stack (first run pulls images)
 npm run db:reset    # rebuild the local database from supabase/migrations
 npm run db:test     # pgTAP tests in supabase/tests
@@ -18,6 +19,18 @@ npm run db:stop
 ```
 
 Copy `.env.example` to `.env`. Local keys come from `npx supabase status`. Never put the service-role key in web config.
+
+### Custom service (`services/api`, story 8.1)
+
+```bash
+cd services/api
+npm install
+cp .env.example .env    # add SUPABASE_ANON_KEY from `npx supabase status -o env`
+npm test                # needs the local stack; includes the tenant-leak test
+npm run dev             # http://localhost:8080/health, /me with a Bearer token
+```
+
+Staging deploy: Actions, "Deploy API (staging)", run manually. Setup steps are in `docs/data-model-goal8.md` §9.
 
 ### Schema changes
 
