@@ -37,7 +37,7 @@
 
 - Service framework: Hono or Fastify preferred over NestJS for a solo builder (less boilerplate). NestJS remains acceptable if the owner wants enforced structure.
 - ORM or query layer: Drizzle or Kysely preferred over Prisma (RLS needs per-transaction tenant context via `SET LOCAL`).
-- Service hosting: small container host such as Fly.io, Railway, Render or AWS App Runner. Move to AWS Fargate later if needed.
+- Service hosting (decided by the owner, 2 Nov 2026, OQ-28): Google Cloud Run from a Docker image, scale to zero. Staging in asia-northeast1 (Tokyo), production later in asia-south1 (Mumbai). Fallback Fly.io Singapore. Background jobs are triggered by `pg_cron` or Cloud Scheduler calling the service. Static egress IP (Cloud NAT) only when a customer asks.
 - Frontend hosting: Cloudflare Pages or similar (free tier).
 - Email: Amazon SES. WhatsApp: a business solution provider (Gupshup, Twilio or Meta Cloud API).
 - AI provider: Anthropic Claude as primary, second provider as fallback, behind the AI gateway.

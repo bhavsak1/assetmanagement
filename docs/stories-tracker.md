@@ -28,7 +28,7 @@
 
 | # | Decision | Needed by | Status |
 |---|---|---|---|
-| D1 | Service framework for M3 (Hono or Fastify preferred, NestJS acceptable) and query layer (Drizzle or Kysely). Same as OQ-28 | Start of Goal 8 | Open |
+| D1 | Service framework for M3 (Hono or Fastify preferred, NestJS acceptable) and query layer (Drizzle or Kysely). Same as OQ-28. Host decided 2 Nov 2026: Google Cloud Run (see OQ-28). Framework and query layer: `data-model-goal8.md` §1 | Start of Goal 8 | Host decided; framework open |
 | D2 | Draft `CLAUDE.md` as story 0.1 (tenancy, migration, RLS, naming rules) | Before 0.1 | Open |
 
 ---
@@ -129,23 +129,24 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | 6.2 | Secure views for restricted fields (purchase value, vendor tax IDs) | | Done |
 | 6.3 | Security screen: groups, domain policy grid (rendered from each domain's operations), assignments | | Done |
 | 6.4 | Draft, review, activate change sets | OQ-22 | Done |
-| 6.5 | "Why can this user see this?" explainer and access review report | | In review |
+| 6.5 | "Why can this user see this?" explainer and access review report | | Done |
 
 ### Goal 7: Onboarding and templates
+**Parked by the owner (2 Nov 2026).** Revisit before the first self-serve tenant.
 **Review point:** a new tenant is usable within minutes.
 
 | ID | Story | Open items | Status |
 |---|---|---|---|
-| 7.1 | Industry template tables, with one hand-seeded industry | OQ-13 | Todo |
-| 7.2 | Onboarding wizard UI (pick industry, accept or edit categories, fields, intervals) | | Todo |
-| 7.3 | Starter security groups per template, plus two more industries | OQ-13, OQ-25 | Todo |
+| 7.1 | Industry template tables, with one hand-seeded industry | OQ-13 | Backlog |
+| 7.2 | Onboarding wizard UI (pick industry, accept or edit categories, fields, intervals) | | Backlog |
+| 7.3 | Starter security groups per template, plus two more industries | OQ-13, OQ-25 | Backlog |
 
 ### Goal 8: Excel import (starts the custom service)
 **Review point:** upload a messy Excel file, review it, commit, and undo.
 
 | ID | Story | Open items | Status |
 |---|---|---|---|
-| 8.1 | Custom service skeleton, deployed, using user token or `SET LOCAL` tenant context | D1, OQ-28 | Todo |
+| 8.1 | Custom service skeleton, deployed, using user token or `SET LOCAL` tenant context | D1, OQ-28 | In progress |
 | 8.2 | Upload and streaming parse into staged rows | | Todo |
 | 8.3 | Column mapping step (pluggable) and mapping templates | | Todo |
 | 8.4 | Deterministic validation and dry run | | Todo |
@@ -190,7 +191,7 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 | 4 Vendors and coverage | No | |
 | 5 Obligations and dashboard | No | |
 | 6 Security admin UI and scope | No | |
-| 7 Onboarding and templates | No | |
+| 7 Onboarding and templates | No | Parked by the owner, 2 Nov 2026 |
 | 8 Excel import | No | |
 | 9 Notifications, API, webhooks | No | |
 | 10 AI add-on | No | Stories not yet written |
@@ -227,3 +228,4 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 | 28 Oct 2026 | Story 5.5 narrowed to the Locations status counts. The demo tenant seed is parked as BL-3: the owner checks Goal 5 on staging first. Owner accepted L1 to L6 (docs/data-model-goal5.md §15) |
 | 1 Nov 2026 | Backlog item BL-3 (demo tenant) moved into Goal 5 as story 5.6: the Goal 5 review point needs the demo tenant. Owner accepted B1 to B7 and named the five demo emails (demo users only) |
 | 1 Nov 2026 | Story 9.3 gains payload masking by field domain, moved from 6.2 (owner accepted R3, docs/data-model-goal6.md §17) |
+| 2 Nov 2026 | Goal 7 (stories 7.1 to 7.3) parked by the owner, status Backlog; Goal 8 starts next. 6.5 Done. Owner chose the 8.1 host: Google Cloud Run (staging asia-northeast1, production later asia-south1), Fly.io Singapore as fallback |
