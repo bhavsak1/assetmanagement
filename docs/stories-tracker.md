@@ -149,6 +149,7 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | 8.1 | Custom service skeleton, deployed, using user token or `SET LOCAL` tenant context | D1, OQ-28 | Done |
 | 8.2 | Upload and streaming parse into staged rows | | Done |
 | 8.3 | Column mapping step (pluggable) and mapping templates | | Done |
+| 8.3b | Drop-downs in the import template: Excel lists (data validation) on Category, Location, Status, vendors, Criticality and list-type custom fields, filled from the tenant's own data as the user may see it (a hidden "Lists" sheet), plus date and number checks on date and number columns. Builds on `GET /imports/template` (8.3). Lists are a snapshot at download time; 8.4 still checks every value | | Todo |
 | 8.4 | Deterministic validation and dry run | | In review |
 | 8.5 | Import review screen | | Todo |
 | 8.6 | Idempotent commit and batch undo | | Todo |
@@ -177,7 +178,6 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 |---|---|---|---|
 | BL-1 | Background jobs monitor: a `job_run` log (job, tenant, start, end, status, rows, error) written by every background job; a "Background jobs" page for a platform admin (like Workday's background process monitor); a `job.failed` outbox event for alerts. Needs a platform-admin role, which does not exist yet | Goal 9 (notifications, API) and Goal 10 (AI gateway) | Backlog |
 | BL-2 | Optional BOM per asset (reference parts list, no inventory). Parked from 5.5 by the owner | Later | Backlog |
-| BL-4 | Drop-downs in the import template: Excel lists (data validation) on Category, Location, Status, vendors, Criticality and list-type custom fields, filled from the tenant's own data as the user may see it (a hidden "Lists" sheet), plus date and number checks on date and number columns. Builds on `GET /imports/template` (8.3). Lists are a snapshot at download time; 8.4 still checks every value | After 8.4 | Backlog |
 
 ---
 
@@ -232,3 +232,4 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 | 2 Nov 2026 | Goal 7 (stories 7.1 to 7.3) parked by the owner, status Backlog; Goal 8 starts next. 6.5 Done. Owner chose the 8.1 host: Google Cloud Run (staging asia-northeast1, production later asia-south1), Fly.io Singapore as fallback |
 | 3 Nov 2026 | Story 8.3 widened by the owner: a field list on the Import page and a Download template button, both from the mapping catalog (docs/data-model-goal8.md §14.8). 8.2 Done |
 | 3 Nov 2026 | Backlog item BL-4 added (drop-downs in the import template), asked by the owner after the 8.3 template download |
+| 3 Nov 2026 | Backlog item BL-4 (drop-downs in the import template, from tenant values) moved into Goal 8 as story 8.3b, asked by the owner |
