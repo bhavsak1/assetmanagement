@@ -179,6 +179,9 @@ insert into public.import_batch (id, tenant_id, file_name, file_size, file_sha25
 select id, tenant_id, 'row.xlsx', 1, repeat('a', 64), 'S', '{S}', 1, '{A}', 1 from public.security_group where code = 'tenant_admin';
 insert into public.import_row (tenant_id, batch_id, row_number, cells)
 select tenant_id, id, 2, '["row"]' from public.security_group where code = 'tenant_admin';
+-- 8.3: a mapping template.
+insert into public.import_mapping_template (tenant_id, name, headers, targets)
+select tenant_id, 'row', '{a}', '{}' from public.security_group where code = 'tenant_admin';
 select is(array(select name from tenant_table where pg_temp.count_rows(name, $$tenant_id = '00000000-0000-0000-0000-00000000000b'$$) = 0 order by 1),
           '{}', 'every public tenant_id table holds tenant B rows to hide');
 -- One test per tenant A user, each acting as that user over every table. Plain queries, so RLS decides.

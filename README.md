@@ -27,7 +27,7 @@ cd services/api
 npm install
 cp .env.example .env    # add SUPABASE_ANON_KEY from `npx supabase status -o env`
 npm test                # needs the local stack; includes the tenant-leak test
-npm run dev             # http://localhost:8080/health, /me with a Bearer token, POST /imports
+npm run dev             # http://localhost:8080/health, /me with a Bearer token, POST /imports, GET /imports/template
 ```
 
 The web app calls the service at `VITE_API_URL` (root `.env`, local `http://localhost:8080`). The service allows only the origins in `CORS_ORIGINS` (local `http://localhost:5173`; staging `https://assetly-staging.pages.dev`, set by the deploy workflow).

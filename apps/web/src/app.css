@@ -1060,3 +1060,42 @@ a.kpi:focus-visible {
   background: var(--tag-warn-bg);
   color: var(--tag-warn-text);
 }
+
+/* Import stepper (8.3): Upload, Mapping, Review, Commit, as on the ImportReview screen. */
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+  margin: 0 0 var(--space-6);
+  padding: 0;
+  list-style: none;
+  color: var(--color-text-muted);
+}
+
+.steps li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.steps span {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+}
+
+.steps .done span,
+.steps [aria-current='step'] span {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.steps [aria-current='step'] {
+  color: inherit;
+  font-weight: var(--weight-semibold);
+}
