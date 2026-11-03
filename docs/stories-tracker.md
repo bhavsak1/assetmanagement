@@ -148,8 +148,8 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 |---|---|---|---|
 | 8.1 | Custom service skeleton, deployed, using user token or `SET LOCAL` tenant context | D1, OQ-28 | Done |
 | 8.2 | Upload and streaming parse into staged rows | | Done |
-| 8.3 | Column mapping step (pluggable) and mapping templates | | In review |
-| 8.4 | Deterministic validation and dry run | | Todo |
+| 8.3 | Column mapping step (pluggable) and mapping templates | | Done |
+| 8.4 | Deterministic validation and dry run | | In progress |
 | 8.5 | Import review screen | | Todo |
 | 8.6 | Idempotent commit and batch undo | | Todo |
 

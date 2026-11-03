@@ -342,7 +342,7 @@ Take the `exceljs` stream reader as is: no zip-bomb counting, first sheet and ro
 
 # Story 8.3: column mapping step (pluggable) and mapping templates
 
-**Status:** owner accepted all leans M1 to M11 (3 Nov 2026) and added the field list and the download template (§14.8). Built 3 Nov 2026, 8.3 In review. Not on staging yet.
+**Status:** owner accepted all leans M1 to M11 (3 Nov 2026) and added the field list and the download template (§14.8). Built 3 Nov 2026. On staging 3 Nov 2026; 8.3 Done.
 
 **As built (differences from the design below):**
 - Template choice (M6): ties go to the most recently **saved** template (`updated_at`); there is no `last_used_at` column.
@@ -433,3 +433,88 @@ Both come from `import_target_catalog()`, so a user sees only the fields they ma
 2. Service: `src/mapping.ts` (`Mapper`, template and rules mappers, tests), suggest at upload, `?header_row=`.
 3. Types, web Mapping step (stepper, column list, target select, save, save as template), i18n, browser check.
 4. 8.3 `In review`, PR, demo note.
+
+---
+
+# Story 8.4: deterministic validation and dry run
+
+**Status:** design, waiting for the owner (3 Nov 2026).
+
+**Goal:** after the mapping is saved, every staged row is checked against the same rules a hand-entered asset meets, with no AI (CLAUDE.md §11). Each row gets ok, warning or error, with messages per column. The batch gets a summary and becomes `validated`. The dry run says exactly what commit (8.6) would do: how many assets and warranty lines it would create, and which rows it would skip and why. Nothing is written to business tables. The full review grid is 8.5.
+
+**Facts checked (3 Nov 2026):**
+- Parser output (8.2): date-formatted cells arrive as ISO text; other numbers stay numbers, so a date typed into a General cell arrives as an Excel serial (`45231`) or as text (`03/11/2026`).
+- Tenant settings: `date_format` (one of `dd-MM-yyyy`, `dd/MM/yyyy`, `MM/dd/yyyy`, `yyyy-MM-dd`, `dd MMM yyyy`), `currency_code`, `required_asset_fields`, `asset_tag_pattern`.
+- Asset rules already in triggers (3.1 to 3.8, 6.1, 6.2): tag `^[A-Z0-9][A-Z0-9._/-]{0,59}$` (upper-cased), unique per tenant while live; typing a tag needs `asset_core.set_tag`; a generated tag needs a category code for `{CAT}` and a location code for `{LOC}`; category and location active; status allowed for the category and starting as `in_stock` or `active`; criticality A, B or C; quantity at least 1; money needs a currency; custom values by type (`list` by option code); mandatory fields for the category line; parent at most 5 levels; insert scope `in_scope('asset_core', 'create', location, category)`.
+- A coverage line needs a **vendor** (`coverage.vendor_id not null`) and `end_date >= start_date`.
+- Supabase gives the `authenticated` role an 8 s statement timeout. A call from the web app must finish well inside it.
+
+## 15.1 Flow
+
+```
+Mapping step: Save (import_save_mapping, status mapped)
+  --> rpc import_validate(batch_id)            one set-based statement chain over all rows
+      writes import_row.result, messages, payload; batch.summary; status validated
+  --> web shows the summary (ok, warning, error; would create N assets, M warranty lines; skips K rows)
+      and the error list (row, column, message)
+8.6 commit: import_validate again in the same transaction, then insert from payload of ok and warning rows
+```
+
+## 15.2 Storage
+
+- `import_row.result text null` (`ok`, `warning`, `error`) and `import_row.messages jsonb null`: an array of `{"col": 3, "code": "date_format", "params": {...}}`. `col` is the column index (null for a row-level message). `params` hold only fixed values (field key, expected format), **never cell text** (§15.5).
+- `import_row.payload jsonb null`: the resolved values the commit would insert, ids already looked up (`{"asset": {...}, "coverage": {...}}`). 8.6 inserts from this, so the commit cannot read a file value differently from the dry run.
+- `import_batch.summary jsonb null`: `{"ok": n, "warning": n, "error": n, "create_assets": n, "create_coverages": n, "skip": n, "codes": {"date_format": n, ...}, "validated_at": "...", "as_user": "<uuid>"}`. Status gains `validated`. Purge and expiry treat `validated` like `staged` and `mapped`.
+
+## 15.3 The checks, in order
+
+1. **Read the cell** through the mapping: empty or spaces is null; text is trimmed.
+2. **Types and formats:** number (number cell, or text with `,` and spaces removed, so `1,20,000.50` is fine); integer for quantity (at least 1); date (ISO text, an Excel serial 1 to 2958465, or text in the tenant's format, nothing else, so `03/04/2026` is read only one way); money (value at least 0; blank currency takes the tenant currency with a warning, else three letters); criticality A, B or C (any case); boolean custom fields `yes/no/true/false/y/n/1/0`; list custom fields by option code or label (any case).
+3. **Required:** name, category, the tenant's `required_asset_fields`, and required custom fields for the row's category line (only those the user may update, as the trigger does).
+4. **Lookups (M7), nothing created:** category by code, then name, then path `A / B`; location by code, then unique name, then path; vendor by code, then name; status by label or code, then allowed for the category and starting as `in_stock` or `active`. Inactive or deleted counts as not found. Two names that both match is `ambiguous`.
+5. **Custom fields per category:** a value for a field that does not apply to the row's category is an error; a list value must be an active option.
+6. **Duplicates** (V5).
+7. **Warranty pair:** both dates or neither; end on or after start; a vendor (V9).
+8. **Row scope (6.1):** `in_scope('asset_core', 'create', location, category)` for the user who validates; outside is `out_of_scope`. A user without `asset_core.create` gets every row as error.
+9. **Tag:** a typed tag needs `asset_core.set_tag` and the tag format; a blank tag is generated at commit, so the pattern's `{CAT}` or `{LOC}` needs a code on the row's category or location.
+
+Result: any error gives `error`; else any warning gives `warning`; else `ok`. Codes are stable strings, turned into text by i18n: `required`, `date_format`, `number_format`, `not_found`, `ambiguous`, `not_for_category`, `bad_option`, `duplicate_in_file`, `tag_exists`, `tag_format`, `tag_not_allowed`, `tag_needs_category_code`, `tag_needs_location_code`, `status_not_allowed`, `parent_not_found`, `warranty_incomplete`, `warranty_dates`, `warranty_vendor`, `out_of_scope`, `no_create_right`; warnings `currency_defaulted`, `possible_duplicate`.
+
+## 15.4 Performance
+
+One statement chain: unnest the mapped cells of all rows, parse with set-based expressions, join each lookup once, aggregate messages per row, and `update import_row ... from` once. No per-row loop and no calls into the trigger code. Target: 20,000 rows in under 3 s locally; a test seeds 20,000 rows and fails above 5 s. If staging misses the 8 s web timeout, the call moves behind the service (`POST /imports/:id/validate` through `withUser`) with no schema change.
+
+## 15.5 Untrusted content (CLAUDE.md §11)
+
+Messages never copy cell text. The screen shows the cell value next to the message from `import_row.cells`, rendered as React text (escaped). The downloadable errors file with formula escaping stays in 8.5, as §13.3 says.
+
+## 15.6 Not in 8.4
+
+The review grid and cell editing (8.5), commit and undo (8.6), updating existing assets from a file (upsert), creating master data, fuzzy or AI matching, a job queue.
+
+## 15.7 The smaller option
+
+Validate in the browser only and store nothing. About a third of the work, but the commit would need the same checks again in the database, the two would drift, and the dry run would not be the commit's numbers.
+
+## 15.8 DECIDE
+
+| # | Decision | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| V1 | Where it runs | a SQL function `import_validate(batch_id)` (security definer, fixed `search_path`), called by the web app as an rpc and by 8.6 inside commit, b in the service through `withUser`, c TypeScript in the service, SQL only for lookups | a: one place, set-based, 8.6 reuses it. Definer because it writes `import_row` (no update grant) and reads `field_definition` (as 8.3). It checks tenant and `excel_import.run` or `review` itself; every permission and scope check uses the caller's own `has_permission` and `in_scope`. Owner review | Medium: the logic is one function |
+| V2 | Dry run and commit drift | a dry run = the stored summary; 8.6 re-runs `import_validate` in its own transaction and inserts from `payload`; the triggers stay the final guard, b dry run inserts every row and rolls back (exact, but burns tags, writes audit and outbox rows, and is slow) | a | Medium |
+| V3 | Error rows at commit (sets the dry-run wording) | a commit ok and warning rows, skip error rows and list them, b all or nothing | a: a messy file still loads its good rows; the skipped rows are fixed and imported again | Low: an 8.6 flag |
+| V4 | Results | a columns on `import_row` (`result`, `messages`, `payload`) and `import_batch.summary`, b a separate `import_row_result` table | a: one row, one update; rows are scratch data, purged in 30 days | Low |
+| V5 | Duplicate key | a the asset tag when given: the same tag twice in the file is an error on each; a live asset with that tag is `tag_exists` (no update of existing assets in Phase 1); a blank tag is generated at commit, so the only check is a **warning** `possible_duplicate` when serial number plus manufacturer match a live asset or another row, b also an error on name match, c no check without a tag | a | Low |
+| V6 | Dates | a ISO, Excel serial, or text in the tenant's date format only; two-digit years refused, b also guess other formats | a: a guess turns 03/04 into the wrong month silently | Low |
+| V7 | Parent asset tag | a an existing live asset only (in the user's scope), b also a row in the same file (8.6 inserts parents first; in-file cycles are errors) | a for 8.4; b is a small later story if pilots ask | Low: additive |
+| V8 | Re-validation | a `import_save_mapping` sets the batch back to `mapped` and clears `summary`; the next run overwrites row results; the web app validates straight after Save, so the user sees one step; 8.6 always re-validates, so changed master data is caught, b keep old results and diff | a | Low |
+| V9 | Warranty vendor (a coverage line needs one) | a the row's OEM vendor, else its O&M vendor, else error `warranty_vendor`, b a new `warranty_vendor` target, c skip the warranty with a warning | a: no new target | Low |
+| V10 | Purchase value with no currency | a tenant currency, warning `currency_defaulted`, b error | a | Low |
+| V11 | UI in 8.4 | a after Save on the Mapping step: the summary (ok, warning, error; would create N assets and M warranty lines; skips K rows) and the first 200 errors (row, column, message, cell value); download of errors in 8.5 (§13.3), b also a download now | a | Low |
+| V12 | Who may validate | a `excel_import.run` or `review`; results always use the caller's own rights and scope, and the summary names that user, b `run` only | a: a reviewer can check a batch; the committer's rights win at 8.6 | Low |
+
+## 15.9 Build plan (after answers)
+
+1. Migration `8_4_import_validation`: columns, status `validated`, `import_validate()`, `import_save_mapping` clears the summary, purge includes `validated`; pgTAP for each check, scope, permissions, read-only tenant, cross-tenant, and 20,000 rows under 5 s.
+2. Types; web: validate after Save, summary card, error list, i18n for every code; browser check.
+3. 8.4 `In review`, PR, demo note.
