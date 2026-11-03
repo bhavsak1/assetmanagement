@@ -231,7 +231,17 @@ Then in GitHub: **Settings > Secrets and variables > Actions > Variables**, add 
 
 # Story 8.2: upload and streaming parse into staged rows
 
-**Status:** design, waiting for the owner's answers to §13.9 (3 Nov 2026).
+**Status:** owner accepted all leans I1 to I13 (3 Nov 2026). Built 3 Nov 2026, 8.2 In review. Not on staging yet.
+
+**As built (differences from the design below):**
+- `import_row.batch_id` is a **deferred** FK. The service inserts rows first (chunks of 1,000) and the batch row last, with its final row count, columns and warnings, so users never need an update grant.
+- `warnings` is `{"list": [...], "total": n}`: the first 50 warnings are kept, `total` counts all of them. Codes: `cell_truncated`, `error_cell`, `beyond_header` (data right of the header; the column is named `Column F`).
+- Zip limits: at most 1,000 entries; a sheet may inflate to 100 MB (streamed); shared strings, styles and the workbook part to 30 MB each (held in memory). Checked on the declared size and on the characters actually read; `yauzl` also refuses an entry whose real size differs from the declared one. The 100-to-1 ratio check was dropped: the size caps already bound memory, and real sheets with repeated cells pass 100 to 1.
+- `.xlsm` is not refused by name: the route accepts `.xlsx` names only, and macros are never read anyway.
+- Error codes from `POST /imports`: 401 `unauthorized`, 403 `forbidden` (RLS: no `excel_import.run`, or a read-only tenant), 413 `file_limits` / `too_many_rows` / `too_many_columns` (and Fastify's own 413 over 10 MB), 415 `not_xlsx`, 400 `bad_file` / `no_data` / `sheet_not_found`, 429 `busy`.
+- The purge job is `assetly_purge_expired_imports`, daily at 03:17 UTC.
+- technical-architecture.md §3 calls the staging table `import_row_result`; it is `import_row`.
+- Tests: `supabase/tests/8_2_import_staging.test.sql` (42), `services/api/test/xlsx.test.ts` (12, no database), `services/api/test/imports.test.ts` (10), `apps/web/src/Import.test.tsx` (2). Fixture files are built in code (`test/fixture.ts`, a small zip writer); none are committed.
 
 **Goal:** a user with `excel_import.run` picks an Excel file in the web app. The service checks it, reads one sheet as a stream, and writes one `import_batch` row and one `import_row` per data row, under RLS. The web app shows the batch: file, sheet, header row, columns, row count, warnings. Nothing touches assets. Mapping (8.3), validation and dry run (8.4), the review screen (8.5), commit and undo (8.6) come later.
 

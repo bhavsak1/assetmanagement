@@ -1083,8 +1083,8 @@
       "operation": "Operation",
       "asset": "Asset tag (optional)",
       "run": "Explain",
-    "yes": "Yes",
-    "no": "No",
+      "yes": "Yes",
+      "no": "No",
       "close": "Close",
       "can": "{name} can {op} {domain}",
       "cannot": "{name} cannot {op} {domain}",
@@ -1142,6 +1142,50 @@
         "disabled": "Disabled"
       },
       "none": "No assignments match."
+    }
+  },
+  "import": {
+    "title": "Import",
+    "subtitle": "Upload an Excel file. Its rows are staged for review; nothing is saved to assets yet.",
+    "file": "Excel file (.xlsx)",
+    "limits": "Up to 10 MB, 20,000 rows and 200 columns. The first sheet with data is read; its header row is found automatically.",
+    "sending": "Uploading",
+    "reading": "Reading file…",
+    "otherSheet": "Read another sheet",
+    "recent": "Recent uploads",
+    "recentRow": "{file} · {sheet} · {n} rows",
+    "none": "No uploads yet.",
+    "status": {
+      "staged": "Staged",
+      "expired": "Expired (staged rows removed after 30 days)"
+    },
+    "summary": {
+      "sheet": "Sheet",
+      "headerRow": "Header row",
+      "columns": "Columns",
+      "rows": "Rows staged",
+      "status": "Status",
+      "warnings": "Warnings ({n})",
+      "preview": "First {n} rows",
+      "row": "Row",
+      "next": "Column mapping and review come next (stories 8.3 to 8.5)."
+    },
+    "warnings": {
+      "cell_truncated": "Row {row}, column {column}: text cut to 4,000 characters.",
+      "error_cell": "Row {row}, column {column}: an Excel error value (#N/A or similar), read as empty.",
+      "beyond_header": "Column {column} has data but no header; named \"Column {column}\"."
+    },
+    "errors": {
+      "not_xlsx": "This is not an .xlsx file. In Excel, use File, Save As, Excel Workbook (.xlsx).",
+      "bad_file": "The file could not be read. Open it in Excel and save it again as .xlsx.",
+      "file_limits": "The file is too large. Keep it under 10 MB.",
+      "too_many_rows": "The sheet has more than 20,000 rows. Split it into smaller files.",
+      "too_many_columns": "The sheet has more than 200 columns.",
+      "no_data": "No data found in the file.",
+      "sheet_not_found": "That sheet is not in the file.",
+      "busy": "The import service is busy. Try again in a minute.",
+      "forbidden": "You do not have permission to import, or this company is read-only.",
+      "generic": "The upload failed. Try again."
     }
   }
 }
