@@ -528,3 +528,104 @@ Validate in the browser only and store nothing. About a third of the work, but t
 1. Migration `8_4_import_validation`: columns, status `validated`, `import_validate()`, `import_save_mapping` clears the summary, purge includes `validated`; pgTAP for each check, scope, permissions, read-only tenant, cross-tenant, and 20,000 rows under 5 s.
 2. Types; web: validate after Save, summary card, error list, i18n for every code; browser check.
 3. 8.4 `In review`, PR, demo note.
+
+---
+
+# Story 8.3b: drop-down lists in the import template
+
+**Status:** design, 3 Nov 2026. Waiting for the owner's answers to §16.8. Nothing built yet.
+
+**Goal:** the file from `GET /imports/template` (8.3, §14.8) helps the user type values that 8.4 will accept. Lookup columns get an Excel drop-down filled from the tenant's own data, limited to what the calling user may see. Date and number columns get Excel checks. The lists are a snapshot at download time. `import_validate` (8.4) still checks every value, so a stale or bypassed list is caught there.
+
+**Facts checked (3 Nov 2026):**
+- The route reads `import_target_catalog()` through `withUser` (role `authenticated`, the user's claims). Any plain select there runs under RLS.
+- Select policies: `asset_category` and `field_definition` need `category_config.view`. `location` needs `location_hierarchy.view`. `vendor` needs `vendor_core.view`. `asset_status` needs `category_config.view` or `asset_core.view`. All five starter groups hold all of these (1.6). A custom group may not.
+- `import_target_catalog()` is security definer, so it can offer a custom field to a user who cannot read `field_definition`. The catalog does not include list options.
+- What 8.4 accepts:
+  - category by code, name or path `A / B`
+  - location by code, unique name or path
+  - vendor by code or name (case-free), then a check of role and category tags (`vendor_not_for_category`)
+  - status by label or code; only active statuses whose system status is `in_stock` or `active` and that are allowed for the category
+  - criticality A, B or C
+  - list custom fields by option code or label
+  - dates as an Excel date, ISO text, or text in the tenant's `date_format`
+- 8.2: a cell with a date number format arrives as ISO text, so a date typed into a formatted cell is never read the wrong way round.
+- Category vendors (4.1b) and category statuses (3.7) depend on the row's category. A plain Excel list cannot depend on another cell without `INDIRECT` and one named range per category.
+- Scope (6.1) limits assets by location and category **pairs**. It does not hide locations or categories.
+- Excel: a validation list may point at a range on another sheet (Excel 2010 and later). An inline list (`"A,B,C"`) is capped at 255 characters. A sheet can be `hidden` (shown again through Unhide) or `veryHidden` (shown again only through VBA).
+- `MAX_ROWS` is 20,000.
+
+## 16.1 What the file gets
+
+| Column | Check | Values |
+|---|---|---|
+| Category | list | active, live categories (D2) |
+| Location | list | active, live locations (D2, D3) |
+| Status | list | active statuses with system status `in_stock` or `active`, by label |
+| OEM vendor | list | active, live vendors with role `oem`, by name (D4) |
+| O&M vendor | list | active, live vendors with role `om`, by name (D4) |
+| Criticality | list | A, B, C |
+| List custom field | list | active options, by label (D2) |
+| Yes/no custom field | list | Yes, No |
+| Purchase date, In service date, Warranty start, Warranty end, date custom fields | date, with the tenant's date format on the cells | any date |
+| Quantity | whole number, at least 1 | |
+| Purchase value | decimal, at least 0 | |
+| Number custom fields | decimal | |
+
+Text columns (tag, name, serial number, manufacturer, model, parent tag, currency) get no check. A column the user may not set is not in the file at all (M3), so it has no list either.
+
+## 16.2 How it is written
+
+- One extra worksheet, `Lists`. Row 1 holds the list name; the rows below hold the values, one column per list. Values are inline strings, never formulas, so a value starting with `=` stays text.
+- `Assets` sheet: one `<dataValidation>` per column over rows 2 to 20,001, pointing at a range such as `Lists!$C$2:$C$n`. Date and number checks need no list.
+- Date columns get a cell style with the tenant's date format (from `tenant.date_format`) on the same rows.
+- All of it goes in `templateXlsx` in `src/mapping.ts`, using the existing `src/zip.ts`. No new dependency.
+- The route reads the lists in the same `withUser` transaction as the catalog, with plain selects, so RLS decides (D1). A list the user cannot read comes back empty. That column then gets no drop-down, and the file is still valid.
+
+## 16.3 Not in 8.3b
+
+Lists that depend on the row's category (vendors and statuses allowed per category line), lists for parent asset tags or currencies, writing the tenant's existing assets into the file, a refresh button inside the file, macros.
+
+## 16.4 The smaller option
+
+Only the fixed lists (Criticality, Yes/No) and the date and number checks: no database reads and no `Lists` sheet, about a third of the work. But the columns that cause most 8.4 errors (category, location, vendor, status) would stay free text.
+
+## 16.5 Untrusted content
+
+List values are tenant data typed by users. They are written as escaped inline strings, so they cannot become formulas or break the XML. The list name in row 1 is our own label, not tenant data.
+
+## 16.6 Tests (planned)
+
+Service tests (`test/template.test.ts`, real local database):
+- the file opens (our own `xlsx.ts` reader, plus a structural check of the validation XML)
+- each list holds the tenant's values and none from another tenant
+- inactive and deleted rows are left out
+- a user without `location_hierarchy.view` gets no Location list, and the other lists stay
+- a user without `asset_financials` gets no Purchase value column and no check for it
+- a file filled from the lists and uploaded back maps 100% and validates with no `not_found`
+
+The owner also opens the file once in Excel by hand (D9).
+
+## 16.7 Owner review
+
+With D1 a there is no schema change and no new policy. The file shows tenant data to the person who downloads it, so the list sources are a data-exposure point (in the spirit of CLAUDE.md §9). The test that a missing right hides a list is the one to look at.
+
+## 16.8 DECIDE
+
+| # | Decision | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| D1 | How lists are read | a plain selects under RLS through `withUser`, no migration; a list the user cannot read is empty and its column gets no drop-down, b a new security definer function `import_template_lists()` that returns what 8.4 would accept (as the catalog does): one migration, owner review | a: smallest, and RLS is the rule for what a user sees. Gap: a custom group with `excel_import.run` but no `category_config.view` gets no Category, Status or custom-field drop-downs, though 8.4 accepts those values. No starter group has this gap | Low: b is additive |
+| D2 | Which text goes in each list | a category and location by **path** (`Utilities / Air compressor`; a top-level one is just its name), vendor by name, status by label, list fields by option label, b codes everywhere, c `Name (CODE)` | a: unique, readable, and 8.4 accepts all of them. b is short but means nothing to a planner. c is readable but 8.4 does not accept it | Low |
+| D3 | Locations and categories outside the user's scope (6.1) | a everything the user can read (RLS); 8.4 catches out-of-scope rows as `out_of_scope`, b only those named in one of the user's create-scope rules | a: scope works on pairs, so a filter per column is only a guess, and RLS does not hide these rows on screens either | Low |
+| D4 | Vendor lists | a OEM list = vendors with role `oem`, O&M list = role `om`, no category filter; 8.4 catches `vendor_not_for_category`, b one list of all vendors for both columns, c dependent lists per category with `INDIRECT` | a | Low |
+| D5 | List size cap | a up to 5,000 values per list; above that the column gets no drop-down (too long to scroll), b no cap, c cap at 1,000 | a: SMEs rarely pass a few hundred | Low |
+| D6 | What Excel does with a value not in the list | a **warning**: the user may keep it (a code, or a value added after the download, both of which 8.4 accepts), b stop: only list values (Excel refuses codes), c information | a | Low |
+| D7 | The `Lists` sheet | a `hidden` (Unhide shows it; it holds nothing the user may not see), b `veryHidden`, c visible, as the last tab | a | Low |
+| D8 | Date cells | a date check (after 1 Jan 1900) and the tenant's date format as the cell format on rows 2 to 20,001, b date check only, c also refuse dates far in the future | a: a formatted cell turns a typed date into a real date, which 8.2 reads as ISO, so `03/04/2026` is never read the wrong way | Low |
+| D9 | How "opens in Excel" is checked | a a structural test in CI (our reader plus the XML parts); I open it once locally in LibreOffice and openpyxl; the owner opens it once in Excel, b also a Python openpyxl check in CI | a: no Python in CI | Low |
+
+## 16.9 Build plan (after answers)
+
+1. Service: read the lists in the template route; `templateXlsx` writes the `Lists` sheet, the validations and the date styles; tests as in §16.6.
+2. Open the file locally in LibreOffice (headless convert) and openpyxl; fix what breaks.
+3. 8.3b `In review`, PR, demo note, owner-review list.
