@@ -1146,7 +1146,7 @@
   },
   "import": {
     "title": "Import",
-    "subtitle": "Upload an Excel file. Its rows are staged for review; nothing is saved to assets yet.",
+    "subtitle": "Upload an Excel file, then match its columns to asset fields. Nothing is saved to assets yet.",
     "file": "Excel file (.xlsx)",
     "limits": "Up to 10 MB, 20,000 rows and 200 columns. The first sheet with data is read; its header row is found automatically.",
     "sending": "Uploading",
@@ -1157,7 +1157,8 @@
     "none": "No uploads yet.",
     "status": {
       "staged": "Staged",
-      "expired": "Expired (staged rows removed after 30 days)"
+      "expired": "Expired (staged rows removed after 30 days)",
+      "mapped": "Mapped"
     },
     "summary": {
       "sheet": "Sheet",
@@ -1168,7 +1169,7 @@
       "warnings": "Warnings ({n})",
       "preview": "First {n} rows",
       "row": "Row",
-      "next": "Column mapping and review come next (stories 8.3 to 8.5)."
+      "next": "Value checks, review and commit come next (stories 8.4 to 8.6)."
     },
     "warnings": {
       "cell_truncated": "Row {row}, column {column}: text cut to 4,000 characters.",
@@ -1185,7 +1186,72 @@
       "sheet_not_found": "That sheet is not in the file.",
       "busy": "The import service is busy. Try again in a minute.",
       "forbidden": "You do not have permission to import, or this company is read-only.",
-      "generic": "The upload failed. Try again."
+      "generic": "The upload failed. Try again.",
+      "bad_header_row": "That row is not in the first 20 rows of the sheet, or it is empty."
+    },
+    "steps": [
+      "Upload",
+      "Mapping",
+      "Review",
+      "Commit"
+    ],
+    "fields": {
+      "title": "What the file can hold",
+      "subtitle": "One column per field. Headers can be in any order; unknown columns can be ignored. Download the template for a file that maps itself.",
+      "download": "Download template",
+      "downloadFailed": "The template could not be downloaded. Try again.",
+      "field": "Field",
+      "needed": "Needed",
+      "format": "How to fill it",
+      "required": "Required",
+      "optional": "Optional",
+      "byCategory": "Only for some categories.",
+      "hints": {
+        "tag": "Leave blank to use the tag pattern.",
+        "category": "Code, name or path, for example Utilities / Air compressor.",
+        "location": "Code, name or path, for example Plant 2 / Bay 3.",
+        "status": "Status name or code, for example Active.",
+        "criticality": "A, B or C.",
+        "parent_tag": "Tag of an asset already in Assetly.",
+        "purchase_currency": "Three letters, for example INR.",
+        "warranty_end": "Adds one warranty line with the start date.",
+        "vendor": "Vendor code or name.",
+        "date": "An Excel date, or YYYY-MM-DD.",
+        "number": "A number.",
+        "boolean": "Yes or No.",
+        "list": "One of the field’s options."
+      }
+    },
+    "mapping": {
+      "title": "Column mapping",
+      "subtitle": "Check the field for each column, then save. Columns set to Ignore are not imported.",
+      "savedNote": "Mapping saved. You can still change it and save again.",
+      "headerRow": "Header row",
+      "reread": "Read again with this header row",
+      "applyTemplate": "Template",
+      "pickTemplate": "Apply a saved template…",
+      "column": "Column",
+      "header": "Header in file",
+      "sample": "First row",
+      "target": "Field",
+      "targetFor": "Field for column {column}",
+      "ignore": "Ignore",
+      "matched": "Matched",
+      "fromTemplate": "Template",
+      "notMapped": "Not mapped",
+      "changed": "Changed",
+      "missing": "Map these required fields: {fields}.",
+      "save": "Save mapping",
+      "templateName": "Template name",
+      "saveTemplate": "Save as template",
+      "templateSaved": "Template saved. Files with the same headers will map themselves.",
+      "errors": {
+        "required": "Name and Category must each have a column.",
+        "twice": "Each field can take one column only.",
+        "stale": "This upload can no longer be changed, or a field is not available to you. Reload the page.",
+        "nameTaken": "A template with this name exists. Pick another name.",
+        "generic": "Could not save. Try again."
+      }
     }
   }
 }

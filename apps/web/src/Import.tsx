@@ -3,11 +3,50 @@ import { t } from './i18n'
 import { supabase } from './supabase'
 import type { Json, Tables } from './types/database'
 
-type Batch = Pick<Tables<'import_batch'>, 'id' | 'file_name' | 'sheet_name' | 'sheet_names' | 'header_row' | 'columns' | 'row_count' | 'warnings' | 'status' | 'created_at'>
+type Batch = Pick<Tables<'import_batch'>, 'id' | 'file_name' | 'sheet_name' | 'sheet_names' | 'header_row' | 'columns' | 'row_count' | 'warnings' | 'status' | 'created_at' | 'mapping' | 'mapping_template_id'>
+export type Target = { target: string; label: string; kind: string; required: boolean; category_id: string | null }
+type Template = Pick<Tables<'import_mapping_template'>, 'id' | 'name' | 'headers' | 'targets'>
+// source: how the target was chosen; 'user' once the person changes it here.
+export type Entry = { target: string; source: 'template' | 'rules' | 'ai' | 'user' }
 type Warning = { code: keyof typeof t.import.warnings; row?: number; column: number }
 type Upload = { state: 'idle' } | { state: 'sending'; percent: number } | { state: 'reading' } | { state: 'failed'; error: string }
 
 const PREVIEW_ROWS = 20
+const HEADER_SCAN = 20 // the service looks for the header row among the first 20 rows (8.2 I4)
+
+// Same as normalise in services/api/src/mapping.ts: templates match on this, not on the column letter.
+export const normalise = (s: string) => s.toLowerCase().replace(/&/g, 'and').replace(/[^\p{L}\p{N}]/gu, '')
+// Headers the parser named itself ("Column C") were blank in the file.
+const isBlank = (c: string) => /^Column [A-Z]{1,3}$/.test(c)
+
+// The template row for a saved mapping: normalised header -> target, ignored columns left out.
+export function templateOf(columns: string[], mapping: Entry[]) {
+  const named = columns.map((c, i) => ({ c, e: mapping[i] })).filter(({ c }) => !isBlank(c))
+  return {
+    headers: named.map(({ c }) => normalise(c)),
+    targets: Object.fromEntries(named.filter(({ e }) => e && e.target !== 'ignore').map(({ c, e }) => [normalise(c), e!.target])),
+  }
+}
+
+// Applies a template the user picked; a target this user may not set, or one already taken, becomes ignore.
+export function applyTemplate(columns: string[], targets: Record<string, string>, catalog: Target[]): Entry[] {
+  const allowed = new Set(catalog.map((c) => c.target))
+  const used = new Set<string>()
+  return columns.map((c) => {
+    const target = targets[normalise(c)]
+    if (!target || !allowed.has(target) || used.has(target)) return { target: 'ignore', source: 'template' }
+    used.add(target)
+    return { target, source: 'template' }
+  })
+}
+
+export function saveError(message: string): string {
+  const e = t.import.mapping.errors
+  if (/required/.test(message)) return e.required
+  if (/twice/.test(message)) return e.twice
+  if (/not allowed|not found|batch is/.test(message)) return e.stale
+  return e.generic
+}
 
 // Excel column letters, for warnings ("column E").
 export const columnLetter = (i: number): string => (i < 0 ? '' : columnLetter(Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26)))
@@ -21,10 +60,13 @@ export function uploadError(status: number, code?: string): string {
 }
 
 // XHR, not fetch: fetch has no upload progress. The token goes in a header; the service checks it (8.1).
-function send(file: File, token: string, sheet: string | undefined, onProgress: (percent: number) => void) {
+function send(file: File, token: string, opts: { sheet?: string; headerRow?: number }, onProgress: (percent: number) => void) {
   return new Promise<{ status: number; body: { batch_id?: string; error?: string } }>((resolve) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('POST', `${import.meta.env.VITE_API_URL}/imports${sheet ? `?sheet=${encodeURIComponent(sheet)}` : ''}`)
+    const q = new URLSearchParams()
+    if (opts.sheet) q.set('sheet', opts.sheet)
+    if (opts.headerRow) q.set('header_row', String(opts.headerRow))
+    xhr.open('POST', `${import.meta.env.VITE_API_URL}/imports${q.size ? `?${q}` : ''}`)
     xhr.setRequestHeader('Authorization', `Bearer ${token}`)
     xhr.setRequestHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name))
@@ -42,7 +84,7 @@ function send(file: File, token: string, sheet: string | undefined, onProgress: 
 async function loadBatches(): Promise<Batch[]> {
   const { data } = await supabase
     .from('import_batch')
-    .select('id, file_name, sheet_name, sheet_names, header_row, columns, row_count, warnings, status, created_at')
+    .select('id, file_name, sheet_name, sheet_names, header_row, columns, row_count, warnings, status, created_at, mapping, mapping_template_id')
     .order('created_at', { ascending: false })
     .limit(10)
   return data ?? []
@@ -58,12 +100,255 @@ async function loadRows(batchId: string): Promise<{ row_number: number; cells: J
   return data ?? []
 }
 
+// The blank import file comes from the service, which builds it from the same catalog (8.3 §14.8).
+async function downloadTemplate(): Promise<boolean> {
+  const token = (await supabase.auth.getSession()).data.session?.access_token ?? ''
+  const r = await fetch(`${import.meta.env.VITE_API_URL}/imports/template`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null)
+  if (!r?.ok) return false
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(await r.blob())
+  a.download = 'assetly-import-template.xlsx'
+  a.click()
+  URL.revokeObjectURL(a.href)
+  return true
+}
+
+function hintOf(f: Target): string {
+  const h = t.import.fields.hints
+  if (f.target in h) return h[f.target as keyof typeof h]
+  return f.kind in h ? h[f.kind as keyof typeof h] : ''
+}
+
+// What a file may hold: the fields this user may set, from import_target_catalog (M2, M3).
+function FieldList({ catalog }: { catalog: Target[] }) {
+  const [failed, setFailed] = useState(false)
+  const f = t.import.fields
+  return (
+    <div className="card stack">
+      <div className="page-head">
+        <div>
+          <h2>{f.title}</h2>
+          <p className="muted">{f.subtitle}</p>
+        </div>
+        <button type="button" className="btn" onClick={() => void downloadTemplate().then((ok) => setFailed(!ok))}>
+          {f.download}
+        </button>
+      </div>
+      {failed && <p className="field-error" role="alert">{f.downloadFailed}</p>}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{f.field}</th>
+              <th>{f.needed}</th>
+              <th>{f.format}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {catalog.map((c) => (
+              <tr key={c.target}>
+                <td>{c.label}</td>
+                <td>{c.required ? <span className="tag warn">{f.required}</span> : <span className="muted">{f.optional}</span>}</td>
+                <td className="muted">{[hintOf(c), c.category_id ? f.byCategory : ''].filter(Boolean).join(' ')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function Steps({ at }: { at: number }) {
+  return (
+    <ol className="steps">
+      {t.import.steps.map((name, i) => (
+        <li key={name} aria-current={i === at ? 'step' : undefined} className={i < at ? 'done' : undefined}>
+          <span>{i < at ? '✓' : i + 1}</span>
+          {name}
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function tagOf(e: Entry) {
+  const m = t.import.mapping
+  if (e.source === 'user') return <span className="tag">{m.changed}</span>
+  if (e.target === 'ignore') return <span className="tag">{m.notMapped}</span>
+  return <span className="tag ok">{e.source === 'template' ? m.fromTemplate : m.matched}</span>
+}
+
+function MappingStep({ tenantId, batch, catalog, sample, canRun, onSaved, onHeaderRow }: {
+  tenantId: string
+  batch: Batch
+  catalog: Target[]
+  sample: Json[] | undefined
+  canRun: boolean
+  onSaved: () => void
+  onHeaderRow?: (row: number) => void
+}) {
+  const [mapping, setMapping] = useState<Entry[]>(() =>
+    batch.columns.map((_, i) => (batch.mapping as Entry[] | null)?.[i] ?? { target: 'ignore', source: 'rules' }))
+  const [templateId, setTemplateId] = useState(batch.mapping_template_id)
+  const [templates, setTemplates] = useState<Template[]>([])
+  const [headerRow, setHeaderRow] = useState(batch.header_row)
+  const [name, setName] = useState('')
+  const [msg, setMsg] = useState<{ ok: boolean; text: string }>()
+  const m = t.import.mapping
+
+  useEffect(() => {
+    let live = true
+    void supabase
+      .from('import_mapping_template')
+      .select('id, name, headers, targets')
+      .is('deleted_at', null)
+      .order('name')
+      .then(({ data }) => live && setTemplates(data ?? []))
+    return () => {
+      live = false
+    }
+  }, [])
+
+  const editable = canRun && (batch.status === 'staged' || batch.status === 'mapped')
+  const taken = new Set(mapping.map((e) => e.target))
+  const missing = catalog.filter((c) => c.required && !c.target.startsWith('custom:') && !taken.has(c.target))
+
+  async function save() {
+    const { error } = await supabase.rpc('import_save_mapping', { p_batch_id: batch.id, p_mapping: mapping, p_template_id: templateId ?? undefined })
+    if (error) return setMsg({ ok: false, text: saveError(error.message) })
+    onSaved()
+  }
+
+  async function keep() {
+    const { error } = await supabase.from('import_mapping_template').insert({ tenant_id: tenantId, name: name.trim(), ...templateOf(batch.columns, mapping) })
+    setMsg(error ? { ok: false, text: error.code === '23505' ? m.errors.nameTaken : m.errors.generic } : { ok: true, text: m.templateSaved })
+    if (!error) setName('')
+  }
+
+  return (
+    <div className="card stack">
+      <h2>{m.title}</h2>
+      <p className="muted">{batch.status === 'mapped' ? m.savedNote : m.subtitle}</p>
+      {editable && (
+        <div className="filters">
+          {onHeaderRow && (
+            <label className="field">
+              <span>{m.headerRow}</span>
+              <select className="filter" value={headerRow} onChange={(e) => setHeaderRow(Number(e.target.value))}>
+                {Array.from({ length: HEADER_SCAN }, (_, i) => i + 1).map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {onHeaderRow && headerRow !== batch.header_row && (
+            <button type="button" className="btn" onClick={() => onHeaderRow(headerRow)}>
+              {m.reread}
+            </button>
+          )}
+          {templates.length > 0 && (
+            <label className="field">
+              <span>{m.applyTemplate}</span>
+              <select
+                className="filter"
+                value=""
+                onChange={(e) => {
+                  const tpl = templates.find((x) => x.id === e.target.value)
+                  if (!tpl) return
+                  setMapping(applyTemplate(batch.columns, tpl.targets as Record<string, string>, catalog))
+                  setTemplateId(tpl.id)
+                }}
+              >
+                <option value="">{m.pickTemplate}</option>
+                {templates.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+      )}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{m.column}</th>
+              <th>{m.header}</th>
+              <th>{m.sample}</th>
+              <th>{m.target}</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {batch.columns.map((c, i) => (
+              <tr key={i}>
+                <td>{columnLetter(i)}</td>
+                <td>{c}</td>
+                <td className="muted">{cellText(sample?.[i])}</td>
+                <td>
+                  <select
+                    className="filter"
+                    aria-label={m.targetFor.replace('{column}', c)}
+                    value={mapping[i]!.target}
+                    disabled={!editable}
+                    onChange={(e) => setMapping(mapping.map((x, j) => (j === i ? { target: e.target.value, source: 'user' } : x)))}
+                  >
+                    <option value="ignore">{m.ignore}</option>
+                    {catalog.map((f) => (
+                      <option key={f.target} value={f.target} disabled={f.target !== mapping[i]!.target && taken.has(f.target)}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td>{tagOf(mapping[i]!)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {missing.length > 0 && <p className="hint">{m.missing.replace('{fields}', missing.map((f) => f.label).join(', '))}</p>}
+      {msg && (
+        <p className={msg.ok ? 'save-ok' : 'field-error'} role={msg.ok ? 'status' : 'alert'}>
+          {msg.text}
+        </p>
+      )}
+      {editable && (
+        <div className="filters">
+          <button type="button" className="btn btn-primary" disabled={missing.length > 0} onClick={() => void save()}>
+            {m.save}
+          </button>
+          <label className="field">
+            <span>{m.templateName}</span>
+            <input value={name} maxLength={100} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <button type="button" className="btn" disabled={!name.trim()} onClick={() => void keep()}>
+            {m.saveTemplate}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function cellText(v: Json | undefined): string {
   if (v === null || v === undefined) return ''
   return typeof v === 'object' ? JSON.stringify(v) : String(v)
 }
 
-function BatchView({ batch }: { batch: Batch }) {
+function BatchView({ tenantId, batch, catalog, canRun, onSaved, onHeaderRow }: {
+  tenantId: string
+  batch: Batch
+  catalog: Target[] | undefined
+  canRun: boolean
+  onSaved: () => void
+  onHeaderRow?: (row: number) => void
+}) {
   const [rows, setRows] = useState<{ batchId: string; list: { row_number: number; cells: Json }[] }>()
   useEffect(() => {
     let live = true
@@ -75,7 +360,22 @@ function BatchView({ batch }: { batch: Batch }) {
   const warnings = (batch.warnings ?? {}) as { list?: Warning[]; total?: number }
   const s = t.import.summary
 
+  const live = batch.status === 'staged' || batch.status === 'mapped'
   return (
+    <>
+      {live && <Steps at={batch.status === 'mapped' ? 2 : 1} />}
+      {live && catalog && rows?.batchId === batch.id && (
+        <MappingStep
+          tenantId={tenantId}
+          key={`${batch.id}-${batch.status}`}
+          batch={batch}
+          catalog={catalog}
+          sample={rows.list[0]?.cells as Json[] | undefined}
+          canRun={canRun}
+          onSaved={onSaved}
+          onHeaderRow={onHeaderRow}
+        />
+      )}
     <div className="card stack">
       <h2>{batch.file_name}</h2>
       <dl className="facts">
@@ -104,7 +404,7 @@ function BatchView({ batch }: { batch: Batch }) {
           </ul>
         </div>
       )}
-      {batch.status === 'staged' && (
+      {live && (
         <div className="table-wrap">
           <p className="muted">{s.preview.replace('{n}', String(Math.min(PREVIEW_ROWS, batch.row_count)))}</p>
           <table>
@@ -132,30 +432,33 @@ function BatchView({ batch }: { batch: Batch }) {
       )}
       <p className="hint">{s.next}</p>
     </div>
+    </>
   )
 }
 
-// Story 8.2: upload and staged rows only. The full ImportReview screen (mapping, review, commit) is 8.5.
+// Stories 8.2 and 8.3: upload, staged rows and column mapping. Review and commit are 8.4 to 8.6.
 export function ImportPage({ tenantId, canRun }: { tenantId: string; canRun: boolean }) {
   const [file, setFile] = useState<File>()
   const [sheet, setSheet] = useState<string>()
   const [upload, setUpload] = useState<Upload>({ state: 'idle' })
   const [batches, setBatches] = useState<{ tenantId: string; list: Batch[] }>()
   const [selected, setSelected] = useState<string>()
+  const [catalog, setCatalog] = useState<{ tenantId: string; list: Target[] }>()
 
   const refresh = () => loadBatches().then((list) => setBatches({ tenantId, list }))
   useEffect(() => {
     let live = true
     void loadBatches().then((list) => live && setBatches({ tenantId, list }))
+    void supabase.rpc('import_target_catalog').then(({ data }) => live && setCatalog({ tenantId, list: data ?? [] }))
     return () => {
       live = false
     }
   }, [tenantId])
 
-  async function start(f: File, sheetName?: string) {
+  async function start(f: File, sheetName?: string, headerRow?: number) {
     setUpload({ state: 'sending', percent: 0 })
     const token = (await supabase.auth.getSession()).data.session?.access_token ?? ''
-    const r = await send(f, token, sheetName, (percent) => setUpload(percent < 100 ? { state: 'sending', percent } : { state: 'reading' }))
+    const r = await send(f, token, { sheet: sheetName, headerRow }, (percent) => setUpload(percent < 100 ? { state: 'sending', percent } : { state: 'reading' }))
     if (r.status !== 201 || !r.body.batch_id) return setUpload({ state: 'failed', error: uploadError(r.status, r.body.error) })
     setUpload({ state: 'idle' })
     setSelected(r.body.batch_id)
@@ -165,6 +468,9 @@ export function ImportPage({ tenantId, canRun }: { tenantId: string; canRun: boo
   const list = batches?.tenantId === tenantId ? batches.list : undefined
   const current = list?.find((b) => b.id === selected) ?? list?.[0]
   const busy = upload.state === 'sending' || upload.state === 'reading'
+  const fields = catalog?.tenantId === tenantId ? catalog.list : undefined
+  // The browser still holds the file, so a new header row is a re-upload (M10; the service keeps no file, I6).
+  const sameFile = !!file && current?.file_name === file.name
 
   return (
     <>
@@ -199,7 +505,7 @@ export function ImportPage({ tenantId, canRun }: { tenantId: string; canRun: boo
           )}
           {upload.state === 'reading' && <p role="status">{t.import.reading}</p>}
           {upload.state === 'failed' && <p className="field-error" role="alert">{upload.error}</p>}
-          {file && current && current.file_name === file.name && current.sheet_names.length > 1 && (
+          {sameFile && current && current.sheet_names.length > 1 && (
             <label className="field">
               <span>{t.import.otherSheet}</span>
               <select
@@ -208,7 +514,7 @@ export function ImportPage({ tenantId, canRun }: { tenantId: string; canRun: boo
                 disabled={busy}
                 onChange={(e) => {
                   setSheet(e.target.value)
-                  void start(file, e.target.value)
+                  void start(file!, e.target.value)
                 }}
               >
                 {current.sheet_names.map((n) => (
@@ -221,7 +527,18 @@ export function ImportPage({ tenantId, canRun }: { tenantId: string; canRun: boo
           )}
         </div>
       )}
-      {current && <BatchView batch={current} />}
+      {canRun && fields && !current && <FieldList catalog={fields} />}
+      {current && (
+        <BatchView
+          tenantId={tenantId}
+          batch={current}
+          catalog={fields}
+          canRun={canRun}
+          onSaved={() => void refresh()}
+          onHeaderRow={sameFile ? (row) => void start(file!, current.sheet_name, row) : undefined}
+        />
+      )}
+      {canRun && fields && current && <FieldList catalog={fields} />}
       {list && list.length > 1 && (
         <div className="card">
           <h2>{t.import.recent}</h2>

@@ -148,7 +148,7 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 |---|---|---|---|
 | 8.1 | Custom service skeleton, deployed, using user token or `SET LOCAL` tenant context | D1, OQ-28 | Done |
 | 8.2 | Upload and streaming parse into staged rows | | Done |
-| 8.3 | Column mapping step (pluggable) and mapping templates | | Todo |
+| 8.3 | Column mapping step (pluggable) and mapping templates | | In review |
 | 8.4 | Deterministic validation and dry run | | Todo |
 | 8.5 | Import review screen | | Todo |
 | 8.6 | Idempotent commit and batch undo | | Todo |
@@ -229,3 +229,4 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 | 1 Nov 2026 | Backlog item BL-3 (demo tenant) moved into Goal 5 as story 5.6: the Goal 5 review point needs the demo tenant. Owner accepted B1 to B7 and named the five demo emails (demo users only) |
 | 1 Nov 2026 | Story 9.3 gains payload masking by field domain, moved from 6.2 (owner accepted R3, docs/data-model-goal6.md §17) |
 | 2 Nov 2026 | Goal 7 (stories 7.1 to 7.3) parked by the owner, status Backlog; Goal 8 starts next. 6.5 Done. Owner chose the 8.1 host: Google Cloud Run (staging asia-northeast1, production later asia-south1), Fly.io Singapore as fallback |
+| 3 Nov 2026 | Story 8.3 widened by the owner: a field list on the Import page and a Download template button, both from the mapping catalog (docs/data-model-goal8.md §14.8). 8.2 Done |

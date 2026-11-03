@@ -342,7 +342,17 @@ Take the `exceljs` stream reader as is: no zip-bomb counting, first sheet and ro
 
 # Story 8.3: column mapping step (pluggable) and mapping templates
 
-**Status:** design, waiting for the owner (3 Nov 2026).
+**Status:** owner accepted all leans M1 to M11 (3 Nov 2026) and added the field list and the download template (§14.8). Built 3 Nov 2026, 8.3 In review. Not on staging yet.
+
+**As built (differences from the design below):**
+- Template choice (M6): ties go to the most recently **saved** template (`updated_at`); there is no `last_used_at` column.
+- Catalog gates (M3): a field-domain column or custom field is offered only with **view and update** on its domain (the 6.2 write checks ask for both); warranty columns need `coverage_contract.create`. So an Asset manager (financials view only) is not offered Purchase value.
+- The insert policy on `import_batch` now also requires `status = 'staged'`: only `import_save_mapping` sets `mapped`. The service stores its suggestion with the batch insert, so no update grant is needed.
+- Status lookups (M7) match the status **label or code** (statuses have both, 3.7).
+- `mapping` source values: `template`, `rules`, `user` (changed on screen), and `ai` reserved for Goal 10.
+- Header-row override (M10) is a list of rows 1 to 20 on the Mapping step; the browser still holds the file, so it re-uploads it with `?header_row=N`. A row outside 1 to 20, or an empty one, is `400 bad_header_row`.
+- The zip writer moved from the test fixture to `services/api/src/zip.ts` (the download template uses it); no new dependency.
+- Tests: `supabase/tests/8_3_import_mapping.test.sql` (45), `services/api/test/mapping.test.ts` (8), `apps/web/src/Import.test.tsx` (4). `1_6_starter_groups.test.sql` seeds one template row for its tenant-B check.
 
 **Goal:** after upload, the user sees each source column (header text and letter) with a suggested target field, changes any of them, and saves. The mapping is stored on the batch for 8.4. A saved mapping can be kept as a template, and it is applied by itself the next time the headers match. No value checks (8.4), no review grid (8.5), no commit (8.6), no AI (Goal 10).
 
@@ -410,7 +420,14 @@ No template table: the browser keeps the last mapping per header set in local st
 | M10 | Header-row override | a re-upload with `?header_row=N` (the file is not kept, I6); the old batch stays, b stage every row from row 1 and re-cut in place | a: same as `?sheet=` | Low |
 | M11 | Suggestion tag on screen | a "Template", "Matched", "Not mapped"; percents only once the AI mapper exists, b made-up percents now | a | Low |
 
-## 14.8 Build plan (after answers)
+## 14.8 Field list and download template (owner, 3 Nov 2026)
+
+Both come from `import_target_catalog()`, so a user sees only the fields they may set (M3).
+
+- **Field list** on `/import`: label, Required or Optional (name and category), and how to fill it (category and location by code, name or path; vendor by code or name; status by label or code; dates as an Excel date or `YYYY-MM-DD`; criticality A, B or C). A custom field tied to a category says "Only for some categories".
+- **Download template:** `GET /imports/template` (Bearer token) returns an `.xlsx` with one bold, frozen header row: the catalog labels in catalog order. A custom field whose label clashes with another field becomes `Label [key]`, which the rules mapper also knows, so the file maps 100% when uploaded back (tested). Written by our own zip writer (`src/zip.ts`, about 40 lines on `node:zlib`); checked to open in openpyxl. No library added.
+
+## 14.9 Build plan (after answers)
 
 1. Migration `8_3_import_mapping`: batch columns and status, template table (1.4 pattern), `import_target_catalog()`, `import_save_mapping()`; pgTAP with permission blocks, a masked-field case and cross-tenant lines.
 2. Service: `src/mapping.ts` (`Mapper`, template and rules mappers, tests), suggest at upload, `?header_row=`.

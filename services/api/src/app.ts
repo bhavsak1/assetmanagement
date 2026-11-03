@@ -87,7 +87,7 @@ export function buildApp({ verify, withUser, logger = false, corsOrigins = [], m
     }
   });
 
-  // The blank import file: one header per field this user may set (§14.9). It maps itself on upload.
+  // The blank import file: one header per field this user may set (§14.8). It maps itself on upload.
   app.get('/imports/template', async (req, reply) => {
     const claims = await claimsOf(req, reply);
     if (!claims) return reply;
