@@ -447,14 +447,14 @@ isOneToOne: false
                   ]
                 },"import_batch": {
                   Row: {
-                    "columns": (string)[],"created_at": string,"created_by": string | null,"deleted_at": string | null,"expires_at": string,"file_name": string,"file_sha256": string,"file_size": number,"header_row": number,"id": string,"mapping": Json | null,"mapping_template_id": string | null,"row_count": number,"sheet_name": string,"sheet_names": (string)[],"status": string,"tenant_id": string,"updated_at": string,"updated_by": string | null,"warnings": NonNullable<Json>
+                    "columns": (string)[],"created_at": string,"created_by": string | null,"deleted_at": string | null,"expires_at": string,"file_name": string,"file_sha256": string,"file_size": number,"header_row": number,"id": string,"mapping": Json | null,"mapping_template_id": string | null,"row_count": number,"sheet_name": string,"sheet_names": (string)[],"status": string,"summary": Json | null,"tenant_id": string,"updated_at": string,"updated_by": string | null,"warnings": NonNullable<Json>
                   }
                   ComputedFields: never
                   Insert: {
-                    "columns": (string)[],"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"expires_at"?: string,"file_name": string,"file_sha256": string,"file_size": number,"header_row": number,"id"?: string,"mapping"?: Json | null,"mapping_template_id"?: string | null,"row_count": number,"sheet_name": string,"sheet_names": (string)[],"status"?: string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null,"warnings"?: NonNullable<Json>
+                    "columns": (string)[],"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"expires_at"?: string,"file_name": string,"file_sha256": string,"file_size": number,"header_row": number,"id"?: string,"mapping"?: Json | null,"mapping_template_id"?: string | null,"row_count": number,"sheet_name": string,"sheet_names": (string)[],"status"?: string,"summary"?: Json | null,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null,"warnings"?: NonNullable<Json>
                   }
                   Update: {
-                    "columns"?: (string)[],"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"expires_at"?: string,"file_name"?: string,"file_sha256"?: string,"file_size"?: number,"header_row"?: number,"id"?: string,"mapping"?: Json | null,"mapping_template_id"?: string | null,"row_count"?: number,"sheet_name"?: string,"sheet_names"?: (string)[],"status"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null,"warnings"?: NonNullable<Json>
+                    "columns"?: (string)[],"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"expires_at"?: string,"file_name"?: string,"file_sha256"?: string,"file_size"?: number,"header_row"?: number,"id"?: string,"mapping"?: Json | null,"mapping_template_id"?: string | null,"row_count"?: number,"sheet_name"?: string,"sheet_names"?: (string)[],"status"?: string,"summary"?: Json | null,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null,"warnings"?: NonNullable<Json>
                   }
                   Relationships: [
                     {
@@ -517,14 +517,14 @@ isOneToOne: false
                   ]
                 },"import_row": {
                   Row: {
-                    "batch_id": string,"cells": NonNullable<Json>,"created_at": string,"id": string,"row_number": number,"tenant_id": string
+                    "batch_id": string,"cells": NonNullable<Json>,"created_at": string,"id": string,"messages": Json | null,"payload": Json | null,"result": string | null,"row_number": number,"tenant_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "batch_id": string,"cells": NonNullable<Json>,"created_at"?: string,"id"?: string,"row_number": number,"tenant_id": string
+                    "batch_id": string,"cells": NonNullable<Json>,"created_at"?: string,"id"?: string,"messages"?: Json | null,"payload"?: Json | null,"result"?: string | null,"row_number": number,"tenant_id": string
                   }
                   Update: {
-                    "batch_id"?: string,"cells"?: NonNullable<Json>,"created_at"?: string,"id"?: string,"row_number"?: number,"tenant_id"?: string
+                    "batch_id"?: string,"cells"?: NonNullable<Json>,"created_at"?: string,"id"?: string,"messages"?: Json | null,"payload"?: Json | null,"result"?: string | null,"row_number"?: number,"tenant_id"?: string
                   }
                   Relationships: [
                     {
@@ -1602,6 +1602,9 @@ isOneToOne: false
 { Args: Record<PropertyKey, never>; Returns: {
               "category_id": string,"kind": string,"label": string,"required": boolean,"sort_order": number,"target": string
             }[]
+                           },
+"import_validate":
+{ Args: { "p_batch_id": string }; Returns: Json
                            },
 "list_assets":
 { Args: { "p_after_id"?: string,"p_after_value"?: string,"p_category_id"?: string,"p_coverage"?: string,"p_limit"?: number,"p_location_id"?: string,"p_sort"?: string,"p_status"?: string,"p_status_id"?: string,"p_term"?: string,"p_vendor_id"?: string }; Returns: {

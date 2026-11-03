@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { applyTemplate, columnLetter, normalise, saveError, templateOf, uploadError, type Target } from './Import'
+import { applyTemplate, columnLetter, messageText, normalise, saveError, templateOf, uploadError, type Target } from './Import'
 import { t } from './i18n'
 
 vi.mock('./supabase', () => ({ supabase: {} }))
@@ -32,5 +32,15 @@ describe('import page helpers', () => {
     expect(saveError('mapping: name and category are required')).toBe(t.import.mapping.errors.required)
     expect(saveError('mapping: a target is used twice')).toBe(t.import.mapping.errors.twice)
     expect(saveError('mapping: unknown or not allowed target')).toBe(t.import.mapping.errors.stale)
+  })
+
+  it('words check messages from their code and params', () => {
+    const catalog = [{ target: 'location', label: 'Location' } as Target]
+    expect(messageText({ code: 'required', params: { field: 'location' } }, catalog)).toBe('Location is required.')
+    expect(messageText({ col: 3, code: 'date_format', params: { format: 'dd-MM-yyyy' } }, catalog))
+      .toBe('Not a date. Use an Excel date, YYYY-MM-DD or dd-MM-yyyy.')
+    expect(messageText({ code: 'some_new_code' }, catalog)).toBe('some_new_code')
+    // Every code import_validate can write has words.
+    expect(Object.keys(t.import.check.codes)).toHaveLength(25)
   })
 })

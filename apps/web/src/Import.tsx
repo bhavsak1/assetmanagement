@@ -3,7 +3,7 @@ import { t } from './i18n'
 import { supabase } from './supabase'
 import type { Json, Tables } from './types/database'
 
-type Batch = Pick<Tables<'import_batch'>, 'id' | 'file_name' | 'sheet_name' | 'sheet_names' | 'header_row' | 'columns' | 'row_count' | 'warnings' | 'status' | 'created_at' | 'mapping' | 'mapping_template_id'>
+type Batch = Pick<Tables<'import_batch'>, 'id' | 'file_name' | 'sheet_name' | 'sheet_names' | 'header_row' | 'columns' | 'row_count' | 'warnings' | 'status' | 'created_at' | 'mapping' | 'mapping_template_id' | 'summary'>
 export type Target = { target: string; label: string; kind: string; required: boolean; category_id: string | null }
 type Template = Pick<Tables<'import_mapping_template'>, 'id' | 'name' | 'headers' | 'targets'>
 // source: how the target was chosen; 'user' once the person changes it here.
@@ -84,7 +84,7 @@ function send(file: File, token: string, opts: { sheet?: string; headerRow?: num
 async function loadBatches(): Promise<Batch[]> {
   const { data } = await supabase
     .from('import_batch')
-    .select('id, file_name, sheet_name, sheet_names, header_row, columns, row_count, warnings, status, created_at, mapping, mapping_template_id')
+    .select('id, file_name, sheet_name, sheet_names, header_row, columns, row_count, warnings, status, created_at, mapping, mapping_template_id, summary')
     .order('created_at', { ascending: false })
     .limit(10)
   return data ?? []
@@ -210,13 +210,17 @@ function MappingStep({ tenantId, batch, catalog, sample, canRun, onSaved, onHead
     }
   }, [])
 
-  const editable = canRun && (batch.status === 'staged' || batch.status === 'mapped')
+  const editable = canRun && (batch.status === 'staged' || batch.status === 'mapped' || batch.status === 'validated')
   const taken = new Set(mapping.map((e) => e.target))
   const missing = catalog.filter((c) => c.required && !c.target.startsWith('custom:') && !taken.has(c.target))
 
   async function save() {
     const { error } = await supabase.rpc('import_save_mapping', { p_batch_id: batch.id, p_mapping: mapping, p_template_id: templateId ?? undefined })
     if (error) return setMsg({ ok: false, text: saveError(error.message) })
+    // V8: check the rows straight after a save, so the user sees one step. A failure leaves the batch
+    // mapped, and the check card offers to run it again.
+    setMsg({ ok: true, text: t.import.check.running })
+    await supabase.rpc('import_validate', { p_batch_id: batch.id })
     onSaved()
   }
 
@@ -341,6 +345,130 @@ function cellText(v: Json | undefined): string {
   return typeof v === 'object' ? JSON.stringify(v) : String(v)
 }
 
+type Summary = { ok: number; warning: number; error: number; create_assets: number; create_coverages: number; skip: number; validated_at: string }
+type Message = { col?: number; code: string; params?: Record<string, Json> }
+type Issue = { row: number; warn: boolean; col?: number; text: string; value: string }
+const ISSUES = 200
+// Same list as import_validate: these never make a row an error.
+const WARNINGS = ['currency_defaulted', 'possible_duplicate']
+
+// One message in words. Messages hold a code and fixed params, never cell text (8.4 §15.5).
+export function messageText(m: Message, catalog: Target[]): string {
+  const codes = t.import.check.codes
+  const text = m.code in codes ? codes[m.code as keyof typeof codes] : m.code
+  return Object.entries(m.params ?? {}).reduce(
+    (s, [k, v]) => s.replaceAll(`{${k}}`, k === 'field' ? (catalog.find((f) => f.target === v)?.label ?? String(v)) : String(v)),
+    text,
+  )
+}
+
+// 8.4: the row check and dry run. The full review grid is 8.5.
+function CheckCard({ batch, catalog, canRun, onChecked }: { batch: Batch; catalog: Target[]; canRun: boolean; onChecked: () => void }) {
+  const [issues, setIssues] = useState<Issue[]>()
+  const [state, setState] = useState<'idle' | 'running' | 'failed'>('idle')
+  const c = t.import.check
+  const s = batch.summary as Summary | null
+
+  useEffect(() => {
+    if (!s) return
+    let live = true
+    void supabase
+      .from('import_row')
+      .select('row_number, messages, cells')
+      .eq('batch_id', batch.id)
+      .in('result', ['error', 'warning'])
+      .order('row_number')
+      .limit(ISSUES)
+      .then(({ data }) => {
+        if (!live) return
+        const list = (data ?? []).flatMap((r) =>
+          ((r.messages ?? []) as Message[]).map((m) => ({
+            row: r.row_number,
+            warn: WARNINGS.includes(m.code),
+            col: m.col,
+            text: messageText(m, catalog),
+            value: m.col === undefined ? '' : cellText((r.cells as Json[])[m.col]),
+          })))
+        setIssues(list.slice(0, ISSUES))
+      })
+    return () => {
+      live = false
+    }
+  }, [batch.id, s, catalog])
+
+  async function run() {
+    setState('running')
+    const { error } = await supabase.rpc('import_validate', { p_batch_id: batch.id })
+    setState(error ? 'failed' : 'idle')
+    if (!error) onChecked()
+  }
+
+  return (
+    <div className="card stack">
+      <div className="page-head">
+        <div>
+          <h2>{c.title}</h2>
+          <p className="muted">{c.subtitle}</p>
+        </div>
+        {canRun && (
+          <button type="button" className="btn" disabled={state === 'running'} onClick={() => void run()}>
+            {s ? c.again : c.run}
+          </button>
+        )}
+      </div>
+      {state === 'running' && <p role="status">{c.running}</p>}
+      {state === 'failed' && <p className="field-error" role="alert">{c.failed}</p>}
+      {s && (
+        <>
+          <dl className="facts">
+            <dt>{c.ok}</dt>
+            <dd>{s.ok}</dd>
+            <dt>{c.warning}</dt>
+            <dd>{s.warning}</dd>
+            <dt>{c.error}</dt>
+            <dd>{s.error}</dd>
+          </dl>
+          <p>
+            {c.dryRun
+              .replace('{assets}', String(s.create_assets))
+              .replace('{coverages}', String(s.create_coverages))
+              .replace('{skip}', String(s.skip))}
+          </p>
+          <p className="hint">{c.asOf.replace('{when}', new Date(s.validated_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }))}</p>
+          {issues && !issues.length && <p className="save-ok">{c.none}</p>}
+          {!!issues?.length && (
+            <div className="table-wrap">
+              <p className="muted">{c.issues.replace('{n}', String(issues.length))}</p>
+              <table>
+                <thead>
+                  <tr>
+                    <th>{c.row}</th>
+                    <th>{c.column}</th>
+                    <th>{c.problem}</th>
+                    <th>{c.value}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {issues.map((x, i) => (
+                    <tr key={i}>
+                      <td>{x.row}</td>
+                      <td>{x.col === undefined ? '' : `${columnLetter(x.col)} · ${batch.columns[x.col]}`}</td>
+                      <td>
+                        <span className={x.warn ? 'tag warn' : 'tag error'}>{x.warn ? c.warningTag : c.errorTag}</span> {x.text}
+                      </td>
+                      <td className="muted">{x.value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 function BatchView({ tenantId, batch, catalog, canRun, onSaved, onHeaderRow }: {
   tenantId: string
   batch: Batch
@@ -360,10 +488,10 @@ function BatchView({ tenantId, batch, catalog, canRun, onSaved, onHeaderRow }: {
   const warnings = (batch.warnings ?? {}) as { list?: Warning[]; total?: number }
   const s = t.import.summary
 
-  const live = batch.status === 'staged' || batch.status === 'mapped'
+  const live = batch.status === 'staged' || batch.status === 'mapped' || batch.status === 'validated'
   return (
     <>
-      {live && <Steps at={batch.status === 'mapped' ? 2 : 1} />}
+      {live && <Steps at={batch.status === 'staged' ? 1 : 2} />}
       {live && catalog && rows?.batchId === batch.id && (
         <MappingStep
           tenantId={tenantId}
@@ -375,6 +503,9 @@ function BatchView({ tenantId, batch, catalog, canRun, onSaved, onHeaderRow }: {
           onSaved={onSaved}
           onHeaderRow={onHeaderRow}
         />
+      )}
+      {(batch.status === 'mapped' || batch.status === 'validated') && (
+        <CheckCard key={`check-${batch.id}-${batch.status}`} batch={batch} catalog={catalog ?? []} canRun={canRun} onChecked={onSaved} />
       )}
     <div className="card stack">
       <h2>{batch.file_name}</h2>
@@ -436,7 +567,7 @@ function BatchView({ tenantId, batch, catalog, canRun, onSaved, onHeaderRow }: {
   )
 }
 
-// Stories 8.2 and 8.3: upload, staged rows and column mapping. Review and commit are 8.4 to 8.6.
+// Stories 8.2 to 8.4: upload, staged rows, column mapping and the row check. Review and commit are 8.5 and 8.6.
 export function ImportPage({ tenantId, canRun }: { tenantId: string; canRun: boolean }) {
   const [file, setFile] = useState<File>()
   const [sheet, setSheet] = useState<string>()

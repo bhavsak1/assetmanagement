@@ -1,0 +1,616 @@
+-- Story 8.4: deterministic validation and dry run. docs/data-model-goal8.md §15 (owner accepted V1 to V12).
+-- OWNER REVIEW (CLAUDE.md §9): security definer import_validate, the import_save_mapping change, cell readers
+-- without a fixed search_path (see below).
+-- import_validate checks every staged row of a mapped batch against the asset write rules, set-based,
+-- and stores per row: result, messages (codes only, never cell text) and the payload commit (8.6) will
+-- insert. 8.6 runs it again in its own transaction (V2), so the dry run and the commit cannot drift.
+-- Every right and scope check uses the caller's own has_permission and in_scope (V12).
+
+alter table public.import_row
+  add column result   text  null check (result in ('ok', 'warning', 'error')),
+  add column messages jsonb null check (messages is null or jsonb_typeof(messages) = 'array'),
+  add column payload  jsonb null check (payload is null or jsonb_typeof(payload) = 'object');
+-- Room on each page for the validation update, so it stays on the page (HOT) and skips the index writes.
+alter table public.import_row set (fillfactor = 50);
+alter table public.import_batch
+  add column summary jsonb null check (summary is null or jsonb_typeof(summary) = 'object');
+alter table public.import_batch drop constraint import_batch_status_check;
+alter table public.import_batch add constraint import_batch_status_check
+  check (status in ('staged', 'mapped', 'validated', 'expired'));
+
+drop index public.import_batch_expiry_idx;
+create index import_batch_expiry_idx on public.import_batch (expires_at) where status in ('staged', 'mapped', 'validated');
+
+-- Cell readers. Blank is null; a value that does not parse is null too, and the caller compares with the raw cell.
+-- No SET search_path on purpose (owner review, CLAUDE.md §7.6): a SET clause stops the planner inlining
+-- them (16 s at 20,000 rows). They call only built-ins; only import_validate calls them, under its fixed search_path.
+create function private.import_text(p jsonb)
+returns text language sql immutable as $$
+  -- #>> '{}' gives a string unquoted, a number or boolean as text, JSON null as null. p once, so it inlines.
+  select nullif(btrim(p #>> '{}', E' \t\r\n'), '');
+$$;
+
+create function private.import_number(p jsonb)
+returns numeric language sql immutable as $$
+  select case jsonb_typeof(p)
+    when 'number' then (p #>> '{}')::numeric
+    -- 1,20,000.50 and 120 000 are fine: separators are dropped, nothing else is guessed.
+    when 'string' then case when regexp_replace(p #>> '{}', '[,\s]', '', 'g') ~ '^-?\d{1,20}(\.\d{1,10})?$'
+                            then regexp_replace(p #>> '{}', '[,\s]', '', 'g')::numeric end
+  end;
+$$;
+
+create function private.import_bool(p jsonb)
+returns boolean language sql immutable as $$
+  select case when jsonb_typeof(p) = 'boolean' then (p #>> '{}')::boolean
+              else case lower(btrim(p #>> '{}'))
+                     when 'yes' then true when 'y' then true when 'true' then true when '1' then true
+                     when 'no' then false when 'n' then false when 'false' then false when '0' then false end end;
+$$;
+
+-- V6: ISO text, an Excel serial, or text in the tenant's date format. Nothing is guessed.
+create function private.import_date(p jsonb, p_format text)
+returns date language plpgsql immutable strict as $$
+declare
+  s  text;
+  m  text[];
+  y  int;
+  mo int;
+  d  int;
+begin
+  if jsonb_typeof(p) = 'number' then
+    -- 1900 date system. 1899-12-30 + n is right from 1 Mar 1900 on (Excel's fake 29 Feb 1900).
+    if (p #>> '{}')::numeric between 61 and 2958465 then
+      return date '1899-12-30' + floor((p #>> '{}')::numeric)::int;
+    end if;
+    return null;
+  end if;
+  if jsonb_typeof(p) is distinct from 'string' then
+    return null;
+  end if;
+  s := btrim(p #>> '{}');
+  if s ~ '^\d{4}-\d{2}-\d{2}([T ]|$)' then
+    m := array[substr(s, 9, 2), substr(s, 6, 2), substr(s, 1, 4)];
+  elsif p_format in ('dd-MM-yyyy', 'dd/MM/yyyy') then
+    m := regexp_match(s, '^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$');
+  elsif p_format = 'MM/dd/yyyy' then
+    m := regexp_match(s, '^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$');
+    m := array[m[2], m[1], m[3]];
+  elsif p_format = 'dd MMM yyyy' then
+    m := regexp_match(lower(s), '^(\d{1,2})[ -]([a-z]{3})[a-z]*[ -](\d{4})$');
+    m[2] := array_position(array['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'], m[2]);
+  end if;
+  if m is null or m[1] is null or m[2] is null or m[3] is null then
+    return null;
+  end if;
+  d := m[1]::int; mo := m[2]::int; y := m[3]::int;
+  if y not between 1900 and 2200 or mo not between 1 and 12 or d < 1
+     or d > extract(day from make_date(y, mo, 1) + interval '1 month - 1 day') then
+    return null;
+  end if;
+  return make_date(y, mo, d);
+end;
+$$;
+
+-- "Plant 2/Bay 3" and "plant 2 / bay 3" are the same path.
+create function private.import_path(p text)
+returns text language sql immutable as $$
+  select lower(regexp_replace(btrim(p), '\s*/\s*', ' / ', 'g'));
+$$;
+
+revoke all on function private.import_text(jsonb), private.import_number(jsonb), private.import_bool(jsonb),
+  private.import_date(jsonb, text), private.import_path(text) from public, anon, authenticated;
+
+create function public.import_validate(p_batch_id uuid)
+returns jsonb language plpgsql security definer set search_path = '' set client_min_messages = warning as $$
+declare
+  v_batch   public.import_batch;
+  v_tenant  public.tenant;
+  v_col     jsonb;   -- target -> column index (0-based, as in cells)
+  v_create  boolean := private.has_permission('asset_core', 'create');
+  v_set_tag boolean := private.has_permission('asset_core', 'set_tag');
+  v_money   boolean := private.has_permission('asset_financials', 'update');
+  v_view    boolean := private.has_permission('asset_core', 'view');
+  v_all     boolean := private.scope_all('asset_core', 'create');
+  v_summary jsonb;
+begin
+  if not (private.has_permission('excel_import', 'run') or private.has_permission('excel_import', 'review'))
+     or not private.tenant_can_write() then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  select * into v_batch from public.import_batch
+  where id = p_batch_id and tenant_id = private.current_tenant_id() for update;
+  if not found then
+    raise exception 'batch not found' using errcode = 'P0002';
+  end if;
+  if v_batch.status not in ('mapped', 'validated') then
+    raise exception 'batch is %', v_batch.status using errcode = '22023';
+  end if;
+  -- Rights may have changed since the save: a target the caller may no longer set means map again.
+  if exists (select 1 from jsonb_array_elements(v_batch.mapping) e
+             where e ->> 'target' <> 'ignore'
+               and e ->> 'target' not in (select c.target from public.import_target_catalog() c)) then
+    raise exception 'mapping: unknown or not allowed target' using errcode = '22023';
+  end if;
+  select * into v_tenant from public.tenant where id = v_batch.tenant_id;
+  select coalesce(jsonb_object_agg(e ->> 'target', n - 1), '{}') into v_col
+  from jsonb_array_elements(v_batch.mapping) with ordinality as x (e, n) where e ->> 'target' <> 'ignore';
+
+  drop table if exists pg_temp.import_v, pg_temp.import_m, pg_temp.import_c, pg_temp.import_line, pg_temp.import_k,
+    pg_temp.import_src;
+  create temp table import_v (
+    id uuid primary key, rn int,
+    tag text, name text, category text, location text, status text, criticality text, quantity jsonb,
+    parent_tag text, serial_number text, manufacturer text, model text, purchase_date jsonb, purchase_value jsonb,
+    purchase_currency text, in_service_date jsonb, oem_vendor text, om_vendor text, warranty_start jsonb, warranty_end jsonb,
+    category_id uuid, location_id uuid, location_many boolean, status_id uuid, status_system text, parent_id uuid,
+    oem_id uuid, om_id uuid, d_purchase date, d_in_service date, d_w_start date, d_w_end date,
+    n_quantity numeric, n_value numeric, currency text, custom jsonb not null default '{}'
+  ) on commit drop;
+  create temp table import_m (id uuid, col int, code text, params jsonb) on commit drop;
+  create temp table import_c (id uuid, col int, key text, raw jsonb, value jsonb) on commit drop;
+  create temp table import_line (category_id uuid, ancestor_id uuid, depth int) on commit drop;
+  -- One row per distinct cell text and kind, so each lookup runs once per value, not once per row.
+  create temp table import_k (kind text, raw text, id uuid, sys text, many boolean) on commit drop;
+  -- The batch's rows, analyzed: a batch just uploaded has no stats on import_row, and the planner then
+  -- takes 20,000 rows for 1 and picks nested loops that never finish.
+  create temp table import_src (id uuid, rn int, cells jsonb) on commit drop;
+  insert into pg_temp.import_src
+  select r.id, r.row_number, r.cells from public.import_row r
+  where r.tenant_id = v_batch.tenant_id and r.batch_id = v_batch.id;
+  analyze pg_temp.import_src;
+
+  -- Lookups first (M7), so each row is written once below. Live and active only; nothing is created.
+  insert into pg_temp.import_k (kind, raw, id)
+  with recursive tree as (
+    select c.id, c.is_active, lower(c.code) as code, lower(c.name) as name, lower(c.name) as path
+    from public.asset_category c
+    where c.tenant_id = v_batch.tenant_id and c.parent_id is null and c.deleted_at is null
+    union all
+    select c.id, c.is_active, lower(c.code), lower(c.name), t.path || ' / ' || lower(c.name)
+    from public.asset_category c join tree t on c.parent_id = t.id
+    where c.tenant_id = v_batch.tenant_id and c.deleted_at is null
+  ), live as (select * from tree where is_active)
+  select 'category', x.raw, coalesce((select l.id from live l where l.code = lower(x.raw) limit 1),
+                                     (select l.id from live l where l.name = lower(x.raw) limit 1),
+                                     (select l.id from live l where l.path = private.import_path(x.raw) limit 1))
+  from (select distinct private.import_text(r.cells -> (v_col ->> 'category')::int) as raw
+        from pg_temp.import_src r) x
+  where x.raw is not null;
+
+  insert into pg_temp.import_k (kind, raw, id, many)
+  with live as (
+    select l.id, lower(l.code) as code, lower(l.name) as name,
+           (select string_agg(lower(a.name), ' / ' order by c.depth desc)
+            from private.location_closure c join public.location a on a.tenant_id = c.tenant_id and a.id = c.ancestor_id
+            where c.tenant_id = l.tenant_id and c.descendant_id = l.id) as path
+    from public.location l
+    where l.tenant_id = v_batch.tenant_id and l.active and l.deleted_at is null
+  )
+  select 'location', x.raw,
+         coalesce((select l.id from live l where l.code = lower(x.raw) limit 1),
+                  (select (array_agg(l.id))[1] from live l where l.name = lower(x.raw) having count(*) = 1),
+                  (select l.id from live l where l.path = private.import_path(x.raw) limit 1)),
+         (select count(*) from live l where l.name = lower(x.raw)) > 1
+  from (select distinct private.import_text(r.cells -> (v_col ->> 'location')::int) as raw
+        from pg_temp.import_src r) x
+  where x.raw is not null;
+
+  -- Status by code, else label. The category's set and the starting status are checked below.
+  insert into pg_temp.import_k (kind, raw, id, sys)
+  select 'status', x.raw, s.id, s.system_status
+  from (select distinct private.import_text(r.cells -> (v_col ->> 'status')::int) as raw
+        from pg_temp.import_src r) x
+  left join lateral (select s.id, s.system_status from public.asset_status s
+                     where s.tenant_id = v_batch.tenant_id and s.is_active and s.deleted_at is null
+                       and (s.code = lower(x.raw) or lower(s.label) = lower(x.raw))
+                     order by (s.code = lower(x.raw)) desc limit 1) s on true
+  where x.raw is not null;
+
+  -- Vendors by code, else name. Role and category tags are checked below.
+  insert into pg_temp.import_k (kind, raw, id)
+  select 'vendor', x.raw, (select o.id from public.vendor o
+                           where o.tenant_id = v_batch.tenant_id and o.is_active and o.deleted_at is null
+                             and (o.code = upper(x.raw) or lower(o.name) = lower(x.raw))
+                           order by (o.code = upper(x.raw)) desc nulls last limit 1)
+  from (select private.import_text(r.cells -> (v_col ->> 'oem_vendor')::int) as raw
+        from pg_temp.import_src r
+        union
+        select private.import_text(r.cells -> (v_col ->> 'om_vendor')::int)
+        from pg_temp.import_src r) x
+  where x.raw is not null;
+
+  -- V7: an existing live asset the caller can see.
+  insert into pg_temp.import_k (kind, raw, id)
+  select 'parent', x.raw, a.id
+  from (select distinct upper(private.import_text(r.cells -> (v_col ->> 'parent_tag')::int)) as raw
+        from pg_temp.import_src r) x
+  join public.asset a on a.tenant_id = v_batch.tenant_id and a.tag = x.raw and a.deleted_at is null
+  where v_view and private.in_scope('asset_core', 'view', a.location_id, a.category_id);
+  analyze pg_temp.import_k;
+
+  -- Custom field values (2.1), parsed by their type. Only fields the caller may set are mapped.
+  insert into pg_temp.import_c (id, col, key, raw)
+  select r.id, k.col, k.key, r.cells -> k.col
+  from pg_temp.import_src r
+  cross join (select substr(t.key, 8) as key, t.value::int as col from jsonb_each_text(v_col) t
+              where t.key like 'custom:%') k
+  where private.import_text(r.cells -> k.col) is not null;
+  analyze pg_temp.import_c;
+
+  update pg_temp.import_c c set value = case f.type
+      when 'text'    then to_jsonb(private.import_text(c.raw))
+      when 'number'  then to_jsonb(private.import_number(c.raw))
+      when 'boolean' then to_jsonb(private.import_bool(c.raw))
+      when 'date'    then to_jsonb(private.import_date(c.raw, v_tenant.date_format)::text)
+      when 'list'    then (select to_jsonb(o ->> 'code') from jsonb_array_elements(f.options) o
+                           where coalesce((o ->> 'is_active')::boolean, true)
+                             and (lower(o ->> 'code') = lower(private.import_text(c.raw))
+                                  or lower(o ->> 'label') = lower(private.import_text(c.raw)))
+                           limit 1)
+    end
+  from public.field_definition f
+  where f.tenant_id = v_batch.tenant_id and f.entity = 'asset' and f.key = c.key;
+
+  -- 1 and 2. Read the mapped cells (an unmapped target reads cells -> null), parse them and join the
+  -- lookups, in one pass. A blank cell is null, so "given" is just "is not null".
+  insert into pg_temp.import_v (id, rn, tag, name, category, location, status, criticality, quantity, parent_tag,
+    serial_number, manufacturer, model, purchase_date, purchase_value, purchase_currency, in_service_date,
+    oem_vendor, om_vendor, warranty_start, warranty_end,
+    d_purchase, d_in_service, d_w_start, d_w_end, n_quantity, n_value, currency,
+    category_id, location_id, location_many, status_id, status_system, parent_id, oem_id, om_id, custom)
+  select c.id, c.rn, c.tag, c.name, c.category, c.location, c.status, c.criticality, c.quantity, c.parent_tag,
+    c.serial_number, c.manufacturer, c.model, c.purchase_date, c.purchase_value, c.purchase_currency, c.in_service_date,
+    c.oem_vendor, c.om_vendor, c.warranty_start, c.warranty_end,
+    private.import_date(c.purchase_date, v_tenant.date_format), private.import_date(c.in_service_date, v_tenant.date_format),
+    private.import_date(c.warranty_start, v_tenant.date_format), private.import_date(c.warranty_end, v_tenant.date_format),
+    private.import_number(c.quantity), private.import_number(c.purchase_value),
+    coalesce(c.purchase_currency, case when c.purchase_value is not null then v_tenant.currency_code end),
+    kc.id, kl.id, kl.many, ks.id, ks.sys, kp.id, ko.id, km.id, coalesce(cu.obj, '{}')
+  from (
+    select r.id, r.rn,
+      upper(private.import_text(r.cells -> (v_col ->> 'tag')::int)) as tag,
+      private.import_text(r.cells -> (v_col ->> 'name')::int) as name,
+      private.import_text(r.cells -> (v_col ->> 'category')::int) as category,
+      private.import_text(r.cells -> (v_col ->> 'location')::int) as location,
+      private.import_text(r.cells -> (v_col ->> 'status')::int) as status,
+      upper(private.import_text(r.cells -> (v_col ->> 'criticality')::int)) as criticality,
+      upper(private.import_text(r.cells -> (v_col ->> 'parent_tag')::int)) as parent_tag,
+      private.import_text(r.cells -> (v_col ->> 'serial_number')::int) as serial_number,
+      private.import_text(r.cells -> (v_col ->> 'manufacturer')::int) as manufacturer,
+      private.import_text(r.cells -> (v_col ->> 'model')::int) as model,
+      upper(private.import_text(r.cells -> (v_col ->> 'purchase_currency')::int)) as purchase_currency,
+      private.import_text(r.cells -> (v_col ->> 'oem_vendor')::int) as oem_vendor,
+      private.import_text(r.cells -> (v_col ->> 'om_vendor')::int) as om_vendor,
+      case when private.import_text(j.quantity) is not null then j.quantity end as quantity,
+      case when private.import_text(j.purchase_date) is not null then j.purchase_date end as purchase_date,
+      case when private.import_text(j.purchase_value) is not null then j.purchase_value end as purchase_value,
+      case when private.import_text(j.in_service_date) is not null then j.in_service_date end as in_service_date,
+      case when private.import_text(j.warranty_start) is not null then j.warranty_start end as warranty_start,
+      case when private.import_text(j.warranty_end) is not null then j.warranty_end end as warranty_end
+    from pg_temp.import_src r
+    cross join lateral (select r.cells -> (v_col ->> 'quantity')::int as quantity,
+                               r.cells -> (v_col ->> 'purchase_date')::int as purchase_date,
+                               r.cells -> (v_col ->> 'purchase_value')::int as purchase_value,
+                               r.cells -> (v_col ->> 'in_service_date')::int as in_service_date,
+                               r.cells -> (v_col ->> 'warranty_start')::int as warranty_start,
+                               r.cells -> (v_col ->> 'warranty_end')::int as warranty_end) j
+  ) c
+  left join pg_temp.import_k kc on kc.kind = 'category' and kc.raw = c.category
+  left join pg_temp.import_k kl on kl.kind = 'location' and kl.raw = c.location
+  left join pg_temp.import_k ks on ks.kind = 'status' and ks.raw = c.status
+  left join pg_temp.import_k kp on kp.kind = 'parent' and kp.raw = c.parent_tag
+  left join pg_temp.import_k ko on ko.kind = 'vendor' and ko.raw = c.oem_vendor
+  left join pg_temp.import_k km on km.kind = 'vendor' and km.raw = c.om_vendor
+  left join (select x.id, jsonb_object_agg(x.key, x.value) as obj from pg_temp.import_c x
+             where x.value is not null and x.value <> 'null' group by x.id) cu on cu.id = c.id;
+  analyze pg_temp.import_v;  -- temp tables have no stats; without them the joins below plan as nested loops
+
+  insert into pg_temp.import_m (id, col, code, params)
+  select v.id, (v_col ->> x.t)::int, 'date_format', jsonb_build_object('format', v_tenant.date_format)
+  from pg_temp.import_v v
+  cross join lateral (values ('purchase_date', v.purchase_date, v.d_purchase), ('in_service_date', v.in_service_date, v.d_in_service),
+                             ('warranty_start', v.warranty_start, v.d_w_start), ('warranty_end', v.warranty_end, v.d_w_end)) x (t, raw, val)
+  where x.raw is not null and x.val is null
+  union all
+  select v.id, (v_col ->> 'quantity')::int, 'number_format', '{"min": 1, "integer": true}'
+  from pg_temp.import_v v
+  where v.quantity is not null and (v.n_quantity is null or v.n_quantity < 1 or v.n_quantity >= 1e9 or v.n_quantity <> trunc(v.n_quantity))
+  union all
+  select v.id, (v_col ->> 'purchase_value')::int, 'number_format', '{"min": 0}'
+  from pg_temp.import_v v
+  where v.purchase_value is not null and (v.n_value is null or v.n_value < 0 or v.n_value >= 1e15)
+  union all
+  select v.id, (v_col ->> 'purchase_currency')::int, 'currency_format', null::jsonb
+  from pg_temp.import_v v where v.purchase_currency is not null and v.purchase_currency !~ '^[A-Z]{3}$'
+  union all  -- V10
+  select v.id, coalesce((v_col ->> 'purchase_currency')::int, (v_col ->> 'purchase_value')::int), 'currency_defaulted',
+         jsonb_build_object('currency', v_tenant.currency_code)
+  from pg_temp.import_v v where v.purchase_value is not null and v.purchase_currency is null
+  union all
+  select v.id, (v_col ->> 'criticality')::int, 'bad_option', '{"options": ["A", "B", "C"]}'
+  from pg_temp.import_v v where v.criticality is not null and v.criticality not in ('A', 'B', 'C')
+  union all
+  select v.id, (v_col ->> 'tag')::int, 'tag_format', null::jsonb
+  from pg_temp.import_v v where v.tag is not null and v.tag !~ '^[A-Z0-9][A-Z0-9._/-]{0,59}$';
+
+  -- 3. Required: name, category, the tenant's list (purchase value only for who may set it).
+  insert into pg_temp.import_m (id, col, code, params)
+  select v.id, (v_col ->> x.t)::int, 'required', jsonb_build_object('field', x.t)
+  from pg_temp.import_v v
+  cross join lateral (values ('name', v.name is null), ('category', v.category is null),
+    ('serial_number', v.serial_number is null), ('manufacturer', v.manufacturer is null), ('model', v.model is null),
+    ('location', v.location is null), ('purchase_date', v.purchase_date is null),
+    ('purchase_value', v.purchase_value is null), ('in_service_date', v.in_service_date is null)) x (t, missing)
+  where x.missing
+    and (x.t in ('name', 'category') or x.t = any (v_tenant.required_asset_fields))
+    and (x.t <> 'purchase_value' or v_money);
+
+  -- 4. Lookups (found above).
+  insert into pg_temp.import_m (id, col, code, params)
+  select v.id, (v_col ->> 'category')::int, 'not_found', null::jsonb
+  from pg_temp.import_v v where v.category is not null and v.category_id is null
+  union all
+  select v.id, (v_col ->> 'location')::int, case when v.location_many then 'ambiguous' else 'not_found' end, null::jsonb
+  from pg_temp.import_v v where v.location is not null and v.location_id is null
+  union all
+  select v.id, (v_col ->> 'status')::int, 'not_found', null::jsonb
+  from pg_temp.import_v v where v.status is not null and v.status_id is null
+  union all
+  select v.id, (v_col ->> 'oem_vendor')::int, 'not_found', null::jsonb
+  from pg_temp.import_v v where v.oem_vendor is not null and v.oem_id is null
+  union all
+  select v.id, (v_col ->> 'om_vendor')::int, 'not_found', null::jsonb
+  from pg_temp.import_v v where v.om_vendor is not null and v.om_id is null
+  union all
+  select v.id, (v_col ->> 'parent_tag')::int, 'parent_not_found', null::jsonb
+  from pg_temp.import_v v where v.parent_tag is not null and v.parent_id is null;
+
+  -- Per distinct category: its line (self and ancestors), its status set and its vendors.
+  insert into pg_temp.import_line (category_id, ancestor_id, depth)
+  with recursive up as (
+    select c.id as category_id, c.id as ancestor_id, c.parent_id, 0 as depth
+    from public.asset_category c
+    where c.tenant_id = v_batch.tenant_id and c.id in (select category_id from pg_temp.import_v)
+    union all
+    select up.category_id, c.id, c.parent_id, up.depth + 1
+    from public.asset_category c join up on c.tenant_id = v_batch.tenant_id and c.id = up.parent_id
+  )
+  select category_id, ancestor_id, depth from up;
+  analyze pg_temp.import_line;
+
+  with cat as (
+    select c.id, private.effective_status_ids(v_batch.tenant_id, c.id) as statuses,
+           private.allowed_vendor_ids(v_batch.tenant_id, c.id, 'oem') as oem,
+           private.allowed_vendor_ids(v_batch.tenant_id, c.id, 'om') as om
+    from (select distinct category_id as id from pg_temp.import_v where category_id is not null) c
+  )
+  insert into pg_temp.import_m (id, col, code, params)
+  select v.id, (v_col ->> 'status')::int, 'status_not_allowed', null::jsonb
+  from pg_temp.import_v v join cat on cat.id = v.category_id
+  where v.status_id is not null and (v.status_system not in ('in_stock', 'active') or v.status_id <> all (cat.statuses))
+  union all
+  select v.id, (v_col ->> 'oem_vendor')::int, 'vendor_not_for_category', null::jsonb
+  from pg_temp.import_v v join cat on cat.id = v.category_id
+  where v.oem_id is not null and v.oem_id <> all (cat.oem)
+  union all
+  select v.id, (v_col ->> 'om_vendor')::int, 'vendor_not_for_category', null::jsonb
+  from pg_temp.import_v v join cat on cat.id = v.category_id
+  where v.om_id is not null and v.om_id <> all (cat.om);
+
+  -- 5. Custom fields (2.1): type, options, category line, required.
+  insert into pg_temp.import_m (id, col, code, params)
+  with req as materialized (  -- once per field, not per row
+    select f.key, f.category_id from public.field_definition f
+    join public.security_domain d on d.id = f.security_domain_id
+    where f.tenant_id = v_batch.tenant_id and f.entity = 'asset' and f.is_required and f.is_active
+      and f.deleted_at is null and private.has_permission(d.code, 'update')
+  )
+  select c.id, c.col,
+         case f.type when 'number' then 'number_format' when 'date' then 'date_format'
+                     when 'boolean' then 'bool_format' else 'bad_option' end,
+         case when f.type = 'date' then jsonb_build_object('format', v_tenant.date_format) end
+  from pg_temp.import_c c
+  join public.field_definition f on f.tenant_id = v_batch.tenant_id and f.entity = 'asset' and f.key = c.key
+  where c.value is null or c.value = 'null'
+  union all
+  select c.id, c.col, 'not_for_category', null::jsonb
+  from pg_temp.import_c c
+  join pg_temp.import_v v on v.id = c.id
+  join public.field_definition f on f.tenant_id = v_batch.tenant_id and f.entity = 'asset' and f.key = c.key
+  where f.category_id is not null and v.category_id is not null
+    and not exists (select 1 from pg_temp.import_line l where l.category_id = v.category_id and l.ancestor_id = f.category_id)
+  union all
+  select v.id, (v_col ->> ('custom:' || f.key))::int, 'required', jsonb_build_object('field', 'custom:' || f.key)
+  from pg_temp.import_v v
+  cross join req f
+  where v.category_id is not null
+    and (f.category_id is null
+         or exists (select 1 from pg_temp.import_line l where l.category_id = v.category_id and l.ancestor_id = f.category_id))
+    and not exists (select 1 from pg_temp.import_c c where c.id = v.id and c.key = f.key);
+
+  -- 6. Duplicates (V5) and the tag (3.8).
+  insert into pg_temp.import_m (id, col, code, params)
+  select v.id, (v_col ->> 'tag')::int, 'tag_not_allowed', null::jsonb
+  from pg_temp.import_v v where v.tag is not null and not v_set_tag
+  union all
+  select d.id, (v_col ->> 'tag')::int, 'duplicate_in_file', null::jsonb
+  from (select v.id, count(*) over (partition by v.tag) as n from pg_temp.import_v v where v.tag is not null) d
+  where d.n > 1
+  union all
+  select v.id, (v_col ->> 'tag')::int, 'tag_exists', null::jsonb
+  from pg_temp.import_v v
+  where v.tag is not null
+    and exists (select 1 from public.asset a where a.tenant_id = v_batch.tenant_id and a.tag = v.tag and a.deleted_at is null)
+  union all
+  select v.id, (v_col ->> 'category')::int, 'tag_needs_category_code', null::jsonb
+  from pg_temp.import_v v
+  where v.tag is null and v.category_id is not null and strpos(v_tenant.asset_tag_pattern, '{CAT}') > 0
+    and not exists (select 1 from pg_temp.import_line l
+                    join public.asset_category c on c.tenant_id = v_batch.tenant_id and c.id = l.ancestor_id
+                    where l.category_id = v.category_id and c.code is not null)
+  union all
+  select v.id, (v_col ->> 'location')::int, 'tag_needs_location_code', null::jsonb
+  from pg_temp.import_v v
+  where v.tag is null and strpos(v_tenant.asset_tag_pattern, '{LOC}') > 0
+    and (v.location is null or v.location_id is not null)
+    and not exists (select 1 from private.location_closure c
+                    join public.location l on l.tenant_id = c.tenant_id and l.id = c.ancestor_id
+                    where c.tenant_id = v_batch.tenant_id and c.descendant_id = v.location_id and l.code is not null)
+  union all
+  select d.id, null, 'possible_duplicate', null::jsonb
+  from (select v.id, v.tag, v.serial_number, v.manufacturer,
+               count(*) over (partition by lower(v.serial_number), lower(v.manufacturer)) as n
+        from pg_temp.import_v v where v.serial_number is not null and v.manufacturer is not null) d
+  where d.tag is null
+    and (d.n > 1 or exists (select 1 from public.asset a where a.tenant_id = v_batch.tenant_id and a.deleted_at is null
+                            and lower(a.serial_number) = lower(d.serial_number)
+                            and lower(a.manufacturer) = lower(d.manufacturer)));
+
+  -- 7. Warranty pair (M9) and its vendor (V9).
+  insert into pg_temp.import_m (id, col, code, params)
+  select v.id, (v_col ->> case when v.warranty_start is null then 'warranty_start' else 'warranty_end' end)::int,
+         'warranty_incomplete', null::jsonb
+  from pg_temp.import_v v where (v.warranty_start is null) <> (v.warranty_end is null)
+  union all
+  select v.id, (v_col ->> 'warranty_end')::int, 'warranty_dates', null::jsonb
+  from pg_temp.import_v v where v.d_w_end < v.d_w_start
+  union all
+  select v.id, (v_col ->> 'warranty_start')::int, 'warranty_vendor', null::jsonb
+  from pg_temp.import_v v
+  where v.warranty_start is not null and v.warranty_end is not null and v.oem_vendor is null and v.om_vendor is null;
+
+  -- 8. Rights and row scope (6.1) of the caller, per distinct location and category.
+  insert into pg_temp.import_m (id, col, code, params)
+  select v.id, null, 'no_create_right', null::jsonb
+  from pg_temp.import_v v where not v_create
+  union all
+  select v.id, coalesce((v_col ->> 'location')::int, (v_col ->> 'category')::int), 'out_of_scope', null::jsonb
+  from pg_temp.import_v v
+  join (select p.location_id, p.category_id,
+               private.in_scope('asset_core', 'create', p.location_id, p.category_id) as ok
+        from (select distinct location_id, category_id from pg_temp.import_v where category_id is not null) p) s
+    on s.category_id = v.category_id and s.location_id is not distinct from v.location_id
+  where v_create and not v_all and not s.ok;
+
+  analyze pg_temp.import_m;
+
+  -- Results, the payload 8.6 inserts (V2), and the summary.
+  update public.import_row r set
+    messages = m.msgs,
+    result   = case when m.err then 'error' when m.msgs is not null then 'warning' else 'ok' end,
+    payload  = case when not coalesce(m.err, false) then jsonb_strip_nulls(jsonb_build_object(
+      'asset', jsonb_build_object(
+        'tag', v.tag, 'name', v.name, 'category_id', v.category_id, 'location_id', v.location_id,
+        'status_id', v.status_id, 'criticality', v.criticality, 'quantity', v.n_quantity::int,
+        'parent_asset_id', v.parent_id, 'serial_number', v.serial_number, 'manufacturer', v.manufacturer,
+        'model', v.model, 'purchase_date', v.d_purchase, 'purchase_value', v.n_value,
+        'purchase_currency', case when v.n_value is not null or v.purchase_currency is not null then v.currency end,
+        'in_service_date', v.d_in_service, 'oem_vendor_id', v.oem_id, 'om_vendor_id', v.om_id,
+        'custom_values', v.custom),
+      'coverage', case when v.d_w_start is not null then jsonb_build_object(
+        'coverage_type', 'warranty', 'vendor_id', coalesce(v.oem_id, v.om_id),
+        'start_date', v.d_w_start, 'end_date', v.d_w_end) end)) end
+  from pg_temp.import_v v
+  left join (select m.id,
+                    jsonb_agg(jsonb_strip_nulls(jsonb_build_object('col', m.col, 'code', m.code, 'params', m.params))
+                              order by m.col nulls first, m.code) as msgs,
+                    bool_or(m.code not in ('currency_defaulted', 'possible_duplicate')) as err
+             from pg_temp.import_m m group by m.id) m on m.id = v.id
+  where r.tenant_id = v_batch.tenant_id and r.batch_id = v_batch.id and r.id = v.id;
+
+  select jsonb_build_object(
+      'ok', count(*) filter (where r.result = 'ok'),
+      'warning', count(*) filter (where r.result = 'warning'),
+      'error', count(*) filter (where r.result = 'error'),
+      'create_assets', count(*) filter (where r.result <> 'error'),
+      'create_coverages', count(*) filter (where r.result <> 'error' and r.payload ? 'coverage'),
+      'skip', count(*) filter (where r.result = 'error'),
+      'codes', coalesce((select jsonb_object_agg(c.code, c.n)
+                         from (select m.code, count(*) as n from pg_temp.import_m m group by m.code) c), '{}'),
+      'validated_at', now(),
+      'as_user', auth.uid())
+  into v_summary
+  from public.import_row r
+  where r.tenant_id = v_batch.tenant_id and r.batch_id = v_batch.id;
+
+  update public.import_batch set summary = v_summary, status = 'validated', updated_by = auth.uid()
+  where id = v_batch.id;
+  return v_summary;
+end;
+$$;
+revoke all on function public.import_validate(uuid) from public, anon;
+grant execute on function public.import_validate(uuid) to authenticated;
+
+-- V8: a saved mapping makes the batch 'mapped' again and drops the old summary; the next run
+-- overwrites the row results. Same body as 8.3 otherwise.
+create or replace function public.import_save_mapping(p_batch_id uuid, p_mapping jsonb, p_template_id uuid default null)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  v_batch   public.import_batch;
+  v_targets text[];
+  v_allowed text[];
+begin
+  if not private.has_permission('excel_import', 'run') or not private.tenant_can_write() then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  select * into v_batch from public.import_batch
+  where id = p_batch_id and tenant_id = private.current_tenant_id() for update;
+  if not found then
+    raise exception 'batch not found' using errcode = 'P0002';
+  end if;
+  if v_batch.status not in ('staged', 'mapped', 'validated') then
+    raise exception 'batch is %', v_batch.status using errcode = '22023';
+  end if;
+  if p_mapping is null or jsonb_typeof(p_mapping) <> 'array'
+     or jsonb_array_length(p_mapping) <> cardinality(v_batch.columns) then
+    raise exception 'mapping: one entry per column' using errcode = '22023';
+  end if;
+  if exists (select 1 from jsonb_array_elements(p_mapping) e
+             where jsonb_typeof(e) <> 'object' or jsonb_typeof(e -> 'target') <> 'string'
+                or coalesce(e ->> 'source', '') not in ('template', 'rules', 'user', 'ai')) then
+    raise exception 'mapping: each entry needs a target and a source' using errcode = '22023';
+  end if;
+
+  select array_agg(e ->> 'target') into v_targets
+  from jsonb_array_elements(p_mapping) e where e ->> 'target' <> 'ignore';
+  select array_agg(c.target) into v_allowed from public.import_target_catalog() c;
+  if exists (select 1 from unnest(v_targets) t where not t = any (coalesce(v_allowed, '{}'))) then
+    raise exception 'mapping: unknown or not allowed target' using errcode = '22023';
+  end if;
+  if (select count(*) <> count(distinct t) from unnest(v_targets) t) then
+    raise exception 'mapping: a target is used twice' using errcode = '22023';
+  end if;
+  if not ('name' = any (coalesce(v_targets, '{}')) and 'category' = any (coalesce(v_targets, '{}'))) then
+    raise exception 'mapping: name and category are required' using errcode = '22023';
+  end if;
+  if p_template_id is not null and not exists (
+    select 1 from public.import_mapping_template
+    where id = p_template_id and tenant_id = v_batch.tenant_id and deleted_at is null) then
+    raise exception 'template not found' using errcode = 'P0002';
+  end if;
+
+  update public.import_batch
+  set mapping = (select jsonb_agg(jsonb_build_object('target', e ->> 'target', 'source', e ->> 'source')
+                                  order by n)
+                 from jsonb_array_elements(p_mapping) with ordinality as x (e, n)),
+      mapping_template_id = p_template_id,
+      status = 'mapped',
+      summary = null,
+      updated_by = auth.uid()
+  where id = v_batch.id;
+end;
+$$;
+
+-- I9 again: validated batches expire the same way.
+create or replace function private.purge_expired_imports()
+returns void language plpgsql set search_path = '' as $$
+begin
+  delete from public.import_row r
+  using public.import_batch b
+  where b.tenant_id = r.tenant_id and b.id = r.batch_id
+    and b.status in ('staged', 'mapped', 'validated') and b.expires_at <= now();
+  update public.import_batch set status = 'expired'
+  where status in ('staged', 'mapped', 'validated') and expires_at <= now();
+end;
+$$;
