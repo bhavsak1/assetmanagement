@@ -337,3 +337,82 @@ Take the `exceljs` stream reader as is: no zip-bomb counting, first sheet and ro
 3. `POST /imports`, CORS, service tests (401, 403 without `run`, 413, 429, staged rows isolated per tenant).
 4. Types, web `/import` page, i18n strings, browser check against the local stack.
 5. `.env.example`, README, 8.2 `In review`, PR, demo note.
+
+---
+
+# Story 8.3: column mapping step (pluggable) and mapping templates
+
+**Status:** design, waiting for the owner (3 Nov 2026).
+
+**Goal:** after upload, the user sees each source column (header text and letter) with a suggested target field, changes any of them, and saves. The mapping is stored on the batch for 8.4. A saved mapping can be kept as a template, and it is applied by itself the next time the headers match. No value checks (8.4), no review grid (8.5), no commit (8.6), no AI (Goal 10).
+
+**Facts checked (3 Nov 2026):**
+- Asset columns (3.1): `tag`, `name`, `category_id`, `location_id`, `status_id` (tenant statuses, 3.7), `criticality`, `quantity`, `parent_asset_id`, `serial_number`, `manufacturer`, `model`, `purchase_date`, `purchase_value` and `purchase_currency` (domain `asset_financials`, masked in `asset_view`), `in_service_date`, `oem_vendor_id` and `om_vendor_id` (4.1b), `custom_values`. Warranty lines come through `create_asset_with_warranty` (4.5).
+- Custom fields: `field_definition` with `entity = 'asset'`, `key` unique per tenant, each with its own `security_domain_id`. Its select policy needs `category_config.view`, which an importer may not hold.
+- Lookups: category has `code` (unique, case-free) and a parent tree; location has `code` (unique) and a tree; vendor has `code` and a unique `lower(name)`; a status has a name.
+- Domain `excel_import` (run, review, commit) exists. Administrator, Asset manager and Maintenance lead hold `run`.
+- The ImportReview screen shows a stepper (Upload, Mapping, Review, Commit) and a "Column mapping" card: source, target, a confidence tag and "Save as template". The percent tags are AI output (Goal 10).
+
+## 14.1 Flow
+
+```
+upload (8.2) --> service: stage rows, then suggest a mapping (template, else rules) --> batch.mapping (status staged)
+web /import, Mapping step: user edits --> rpc import_save_mapping(batch, mapping) --> status mapped
+                           "Save as template" --> insert import_mapping_template (RLS)
+```
+
+## 14.2 The pluggable step
+
+One interface in the service, tried in order until every column has a target:
+
+```ts
+type Mapper = (input: { columns: string[]; samples: Cell[][]; catalog: Target[] }) =>
+  Promise<{ column: number; target: string; source: 'template' | 'rules' | 'ai'; confidence?: number }[]>
+```
+
+8.3 ships `templateMapper` and `rulesMapper`. Goal 10 adds `aiMapper` at the end of the chain, behind the AI gateway and the tenant's entitlement. It only ever sees the catalog the user may see (CLAUDE.md §11). Nothing else changes.
+
+## 14.3 Rules mapper (deterministic)
+
+- Normalise: lower case, `&` to `and`, keep only letters and digits (`Asset Tag No.` becomes `assettagno`).
+- Exact match on the target key or label, then on a synonym list in code (English, like the UI). Examples: `assetcode`, `assetid`, `tagno` to tag; `serialno`, `sn` to serial; `make`, `oem` to manufacturer; `site`, `plant`, `area` to location; `supplier` to O&M vendor.
+- `srno`, `slno`, `sno` map to **ignore**. In Indian sheets "Sr. No." is the row count, not the serial number.
+- Custom fields: exact match on label or key.
+- Each target once: the leftmost column wins, later ones get ignore. No fuzzy matching (edit distance). That guess is the AI's job and needs a human.
+
+## 14.4 Storage
+
+- `import_batch.mapping jsonb` (array aligned with `columns`, each `{target, source}`), `mapping_template_id uuid null`; status gains `mapped`.
+- `import_mapping_template`: std columns, `name` (unique per tenant while live), `headers text[]` (normalised, file order), `targets jsonb` (normalised header to target), `last_used_at`. 1.4 pattern, soft delete.
+- Targets are strings: `tag`, `name`, `category`, `location`, `status`, `criticality`, `quantity`, `parent_tag`, `serial_number`, `manufacturer`, `model`, `purchase_date`, `purchase_value`, `purchase_currency`, `in_service_date`, `oem_vendor`, `om_vendor`, `warranty_start`, `warranty_end`, `custom:<key>`, `ignore`.
+
+## 14.5 Not in 8.3
+
+Value checks and lookup matching (8.4), the review grid and AI column (8.5, Goal 10), commit (8.6), creating categories or locations from a file, other entity types, CSV.
+
+## 14.6 The smaller option
+
+No template table: the browser keeps the last mapping per header set in local storage. About half the work, but templates do not follow the user to another device or a teammate, and "Save as template" on the screen has nowhere real to live.
+
+## 14.7 DECIDE
+
+| # | Decision | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| M1 | Where mapping logic runs | a suggest in the service at upload (behind `Mapper`, §14.2); save through a database action function, b all in the browser, save by table update, c all in SQL functions | a: Goal 10's AI mapper lives in the service next to the gateway; the database still checks every saved target | Low |
+| M2 | Target catalog | a SQL function `import_target_catalog()` (security definer, fixed `search_path`): the core list in §14.4 plus active asset custom fields; the service uses it to suggest, the save function to check, b core list in TypeScript, custom fields read by the web app | a: one list, enforced in the database. Definer because `field_definition` needs `category_config.view` | Low |
+| M3 | Fields the user cannot view (`purchase_value`, `purchase_currency`, custom fields in restricted domains) | a not offered; the save refuses them; a template entry for one becomes ignore for that user, b offered but written masked | a: an importer who cannot see a value should not set it blind. Masking suits reads, not writes | Low |
+| M4 | Save | a `import_save_mapping(batch_id, mapping)` security definer: checks tenant, `excel_import.run`, `tenant_can_write()`, batch `staged` or `mapped`, one entry per column, targets in the user's catalog, each target once, `name` and `category` mapped; sets `mapped`. No update policy on the table, b an update policy on `mapping` | a (CLAUDE.md §7.8). Owner review: definer function | Low |
+| M5 | Template rights | a domain `excel_import`: read with `run` or `review`, write with `run`, b new domain `import_template` (view, create, update, delete) with starter group grants | a: no new domain, no starter group change; whoever imports can keep templates | Low: b is additive |
+| M6 | Template match | a apply by itself when every non-blank header in the file is in the template (by normalised text, not letter, so moved columns still work); several match: most headers, then most recently used; partial matches listed for the user to pick, b exact header list only, c best overlap above 80% | a | Low: one function |
+| M7 | Lookup columns | a one target each; 8.4 matches **category** by code, then name, then path `Utilities / Air compressor`; **location** by code, then name if unique, then path `Plant 2 / Bay 3`; **vendor** by code, then name (case-free); **status** by name. No match is a row error; nothing is created, b separate "by code" and "by name" targets | a | Low |
+| M8 | Entity types per file | a assets only (with one warranty line per row, M9), b assets, vendors and locations | a (Phase 1). Vendors and locations are few and entered by hand | Low: the catalog takes an entity later |
+| M9 | Warranty columns | a `warranty_start`, `warranty_end` map to one warranty line, committed through the 4.5 path in 8.6, b no warranty in import | a: the screen shows "Warranty end"; it is what SMEs track most | Low |
+| M10 | Header-row override | a re-upload with `?header_row=N` (the file is not kept, I6); the old batch stays, b stage every row from row 1 and re-cut in place | a: same as `?sheet=` | Low |
+| M11 | Suggestion tag on screen | a "Template", "Matched", "Not mapped"; percents only once the AI mapper exists, b made-up percents now | a | Low |
+
+## 14.8 Build plan (after answers)
+
+1. Migration `8_3_import_mapping`: batch columns and status, template table (1.4 pattern), `import_target_catalog()`, `import_save_mapping()`; pgTAP with permission blocks, a masked-field case and cross-tenant lines.
+2. Service: `src/mapping.ts` (`Mapper`, template and rules mappers, tests), suggest at upload, `?header_row=`.
+3. Types, web Mapping step (stepper, column list, target select, save, save as template), i18n, browser check.
+4. 8.3 `In review`, PR, demo note.
