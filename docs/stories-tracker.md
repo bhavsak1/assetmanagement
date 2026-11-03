@@ -146,7 +146,7 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 
 | ID | Story | Open items | Status |
 |---|---|---|---|
-| 8.1 | Custom service skeleton, deployed, using user token or `SET LOCAL` tenant context | D1, OQ-28 | In review |
+| 8.1 | Custom service skeleton, deployed, using user token or `SET LOCAL` tenant context | D1, OQ-28 | Done |
 | 8.2 | Upload and streaming parse into staged rows | | Todo |
 | 8.3 | Column mapping step (pluggable) and mapping templates | | Todo |
 | 8.4 | Deterministic validation and dry run | | Todo |

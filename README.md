@@ -52,6 +52,7 @@ npx supabase db push
 ## Staging
 
 - Web app: https://assetly-staging.pages.dev (Cloudflare Pages), against Supabase project `blhxyfgkkhpqbfuhpnww`.
+- API service: https://assetly-api-833980400183.asia-northeast1.run.app (Cloud Run, asia-northeast1). Verified on staging 2 Nov 2026: `/health` ok, and `/me` with a real staging token returns the user and tenant, read as `assetly_api` under RLS through Supavisor transaction mode.
 - Deploys: every push to `main` builds and deploys through Cloudflare's Git integration. Pull requests get preview URLs.
 - Pages settings: root `apps/web`, build `npm run build`, output `dist`, env `NODE_VERSION=24`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (publishable key only, never service-role). Values live in the Pages dashboard, not git.
 - Auth settings: `[remotes.staging]` in `supabase/config.toml`. Preview with `npx supabase config diff --project-ref blhxyfgkkhpqbfuhpnww`, apply with `npx supabase config push --project-ref blhxyfgkkhpqbfuhpnww`.
