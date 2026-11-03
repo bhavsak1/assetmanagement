@@ -1170,7 +1170,7 @@
       "warnings": "Warnings ({n})",
       "preview": "First {n} rows",
       "row": "Row",
-      "next": "Review and commit come next (stories 8.5 and 8.6)."
+      "next": "Commit comes next (story 8.6)."
     },
     "warnings": {
       "cell_truncated": "Row {row}, column {column}: text cut to 4,000 characters.",
@@ -1253,6 +1253,40 @@
         "nameTaken": "A template with this name exists. Pick another name.",
         "generic": "Could not save. Try again."
       }
+    },
+    "review": {
+      "title": "Import review",
+      "subtitle": "{file} · dry run, nothing saved yet",
+      "backToMapping": "Back to mapping",
+      "downloadErrors": "Download errors",
+      "downloadFailed": "The errors file could not be made. Try again.",
+      "problems": "Problems",
+      "accepted": "Accepted",
+      "attention": "Needs attention",
+      "rejected": "Rejected",
+      "noUpdates": "No existing asset is changed.",
+      "show": "Show",
+      "shows": {
+        "attention": "Needs attention (errors and warnings)",
+        "error": "Rejected rows",
+        "warning": "Rows with warnings",
+        "ok": "Accepted rows",
+        "all": "All rows"
+      },
+      "problem": "Problem",
+      "allProblems": "All problems",
+      "noRows": "No rows match.",
+      "result": "Result",
+      "results": {
+        "ok": "Accepted",
+        "warning": "Needs attention",
+        "error": "Rejected"
+      },
+      "commitWill": "Commit will",
+      "create": "Add asset",
+      "createWithWarranty": "Add asset and warranty",
+      "skip": "Skip",
+      "range": "Rows {from} to {to} of {n}"
     },
     "check": {
       "title": "Row check",
