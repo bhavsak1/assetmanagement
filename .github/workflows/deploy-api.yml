@@ -31,7 +31,7 @@ jobs:
           gcloud run deploy assetly-api --region "$REGION" --image "$IMAGE" \
             --service-account "assetly-api-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
             --set-secrets DATABASE_URL=assetly-api-db-url:latest \
-            --set-env-vars SUPABASE_URL=https://blhxyfgkkhpqbfuhpnww.supabase.co \
+            --set-env-vars SUPABASE_URL=https://blhxyfgkkhpqbfuhpnww.supabase.co,CORS_ORIGINS=https://assetly-staging.pages.dev \
             --min-instances 0 --max-instances 2 --cpu 1 --memory 512Mi --concurrency 40 \
             --cpu-throttling --allow-unauthenticated
       - run: curl -fsS "$(gcloud run services describe assetly-api --region "$REGION" --format 'value(status.url)')/health"

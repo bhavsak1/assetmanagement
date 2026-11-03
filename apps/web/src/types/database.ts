@@ -445,6 +445,64 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"import_batch": {
+                  Row: {
+                    "columns": (string)[],"created_at": string,"created_by": string | null,"deleted_at": string | null,"expires_at": string,"file_name": string,"file_sha256": string,"file_size": number,"header_row": number,"id": string,"row_count": number,"sheet_name": string,"sheet_names": (string)[],"status": string,"tenant_id": string,"updated_at": string,"updated_by": string | null,"warnings": NonNullable<Json>
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "columns": (string)[],"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"expires_at"?: string,"file_name": string,"file_sha256": string,"file_size": number,"header_row": number,"id"?: string,"row_count": number,"sheet_name": string,"sheet_names": (string)[],"status"?: string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null,"warnings"?: NonNullable<Json>
+                  }
+                  Update: {
+                    "columns"?: (string)[],"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"expires_at"?: string,"file_name"?: string,"file_sha256"?: string,"file_size"?: number,"header_row"?: number,"id"?: string,"row_count"?: number,"sheet_name"?: string,"sheet_names"?: (string)[],"status"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null,"warnings"?: NonNullable<Json>
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "import_batch_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "import_batch_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "import_batch_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"import_row": {
+                  Row: {
+                    "batch_id": string,"cells": NonNullable<Json>,"created_at": string,"id": string,"row_number": number,"tenant_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "batch_id": string,"cells": NonNullable<Json>,"created_at"?: string,"id"?: string,"row_number": number,"tenant_id": string
+                  }
+                  Update: {
+                    "batch_id"?: string,"cells"?: NonNullable<Json>,"created_at"?: string,"id"?: string,"row_number"?: number,"tenant_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "import_row_tenant_id_batch_id_fkey"
+      columns: ["tenant_id","batch_id"]
+isOneToOne: false
+      referencedRelation: "import_batch"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "import_row_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"location": {
                   Row: {
                     "active": boolean,"code": string | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"id": string,"location_type": string | null,"name": string,"parent_id": string | null,"tenant_id": string,"updated_at": string,"updated_by": string | null

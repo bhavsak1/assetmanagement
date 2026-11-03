@@ -8,6 +8,7 @@ import { AssetsPage } from './Assets'
 import { CategoriesPage } from './Categories'
 import { CoveragePage } from './Coverage'
 import { DashboardPage } from './Dashboard'
+import { ImportPage } from './Import'
 import { LocationsPage } from './Locations'
 import { MaintenancePage } from './Maintenance'
 import { SettingsPage } from './Settings'
@@ -93,7 +94,7 @@ function EmptyPage({ page }: { page: PageKey }) {
   )
 }
 
-function Shell({ companies, tenantId }: { companies: Company[]; tenantId: string }) {
+function Shell({ companies, tenantId, canImport }: { companies: Company[]; tenantId: string; canImport: boolean }) {
   // Ask Assetly and the Intelligence group show only with the AI add-on (CLAUDE.md §11).
   const [ai, setAi] = useState<{ tenantId: string; on: boolean }>()
   useEffect(() => {
@@ -115,7 +116,7 @@ function Shell({ companies, tenantId }: { companies: Company[]; tenantId: string
         {navGroups.filter(({ group }) => aiOn || group !== 'intelligence').map(({ group, items }) => (
           <div key={group} className="nav-group">
             <div className="nav-heading">{t.nav.groups[group]}</div>
-            {items.map((key) => (
+            {items.filter((key) => canImport || key !== 'import').map((key) => (
               <NavLink key={key} to={`/${key}`}>
                 {t.nav[key]}
               </NavLink>
@@ -316,7 +317,7 @@ export function App() {
 
   let signedIn = null
   if (session && companies) {
-    if (tenantId) signedIn = <Shell companies={companies} tenantId={tenantId} />
+    if (tenantId) signedIn = <Shell companies={companies} tenantId={tenantId} canImport={can('excel_import', 'run') || can('excel_import', 'review')} />
     else if (companies.length === 0) signedIn = <NoAccess />
     else signedIn = <ChooseCompany companies={companies} failed={pickFailed} onPick={pick} />
   }
@@ -328,7 +329,7 @@ export function App() {
       <Route element={session ? signedIn : <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />}>
         {navGroups.flatMap(({ items }) =>
           items
-            .filter((key) => key !== 'dashboard' && key !== 'assets' && key !== 'maintenance' && key !== 'categories' && key !== 'locations' && key !== 'settings' && key !== 'vendors' && key !== 'coverage' && key !== 'security')
+            .filter((key) => key !== 'dashboard' && key !== 'assets' && key !== 'maintenance' && key !== 'categories' && key !== 'locations' && key !== 'settings' && key !== 'vendors' && key !== 'coverage' && key !== 'security' && key !== 'import')
             .map((key) => <Route key={key} path={`/${key}`} element={<EmptyPage page={key} />} />),
         )}
         <Route path="/dashboard" element={<DashboardPage tenantId={tenantId ?? ''} can={can} />} />
@@ -348,6 +349,7 @@ export function App() {
         <Route path="/maintenance" element={<MaintenancePage tenantId={tenantId ?? ''} can={can} />} />
         <Route path="/categories" element={<CategoriesPage tenantId={tenantId ?? ''} canManage={can('category_config', 'manage')} />} />
         <Route path="/vendors" element={<VendorsPage tenantId={tenantId ?? ''} can={can} />} />
+        <Route path="/import" element={<ImportPage tenantId={tenantId ?? ''} canRun={can('excel_import', 'run')} />} />
         <Route path="/coverage" element={<CoveragePage tenantId={tenantId ?? ''} can={can} />} />
         <Route path="/locations" element={<LocationsPage tenantId={tenantId ?? ''} canManage={can('location_hierarchy', 'manage')} can={can} />} />
         <Route

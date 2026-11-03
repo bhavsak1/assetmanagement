@@ -1,6 +1,6 @@
 # Goal 8 data model: custom service skeleton (story 8.1)
 
-**Status:** built 2 Nov 2026, 8.1 In review; staging deploy waits for the owner's GCP setup (§9). Decided 2 Nov 2026. The owner chose **Fastify** for G1 (after a wider framework comparison with a long-term enterprise view: maturity, OpenJS Foundation governance, official plugins, Node streams; Hono's run-anywhere strength is unused on Cloud Run) and accepted the leans for G2 to G10.
+**Status:** built 2 Nov 2026; deployed and verified on staging 2 Nov 2026 (`/health` ok, `/me` with a real token returns the user and tenant as `assetly_api` under RLS); 8.1 Done 2 Nov 2026. Decided 2 Nov 2026. The owner chose **Fastify** for G1 (after a wider framework comparison with a long-term enterprise view: maturity, OpenJS Foundation governance, official plugins, Node streams; Hono's run-anywhere strength is unused on Cloud Run) and accepted the leans for G2 to G10.
 
 **Goal:** a small TypeScript service runs on Cloud Run staging. It has a health endpoint and one authenticated endpoint that proves RLS works through the service. A test proves pooled connections never leak tenant context. CI lints, typechecks, tests and builds the Docker image.
 
@@ -226,3 +226,114 @@ Then in GitHub: **Settings > Secrets and variables > Actions > Variables**, add 
 - System-job role, outbox poller, Cloud Scheduler (9.1).
 - Production project in `asia-south1`, custom domain, Cloud NAT and static egress IP.
 - Sentry or tracing (technical-architecture.md §2.2 lists Sentry; add when there is traffic).
+
+---
+
+# Story 8.2: upload and streaming parse into staged rows
+
+**Status:** owner accepted all leans I1 to I13 (3 Nov 2026). Built 3 Nov 2026, 8.2 In review. Not on staging yet.
+
+**As built (differences from the design below):**
+- `import_row.batch_id` is a **deferred** FK. The service inserts rows first (chunks of 1,000) and the batch row last, with its final row count, columns and warnings, so users never need an update grant.
+- `warnings` is `{"list": [...], "total": n}`: the first 50 warnings are kept, `total` counts all of them. Codes: `cell_truncated`, `error_cell`, `beyond_header` (data right of the header; the column is named `Column F`).
+- Zip limits: at most 1,000 entries; a sheet may inflate to 100 MB (streamed); shared strings, styles and the workbook part to 30 MB each (held in memory). Checked on the declared size and on the characters actually read; `yauzl` also refuses an entry whose real size differs from the declared one. The 100-to-1 ratio check was dropped: the size caps already bound memory, and real sheets with repeated cells pass 100 to 1.
+- `.xlsm` is not refused by name: the route accepts `.xlsx` names only, and macros are never read anyway.
+- Error codes from `POST /imports`: 401 `unauthorized`, 403 `forbidden` (RLS: no `excel_import.run`, or a read-only tenant), 413 `file_limits` / `too_many_rows` / `too_many_columns` (and Fastify's own 413 over 10 MB), 415 `not_xlsx`, 400 `bad_file` / `no_data` / `sheet_not_found`, 429 `busy`.
+- The purge job is `assetly_purge_expired_imports`, daily at 03:17 UTC.
+- technical-architecture.md §3 calls the staging table `import_row_result`; it is `import_row`.
+- Tests: `supabase/tests/8_2_import_staging.test.sql` (42), `services/api/test/xlsx.test.ts` (12, no database), `services/api/test/imports.test.ts` (10), `apps/web/src/Import.test.tsx` (2). Fixture files are built in code (`test/fixture.ts`, a small zip writer); none are committed.
+
+**Goal:** a user with `excel_import.run` picks an Excel file in the web app. The service checks it, reads one sheet as a stream, and writes one `import_batch` row and one `import_row` per data row, under RLS. The web app shows the batch: file, sheet, header row, columns, row count, warnings. Nothing touches assets. Mapping (8.3), validation and dry run (8.4), the review screen (8.5), commit and undo (8.6) come later.
+
+**Facts checked (3 Nov 2026):**
+- The catalog already has action domain `excel_import` with operations `run` (1), `review` (2), `commit` (3), and `import_undo.undo`. Starter groups: Administrator and Asset manager hold run, review, commit; Maintenance lead holds run, review. No new domain is needed.
+- `exceljs` 4.4.0 is its latest release (Oct 2023); its stream reader pulls in `unzipper`, `archiver`, `jszip`, `tmp` and more. `xlsx` (SheetJS) on npm is stuck at 0.18.5 with known advisories; newer builds are only on SheetJS's own CDN, and it loads the whole workbook into memory. `yauzl` 3.4.0 (Jun 2026) and `saxes` 6.0.0 are small with few dependencies.
+- An `.xlsx` is a zip whose directory sits at the end of the file, so no parser can read a sheet before the whole file has arrived. "Streaming" here means: the file is held once (at most 10 MB), and the sheet XML is inflated and read as a stream, row by row, never as a whole workbook object.
+- Postgres `jsonb` and `text` refuse the NUL character. The parser strips it.
+
+## 13.1 Flow
+
+```
+web  --POST /imports (raw .xlsx body, Bearer token)-->  service
+service: verify token -> size and zip checks -> pick sheet -> find header row
+         -> withUser: insert import_batch, then import_row in chunks of 1,000 (one transaction)
+         <-- 201 { batch_id, sheet, sheets, header_row, columns, row_count, warnings }
+web  --select import_batch / import_row through Supabase (RLS)-->  shows the summary
+```
+
+One transaction: a failed parse leaves no rows. The request body is the file itself (`.xlsx` content type, file name in an `X-File-Name` header), so no multipart library is needed.
+
+## 13.2 Tables (1.4 RLS pattern)
+
+`import_batch`: std columns, `file_name`, `file_size`, `file_sha256`, `sheet_name`, `sheet_names text[]`, `header_row int`, `columns text[]` (header text as found, duplicates renamed `Name (2)`), `row_count int`, `warnings jsonb`, `status text` (`staged` only in 8.2; later stories add their values in their own migrations), `expires_at`.
+
+`import_row`: `id`, `tenant_id`, `batch_id` (composite FK to `import_batch`), `row_number int` (the Excel row number, so errors point at the real row), `cells jsonb` (array aligned with `columns`), `created_at`. No `updated_*` or `deleted_at` in 8.2: rows are written once; 8.3 and 8.4 add their columns (mapped values, errors) in their own migrations.
+
+Cell values in `cells`: text as text, numbers as numbers, booleans as booleans, date-formatted numbers as ISO `YYYY-MM-DD` (with time if the format has one), error cells (`#N/A`) as null plus a warning. Formulas are never evaluated: only the value Excel saved with the file is read.
+
+Policies (domain `excel_import`):
+- select on both: tenant and `has_permission('excel_import', 'run')` or `'review'`. All importers in a tenant see each other's batches (a reviewer needs them).
+- insert on both: tenant, `run`, `tenant_can_write()`.
+- No update or delete policy in 8.2; `revoke delete, truncate`. Later stories change rows through action functions.
+- Cross-tenant harness lines for both tables, plus one block per permission step.
+
+## 13.3 Untrusted content (CLAUDE.md §11)
+
+- **Zip bomb:** refuse more than 1,000 zip entries, a part that inflates past 100 MB, or a compression ratio over 100 to 1. Counted on the bytes actually inflated, not the sizes the zip claims.
+- **Oversized sheet:** stop at the row limit (I2) with a clear message; at most 200 columns; a cell over 4,000 characters is cut and a warning names the row and column.
+- **Formula injection:** a cell such as `=HYPERLINK(...)` is stored as the text it is and never run. Escaping (a leading `'`) happens on export, in the "Download errors" file (8.5) and any later CSV export, not at import, so real values like `-5` or `+91 98...` stay intact. A test fixture with such cells is kept for the later export test.
+- **XML:** the SAX reader never expands entities; a `<!DOCTYPE` in any part refuses the file.
+- **Other:** the first bytes must be a zip (`PK`) whatever the name says; macros in `.xlsm` are never run (the type is refused); NUL and other control characters except tab and newline are stripped.
+- Cell text is data. Nothing in 8.2 sends it to a model (AI mapping is Goal 10, through the gateway).
+
+## 13.4 Service changes
+
+- `POST /imports`: auth as `/me`; `bodyLimit` 10 MB on this route only; at most 3 parses at once per instance, else `429` (bounds memory on a 512 MiB instance).
+- `src/xlsx.ts`: the reader (zip, shared strings, styles for date formats, one sheet as a row stream) with the limits in §13.3. Tests build small fixture files in code, plus a zip bomb and a 20,001-row sheet.
+- CORS: allowlist from env `CORS_ORIGINS` (local `http://localhost:5173`, staging `https://assetly-staging.pages.dev`), method `POST`, headers `Authorization`, `Content-Type`, `X-File-Name`. No cookies: the token goes in the header.
+
+## 13.5 Web changes
+
+- `VITE_API_URL` in `.env.example` and the Pages settings.
+- Sidebar "Import" (already in the screens) opens `/import`: a file picker, an upload progress bar, then the batch summary (file, sheet, header row, columns, row count, warnings, first 20 rows). Recent batches below. The full ImportReview screen (stepper, mapping, AI column) is 8.5.
+- Hidden without `excel_import.run`.
+
+## 13.6 Hooks left for later (and nothing more)
+
+- `import_batch.status`: 8.3 to 8.6 add `mapped`, `validated`, `committed`, `undone`.
+- `import_row.row_number` and `cells`: 8.4 adds error columns, 8.6 links each row to the asset it made.
+- A job runner (I7 b) can replace the in-request parse with no schema change: the batch already has a status.
+
+## 13.7 Not in 8.2
+
+Column mapping and templates, validation, dry run, commit, undo, the ImportReview screen, `.xls`, `.ods` and `.csv`, AI anything, a job queue, `/v1`.
+
+## 13.8 The smaller option
+
+Take the `exceljs` stream reader as is: no zip-bomb counting, first sheet and row 1 as header always. About half the code, but a crafted file can exhaust a small instance, and a messy file with a title row above the header stages the title as the header. Not recommended for untrusted uploads.
+
+## 13.9 DECIDE
+
+| # | Decision | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| I1 | File types | a `.xlsx` only, b `.xlsx` and `.csv`, c also `.xls` (old binary) | a. CSV adds a second reader and encoding guesswork (Excel saves CSV in the PC's code page); a small story if pilots ask | Low: additive |
+| I2 | Limits | a 10 MB, 20,000 data rows, 200 columns, 4,000 chars per cell, b 25 MB and 100,000 rows | a. SME registers are hundreds to a few thousand rows; bigger needs a job (I7 b) | Low: constants |
+| I3 | Sheet | a first visible sheet with data; the response lists all sheet names and the user can re-upload with `?sheet=`, b always the first sheet, c user picks before the parse | a | Low |
+| I4 | Header row | a the row with the most non-empty text cells among the first 20 (skips title rows); stored on the batch, 8.3 can override, b always row 1 | a | Low: one function |
+| I5 | Parser | a `yauzl` + `saxes` (two small dependencies) and about 200 lines of our own reader with exact zip-bomb limits, b `exceljs` stream reader (big dependency tree, last release 2023, no zip-bomb limits), c SheetJS (CDN-only builds, whole workbook in memory) | a: smallest trust surface, exact limits, bounded memory | Medium: the reader is one module behind one function |
+| I6 | Keep the original file | a no: name, size and SHA-256 on the batch; staged rows are the record, b yes, private `imports` bucket on the 3.6 pattern, 90 days | a. Keeping it needs storage policies, a delete path and a purge job (deleting objects needs the Storage API, not SQL); add when audit asks | Low: additive |
+| I7 | Parse in request or job | a in the request, one transaction, b job (`pg-boss`) with status polling | a: 20,000 rows parse in seconds; Cloud Run allows 300 s | Low: status column is there |
+| I8 | Progress to the UI | a upload percent from the browser (XHR progress), then "Reading file" until the 201; the summary is read through Supabase, b live parse progress (polling or Realtime) | a | Low |
+| I9 | Uncommitted staged rows | a daily `pg_cron` job hard-deletes `import_row` of batches past `expires_at` (created + 30 days, not committed); the batch row stays as history with status `expired`, b keep forever, c 7 days | a. Staged rows are a scratch copy, not business records, so the soft-delete rule does not apply | Low |
+| I10 | Writes | a table insert policies with `excel_import.run` (staging is not a business write; commit in 8.6 is the action function), b an action function `import_stage(...)` | a | Low |
+| I11 | Audit | a audit trigger on `import_batch` only (one audit row and one outbox event per upload), b also on `import_row` (up to 20,000 audit rows per upload) | a | Low |
+| I12 | CORS | a `@fastify/cors` (official plugin) with an env allowlist, b hand-written hook | a: preflight edge cases are easy to get wrong | Low |
+| I13 | Cloudflare PR previews | a not allowed (only local and staging), b allow `https://*.assetly-staging.pages.dev` | a: uploads fail on previews; b opens the allowlist to every preview build | Low: env value |
+
+## 13.10 Build plan (after answers)
+
+1. Migration `8_2_import_staging`: tables, policies, triggers, purge job; pgTAP with permission blocks and cross-tenant lines.
+2. `src/xlsx.ts` and its tests (fixtures, zip bomb, limits, header detection, dates, NUL).
+3. `POST /imports`, CORS, service tests (401, 403 without `run`, 413, 429, staged rows isolated per tenant).
+4. Types, web `/import` page, i18n strings, browser check against the local stack.
+5. `.env.example`, README, 8.2 `In review`, PR, demo note.

@@ -1,20 +1,47 @@
-import Fastify, { type FastifyServerOptions } from 'fastify';
+import cors from '@fastify/cors';
+import Fastify, { type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import type { Verify } from './auth.ts';
 import type { createDb } from './db.ts';
+import { stageXlsx } from './imports.ts';
+import { ImportError } from './xlsx.ts';
 
-type Deps = { verify: Verify; withUser: ReturnType<typeof createDb>['withUser']; logger?: FastifyServerOptions['logger'] };
+type Deps = {
+  verify: Verify;
+  withUser: ReturnType<typeof createDb>['withUser'];
+  logger?: FastifyServerOptions['logger'];
+  corsOrigins?: string[];
+  maxParses?: number;
+};
 
-export function buildApp({ verify, withUser, logger = false }: Deps) {
+const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const MAX_FILE = 10 * 2 ** 20; // I2
+
+export function buildApp({ verify, withUser, logger = false, corsOrigins = [], maxParses = 3 }: Deps) {
   const app = Fastify({ logger });
+
+  // I12, I13: only the listed web origins; the token goes in a header, never a cookie.
+  app.register(cors, {
+    origin: corsOrigins,
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'X-File-Name'],
+  });
+  // The request body is the file itself; no multipart.
+  app.addContentTypeParser(XLSX, { parseAs: 'buffer', bodyLimit: MAX_FILE }, (_req, body, done) => done(null, body));
+
+  async function claimsOf(req: FastifyRequest, reply: FastifyReply) {
+    const token = /^Bearer (\S+)$/.exec(req.headers.authorization ?? '')?.[1];
+    const claims = token ? await verify(token) : null;
+    if (!claims) reply.code(401).send({ error: 'unauthorized' });
+    return claims;
+  }
 
   // No database call: health checks never wake Postgres or hold a connection.
   app.get('/health', async () => ({ ok: true }));
 
   // Who am I and which tenant, read inside Postgres under RLS (data-model-goal8.md §6).
   app.get('/me', async (req, reply) => {
-    const token = /^Bearer (\S+)$/.exec(req.headers.authorization ?? '')?.[1];
-    const claims = token ? await verify(token) : null;
-    if (!claims) return reply.code(401).send({ error: 'unauthorized' });
+    const claims = await claimsOf(req, reply);
+    if (!claims) return reply;
 
     const me = await withUser(claims, async (q) => (await q<{ user_id: string; tenant_id: string | null; tenant_name: string | null }>(
       `select auth.uid() as user_id, private.current_tenant_id() as tenant_id,
@@ -24,6 +51,35 @@ export function buildApp({ verify, withUser, logger = false }: Deps) {
     // no tenant in the token, or RLS hides it (not an active member)
     if (!me.tenant_name) return reply.code(403).send({ error: 'forbidden' });
     return me;
+  });
+
+  // Upload one .xlsx and stage its rows (data-model-goal8.md §13). RLS refuses users without excel_import.run.
+  let parsing = 0;
+  app.post<{ Querystring: { sheet?: string }; Body: Buffer }>('/imports', { bodyLimit: MAX_FILE }, async (req, reply) => {
+    const claims = await claimsOf(req, reply);
+    if (!claims) return reply;
+    if (!Buffer.isBuffer(req.body)) return reply.code(415).send({ error: 'not_xlsx' });
+    // The name is display text only: no path, no control characters.
+    let name = '';
+    try { name = decodeURIComponent(String(req.headers['x-file-name'] ?? '')); } catch { /* keep empty */ }
+    // eslint-disable-next-line no-control-regex -- stripping control characters is the point
+    name = name.replace(/^.*[\\/]/, '').replace(/[\u0000-\u001F\u007F]/g, '').slice(0, 255).trim();
+    if (!/\.xlsx$/i.test(name)) return reply.code(415).send({ error: 'not_xlsx' });
+    // Bounds memory on a small instance: each parse holds its file and shared strings.
+    if (parsing >= maxParses) return reply.code(429).send({ error: 'busy' });
+
+    parsing++;
+    try {
+      const result = await withUser(claims, (q) => stageXlsx(q, req.body, name, req.query.sheet));
+      req.log.info({ user_id: claims.sub, tenant_id: claims.tenant_id, batch_id: result.batch_id, rows: result.row_count }, 'import staged');
+      return reply.code(201).send(result);
+    } catch (e) {
+      if (e instanceof ImportError) return reply.code(e.status).send({ error: e.code });
+      if ((e as { code?: string }).code === '42501') return reply.code(403).send({ error: 'forbidden' }); // RLS
+      throw e;
+    } finally {
+      parsing--;
+    }
   });
 
   return app;
