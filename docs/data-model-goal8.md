@@ -533,7 +533,15 @@ Validate in the browser only and store nothing. About a third of the work, but t
 
 # Story 8.3b: drop-down lists in the import template
 
-**Status:** design, 3 Nov 2026. Waiting for the owner's answers to §16.8. Nothing built yet.
+**Status:** owner accepted all leans D1 to D9 (3 Nov 2026). Built 3 Nov 2026, 8.3b In review. Not on staging yet.
+
+**As built (differences from the design below):**
+- `templateLists(q)` in `src/mapping.ts` reads every list in one statement under the user's RLS (D1 a), plus `tenant.date_format`. `templateXlsx(catalog, lists, dateFormat)` now takes the catalog and writes the headers itself.
+- The date format goes on the date **columns** (`<col style>`), not on 20,000 cells, so the file stays about 3 KB. Excel applies a column's style to the cells typed into it.
+- Every check uses the warning style (D6), the date and number checks too: 8.4 checks the value anyway.
+- Paths are built from live rows only. A location under a deleted parent is left out of the list (8.4 still finds it by code or name).
+- Not done from D9: LibreOffice is not installed on the build machine, so the file was opened only in openpyxl 3.1.5 (both sheets, hidden state, every validation, the date format on the columns, `=SUM(1,2)` kept as text). The owner opens it once in Excel.
+- Tests: `services/api/test/template.test.ts` (5). The missing-right test takes `location_hierarchy.view` away from the asset manager inside a rolled-back superuser transaction (`ADMIN_DATABASE_URL`, local default `postgres:postgres`); no starter group lacks it.
 
 **Goal:** the file from `GET /imports/template` (8.3, §14.8) helps the user type values that 8.4 will accept. Lookup columns get an Excel drop-down filled from the tenant's own data, limited to what the calling user may see. Date and number columns get Excel checks. The lists are a snapshot at download time. `import_validate` (8.4) still checks every value, so a stale or bypassed list is caught there.
 

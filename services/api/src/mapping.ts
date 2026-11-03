@@ -120,14 +120,90 @@ export function templateHeaders(catalog: Target[]): string[] {
   });
 }
 
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// Drop-down values per target (§16.1), read under the user's RLS: a list the user cannot read is empty (D1).
+// Text is what 8.4 accepts (D2): category and location by path, vendor by name, status and options by label.
+export type Lists = Record<string, string[]>;
+export async function templateLists(q: Query): Promise<{ lists: Lists; dateFormat: string }> {
+  const rows = (await q<{ target: string; value: string }>(`
+    with recursive cat as (
+      select id, is_active, name as path from public.asset_category where parent_id is null and deleted_at is null
+      union all
+      select c.id, c.is_active, cat.path || ' / ' || c.name from public.asset_category c join cat on c.parent_id = cat.id
+      where c.deleted_at is null
+    ), loc as (
+      select id, active, name as path from public.location where parent_id is null and deleted_at is null
+      union all
+      select l.id, l.active, loc.path || ' / ' || l.name from public.location l join loc on l.parent_id = loc.id
+      where l.deleted_at is null
+    ), v as (
+      select 'category' as target, path as value, 0::bigint as ord from cat where is_active
+      union all select 'location', path, 0 from loc where active
+      union all select 'status', label, 0 from public.asset_status
+        where is_active and deleted_at is null and system_status in ('in_stock', 'active')
+      union all select 'oem_vendor', name, 0 from public.vendor where is_active and deleted_at is null and 'oem' = any (roles)
+      union all select 'om_vendor', name, 0 from public.vendor where is_active and deleted_at is null and 'om' = any (roles)
+      union all select 'custom:' || f.key, o.opt ->> 'label', o.ord
+        from public.field_definition f, jsonb_array_elements(f.options) with ordinality o (opt, ord)
+        where f.entity = 'asset' and f.type = 'list' and f.is_active and f.deleted_at is null
+          and coalesce((o.opt ->> 'is_active')::boolean, true)
+    )
+    select target, value from v order by target, ord, lower(value)`)).rows;
+  const lists: Lists = { criticality: ['A', 'B', 'C'] };
+  for (const r of rows) (lists[r.target] ??= []).push(r.value);
+  const fmt = (await q<{ date_format: string }>(
+    'select date_format from public.tenant where id = private.current_tenant_id()')).rows[0]?.date_format;
+  return { lists, dateFormat: fmt ?? 'yyyy-MM-dd' };
+}
 
-// The smallest .xlsx Excel opens: one sheet "Assets", one bold header row, frozen below it.
-export function templateXlsx(headers: string[]): Buffer {
+// eslint-disable-next-line no-control-regex -- characters XML 1.0 cannot hold
+const esc = (s: string) => s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const colName = (i: number): string => (i >= 26 ? colName(Math.floor(i / 26) - 1) : '') + String.fromCharCode(65 + (i % 26));
+
+export const LIST_CAP = 5_000; // D5: a longer list is no use to scroll, so its column gets none
+const LAST_ROW = 20_001; // MAX_ROWS data rows below the header
+
+// One Excel check per column (§16.1), or none. Warnings, not stops (D6): 8.4 also takes codes and new values.
+function checkXml(t: Target, col: string, listCol: string | undefined, listLen: number): string {
+  const head = `errorStyle="warning" allowBlank="1" showErrorMessage="1" sqref="${col}2:${col}${LAST_ROW}"`;
+  if (listCol) return `<dataValidation type="list" ${head}><formula1>Lists!$${listCol}$2:$${listCol}$${listLen + 1}</formula1></dataValidation>`;
+  if (t.kind === 'date') return `<dataValidation type="date" operator="greaterThanOrEqual" ${head}><formula1>1</formula1></dataValidation>`;
+  if (t.target === 'quantity') return `<dataValidation type="whole" operator="greaterThanOrEqual" ${head}><formula1>1</formula1></dataValidation>`;
+  if (t.target === 'purchase_value') return `<dataValidation type="decimal" operator="greaterThanOrEqual" ${head}><formula1>0</formula1></dataValidation>`;
+  if (t.kind === 'number') return `<dataValidation type="decimal" operator="between" ${head}><formula1>-1E+15</formula1><formula2>1E+15</formula2></dataValidation>`;
+  return '';
+}
+
+// The .xlsx: sheet "Assets" (bold frozen header, checks on rows 2 to 20,001, date columns in the tenant's
+// format) and a hidden sheet "Lists" (D7) that the drop-downs point at.
+export function templateXlsx(catalog: Target[], lists: Lists = {}, dateFormat = 'yyyy-MM-dd'): Buffer {
   const main = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
   const rel = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
   const pkg = 'http://schemas.openxmlformats.org/package/2006/relationships';
+  const headers = templateHeaders(catalog);
   const cells = headers.map((h) => `<c t="inlineStr" s="1"><is><t>${esc(h)}</t></is></c>`).join('');
+
+  const used: { name: string; values: string[] }[] = [];
+  const checks: string[] = [];
+  const cols: string[] = [];
+  catalog.forEach((t, i) => {
+    const values = t.kind === 'boolean' ? ['Yes', 'No'] : lists[t.target] ?? [];
+    const listed = values.length > 0 && values.length <= LIST_CAP;
+    if (listed) used.push({ name: headers[i]!, values });
+    const check = checkXml(t, colName(i), listed ? colName(used.length - 1) : undefined, values.length);
+    if (check) checks.push(check);
+    if (t.kind === 'date') cols.push(`<col min="${i + 1}" max="${i + 1}" width="14" style="2" customWidth="1"/>`);
+  });
+  const listRows: string[] = [];
+  const height = Math.max(0, ...used.map((l) => l.values.length)) + 1;
+  for (let r = 0; r < height; r++) {
+    const row = used.map((l, c) => {
+      const v = r === 0 ? l.name : l.values[r - 1];
+      return v === undefined ? '' : `<c r="${colName(c)}${r + 1}" t="inlineStr"${r === 0 ? ' s="1"' : ''}><is><t xml:space="preserve">${esc(v)}</t></is></c>`;
+    }).join('');
+    if (row) listRows.push(`<row r="${r + 1}">${row}</row>`);
+  }
+
   return zip({
     '[Content_Types].xml': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
       + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
@@ -135,25 +211,36 @@ export function templateXlsx(headers: string[]): Buffer {
       + '<Default Extension="xml" ContentType="application/xml"/>'
       + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
       + '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+      + '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
       + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
       + '</Types>',
     '_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${pkg}">`
       + `<Relationship Id="rId1" Type="${rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
     'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="${main}" xmlns:r="${rel}">`
-      + '<sheets><sheet name="Assets" sheetId="1" r:id="rId1"/></sheets></workbook>',
+      + '<sheets><sheet name="Assets" sheetId="1" r:id="rId1"/><sheet name="Lists" sheetId="2" state="hidden" r:id="rId3"/></sheets></workbook>',
     'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${pkg}">`
       + `<Relationship Id="rId1" Type="${rel}/worksheet" Target="worksheets/sheet1.xml"/>`
-      + `<Relationship Id="rId2" Type="${rel}/styles" Target="styles.xml"/></Relationships>`,
+      + `<Relationship Id="rId2" Type="${rel}/styles" Target="styles.xml"/>`
+      + `<Relationship Id="rId3" Type="${rel}/worksheet" Target="worksheets/sheet2.xml"/></Relationships>`,
+    // Style 1 bold (headers), style 2 the tenant's date format (D8): Excel turns a typed date into a real one,
+    // which 8.2 reads as ISO. The tenant formats (dd-MM-yyyy, dd MMM yyyy, ...) are Excel codes once lower-cased.
     'xl/styles.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="${main}">`
+      + `<numFmts count="1"><numFmt numFmtId="164" formatCode="${esc(dateFormat.toLowerCase())}"/></numFmts>`
       + '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
       + '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>'
       + '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
       + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-      + '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
-      + '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>'
+      + '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+      + '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
+      + '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>'
       + '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>',
     'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${main}">`
       + '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
-      + `<sheetData><row r="1">${cells}</row></sheetData></worksheet>`,
+      + (cols.length ? `<cols>${cols.join('')}</cols>` : '')
+      + `<sheetData><row r="1">${cells}</row></sheetData>`
+      + (checks.length ? `<dataValidations count="${checks.length}">${checks.join('')}</dataValidations>` : '')
+      + '</worksheet>',
+    'xl/worksheets/sheet2.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${main}">`
+      + `<sheetData>${listRows.join('')}</sheetData></worksheet>`,
   });
 }
