@@ -2,12 +2,14 @@
 // Runs inside withUser, so RLS (excel_import.run, tenant_can_write) decides every insert.
 import { createHash } from 'node:crypto';
 import type { Query } from './db.ts';
+import { suggestFor, type Suggestion } from './mapping.ts';
 import { columnName, ImportError, openXlsx, type Cell, type Row, type Warning } from './xlsx.ts';
 
 export const MAX_ROWS = 20_000;
-const HEADER_SCAN = 20; // header row is looked for among the first 20 sheet rows (I4)
+export const HEADER_SCAN = 20; // header row is looked for among the first 20 sheet rows (I4)
 const CHUNK = 1000;
 const MAX_WARNINGS = 50;
+const SAMPLES = 20; // rows handed to the mappers (§14.2)
 
 export type StageResult = {
   batch_id: string;
@@ -17,6 +19,8 @@ export type StageResult = {
   columns: string[];
   row_count: number;
   warnings: { list: (Warning | { code: 'beyond_header'; column: number })[]; total: number };
+  mapping: Suggestion[];
+  mapping_template_id: string | null;
 };
 
 // The row with the most text cells wins; ties go to the earlier row.
@@ -42,7 +46,8 @@ export function headerNames(cells: Cell[]): string[] {
   });
 }
 
-export async function stageXlsx(q: Query, file: Buffer, fileName: string, sheetParam?: string): Promise<StageResult> {
+// headerRow (M10): the user's choice of header row, else pickHeader.
+export async function stageXlsx(q: Query, file: Buffer, fileName: string, sheetParam?: string, headerRow?: number): Promise<StageResult> {
   const book = await openXlsx(file);
   if (sheetParam !== undefined && !book.sheets.includes(sheetParam)) throw new ImportError('sheet_not_found');
 
@@ -65,12 +70,14 @@ export async function stageXlsx(q: Query, file: Buffer, fileName: string, sheetP
     if (head.length) { sheet = name; break; }
     warnings.list.length = warnings.total = 0;
   }
-  const header = pickHeader(head);
-  if (!header || !it) throw new ImportError('no_data');
+  const header = headerRow === undefined ? pickHeader(head) : head.find((r) => r.row === headerRow);
+  if (!it || !head.length) throw new ImportError('no_data');
+  if (!header) throw new ImportError('bad_header_row');
   const columns = headerNames(header.cells);
   const batchId = crypto.randomUUID();
 
   let rowCount = 0;
+  const samples: Cell[][] = [];
   let chunk: Row[] = [];
   const flush = async () => {
     if (!chunk.length) return;
@@ -90,6 +97,7 @@ export async function stageXlsx(q: Query, file: Buffer, fileName: string, sheetP
       columns.push(`Column ${columnName(i)}`);
       warn({ code: 'beyond_header', column: i });
     }
+    if (samples.length < SAMPLES) samples.push(r.cells);
     chunk.push(r);
     if (chunk.length >= CHUNK) await flush();
   };
@@ -97,12 +105,15 @@ export async function stageXlsx(q: Query, file: Buffer, fileName: string, sheetP
   for (let r = await it.next(); !r.done; r = await it.next()) await add(r.value);
   await flush();
 
+  // A suggestion only: the batch stays 'staged' until the user saves through import_save_mapping (M4).
+  const { mapping, template_id } = await suggestFor(q, columns, samples);
   await q(
     `insert into public.import_batch (id, tenant_id, file_name, file_size, file_sha256, sheet_name, sheet_names,
-                                      header_row, columns, row_count, warnings)
-     values ($1, private.current_tenant_id(), $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                                      header_row, columns, row_count, warnings, mapping, mapping_template_id)
+     values ($1, private.current_tenant_id(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
     [batchId, fileName, file.length, createHash('sha256').update(file).digest('hex'), sheet, book.sheets,
-      header.row, columns, rowCount, JSON.stringify(warnings)],
+      header.row, columns, rowCount, JSON.stringify(warnings), JSON.stringify(mapping), template_id],
   );
-  return { batch_id: batchId, sheet, sheets: book.sheets, header_row: header.row, columns, row_count: rowCount, warnings };
+  return { batch_id: batchId, sheet, sheets: book.sheets, header_row: header.row, columns, row_count: rowCount, warnings,
+    mapping, mapping_template_id: template_id };
 }

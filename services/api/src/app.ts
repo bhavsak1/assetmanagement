@@ -2,7 +2,8 @@ import cors from '@fastify/cors';
 import Fastify, { type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import type { Verify } from './auth.ts';
 import type { createDb } from './db.ts';
-import { stageXlsx } from './imports.ts';
+import { HEADER_SCAN, stageXlsx } from './imports.ts';
+import { templateHeaders, templateXlsx, type Target } from './mapping.ts';
 import { ImportError } from './xlsx.ts';
 
 type Deps = {
@@ -55,7 +56,7 @@ export function buildApp({ verify, withUser, logger = false, corsOrigins = [], m
 
   // Upload one .xlsx and stage its rows (data-model-goal8.md §13). RLS refuses users without excel_import.run.
   let parsing = 0;
-  app.post<{ Querystring: { sheet?: string }; Body: Buffer }>('/imports', { bodyLimit: MAX_FILE }, async (req, reply) => {
+  app.post<{ Querystring: { sheet?: string; header_row?: string }; Body: Buffer }>('/imports', { bodyLimit: MAX_FILE }, async (req, reply) => {
     const claims = await claimsOf(req, reply);
     if (!claims) return reply;
     if (!Buffer.isBuffer(req.body)) return reply.code(415).send({ error: 'not_xlsx' });
@@ -65,12 +66,16 @@ export function buildApp({ verify, withUser, logger = false, corsOrigins = [], m
     // eslint-disable-next-line no-control-regex -- stripping control characters is the point
     name = name.replace(/^.*[\\/]/, '').replace(/[\u0000-\u001F\u007F]/g, '').slice(0, 255).trim();
     if (!/\.xlsx$/i.test(name)) return reply.code(415).send({ error: 'not_xlsx' });
+    const headerRow = req.query.header_row === undefined ? undefined : Number(req.query.header_row);
+    if (headerRow !== undefined && !(Number.isInteger(headerRow) && headerRow >= 1 && headerRow <= HEADER_SCAN)) {
+      return reply.code(400).send({ error: 'bad_header_row' });
+    }
     // Bounds memory on a small instance: each parse holds its file and shared strings.
     if (parsing >= maxParses) return reply.code(429).send({ error: 'busy' });
 
     parsing++;
     try {
-      const result = await withUser(claims, (q) => stageXlsx(q, req.body, name, req.query.sheet));
+      const result = await withUser(claims, (q) => stageXlsx(q, req.body, name, req.query.sheet, headerRow));
       req.log.info({ user_id: claims.sub, tenant_id: claims.tenant_id, batch_id: result.batch_id, rows: result.row_count }, 'import staged');
       return reply.code(201).send(result);
     } catch (e) {
@@ -80,6 +85,19 @@ export function buildApp({ verify, withUser, logger = false, corsOrigins = [], m
     } finally {
       parsing--;
     }
+  });
+
+  // The blank import file: one header per field this user may set (§14.9). It maps itself on upload.
+  app.get('/imports/template', async (req, reply) => {
+    const claims = await claimsOf(req, reply);
+    if (!claims) return reply;
+    const catalog = await withUser(claims, async (q) =>
+      (await q<Target>('select target, label, kind, required, category_id from public.import_target_catalog()')).rows);
+    if (!catalog.length) return reply.code(403).send({ error: 'forbidden' }); // no excel_import
+    return reply
+      .header('content-type', XLSX)
+      .header('content-disposition', 'attachment; filename="assetly-import-template.xlsx"')
+      .send(templateXlsx(templateHeaders(catalog)));
   });
 
   return app;
