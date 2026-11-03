@@ -438,7 +438,17 @@ Both come from `import_target_catalog()`, so a user sees only the fields they ma
 
 # Story 8.4: deterministic validation and dry run
 
-**Status:** design, waiting for the owner (3 Nov 2026).
+**Status:** owner accepted all leans V1 to V12 (3 Nov 2026). Built 3 Nov 2026, 8.4 In review. Not on staging yet.
+
+**As built (differences from the design below):**
+- Speed: 20,000 rows take 4.7 to 6.4 s on local Docker on Windows, where a plain 20,000-row update of `import_row` alone takes 1.7 s. The test bar is the real limit, the 8 s statement timeout of the web role, not 5 s. Staging is not measured yet; if it misses, the §15.4 fallback (a service route) applies.
+- To get there: lookups run once per distinct cell value into a small temp table; each row is written once; the batch's rows are copied to an analyzed temp table (a just-uploaded batch has no stats, and the planner then picks nested loops that never finish); `import_row` gets `fillfactor = 50` so the result update stays on its page (HOT).
+- The cell readers `private.import_text`, `import_number`, `import_bool`, `import_date`, `import_path` have **no** `set search_path`: that clause stops the planner inlining them (16 s at 20,000 rows). They call only built-ins and only `import_validate` calls them, under its own fixed `search_path`. Owner review: this departs from CLAUDE.md §7.6 on purpose.
+- Extra codes: `currency_format`, `bool_format` (custom yes/no fields), `vendor_not_for_category` (4.1b: an asset's vendor must be tagged to its category line). 25 codes in all, each with words in `en.json` (`import.check.codes`).
+- Text dates accept `-`, `/` or `.` between the parts; the order is always the tenant's format.
+- A vendor is found by code or name without its role; the role and category tags are then one check (`vendor_not_for_category`).
+- The check time on screen uses the browser's time zone (the Import page has no tenant setting at hand).
+- Tests: `supabase/tests/8_4_import_validation.test.sql` (38, including 20,000 rows), `apps/web/src/Import.test.tsx` (5). No service change, so no service test.
 
 **Goal:** after the mapping is saved, every staged row is checked against the same rules a hand-entered asset meets, with no AI (CLAUDE.md §11). Each row gets ok, warning or error, with messages per column. The batch gets a summary and becomes `validated`. The dry run says exactly what commit (8.6) would do: how many assets and warranty lines it would create, and which rows it would skip and why. Nothing is written to business tables. The full review grid is 8.5.
 

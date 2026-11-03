@@ -1158,7 +1158,8 @@
     "status": {
       "staged": "Staged",
       "expired": "Expired (staged rows removed after 30 days)",
-      "mapped": "Mapped"
+      "mapped": "Mapped",
+      "validated": "Checked"
     },
     "summary": {
       "sheet": "Sheet",
@@ -1169,7 +1170,7 @@
       "warnings": "Warnings ({n})",
       "preview": "First {n} rows",
       "row": "Row",
-      "next": "Value checks, review and commit come next (stories 8.4 to 8.6)."
+      "next": "Review and commit come next (stories 8.5 and 8.6)."
     },
     "warnings": {
       "cell_truncated": "Row {row}, column {column}: text cut to 4,000 characters.",
@@ -1251,6 +1252,54 @@
         "stale": "This upload can no longer be changed, or a field is not available to you. Reload the page.",
         "nameTaken": "A template with this name exists. Pick another name.",
         "generic": "Could not save. Try again."
+      }
+    },
+    "check": {
+      "title": "Row check",
+      "subtitle": "Every row is checked against the same rules as the asset form. Nothing is saved to assets yet.",
+      "run": "Check rows",
+      "again": "Check again",
+      "running": "Checking rows…",
+      "failed": "The rows could not be checked. Save the mapping again, then retry.",
+      "ok": "OK",
+      "warning": "Warnings",
+      "error": "Errors",
+      "errorTag": "Error",
+      "warningTag": "Warning",
+      "dryRun": "Commit would add {assets} assets and {coverages} warranty lines. {skip} rows with errors would be skipped.",
+      "asOf": "Checked {when} with the access of the person who ran the check. Commit checks again.",
+      "issues": "Rows to look at (first {n} problems)",
+      "none": "No problems found.",
+      "row": "Row",
+      "column": "Column",
+      "problem": "Problem",
+      "value": "Value in file",
+      "codes": {
+        "required": "{field} is required.",
+        "date_format": "Not a date. Use an Excel date, YYYY-MM-DD or {format}.",
+        "number_format": "Not a valid number (lowest allowed: {min}).",
+        "bool_format": "Use Yes or No.",
+        "currency_format": "Use a three-letter currency code, such as INR.",
+        "currency_defaulted": "No currency given: {currency} will be used.",
+        "bad_option": "Not one of the allowed values.",
+        "not_found": "No match. Check the code, name or path.",
+        "ambiguous": "More than one location has this name. Use its code or full path.",
+        "not_for_category": "This field does not apply to the row’s category.",
+        "status_not_allowed": "This status cannot be used for a new asset in this category.",
+        "vendor_not_for_category": "This vendor is not linked to the row’s category.",
+        "parent_not_found": "No asset with this tag.",
+        "duplicate_in_file": "This tag appears more than once in the file.",
+        "tag_exists": "An asset with this tag already exists.",
+        "tag_format": "Tags use letters, digits and . _ / - only, up to 60 characters.",
+        "tag_not_allowed": "You may not type asset tags. Leave the tag empty to generate one.",
+        "tag_needs_category_code": "The tag pattern needs a category code. Add one to the category or type a tag.",
+        "tag_needs_location_code": "The tag pattern needs a location code. Set a location with a code or type a tag.",
+        "possible_duplicate": "An asset with this serial number and manufacturer may already exist.",
+        "warranty_incomplete": "Give both warranty start and end, or neither.",
+        "warranty_dates": "Warranty end is before the start.",
+        "warranty_vendor": "A warranty needs an OEM or O&M vendor on the row.",
+        "out_of_scope": "Outside the locations or categories you may add assets to.",
+        "no_create_right": "You may not add assets."
       }
     }
   }
