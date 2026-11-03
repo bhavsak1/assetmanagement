@@ -3,7 +3,7 @@ import Fastify, { type FastifyReply, type FastifyRequest, type FastifyServerOpti
 import type { Verify } from './auth.ts';
 import type { createDb } from './db.ts';
 import { HEADER_SCAN, stageXlsx } from './imports.ts';
-import { templateHeaders, templateXlsx, type Target } from './mapping.ts';
+import { templateLists, templateXlsx, type Target } from './mapping.ts';
 import { ImportError } from './xlsx.ts';
 
 type Deps = {
@@ -91,13 +91,15 @@ export function buildApp({ verify, withUser, logger = false, corsOrigins = [], m
   app.get('/imports/template', async (req, reply) => {
     const claims = await claimsOf(req, reply);
     if (!claims) return reply;
-    const catalog = await withUser(claims, async (q) =>
-      (await q<Target>('select target, label, kind, required, category_id from public.import_target_catalog()')).rows);
+    const { catalog, lists, dateFormat } = await withUser(claims, async (q) => ({
+      catalog: (await q<Target>('select target, label, kind, required, category_id from public.import_target_catalog()')).rows,
+      ...await templateLists(q), // §16: drop-down values as this user may see them
+    }));
     if (!catalog.length) return reply.code(403).send({ error: 'forbidden' }); // no excel_import
     return reply
       .header('content-type', XLSX)
       .header('content-disposition', 'attachment; filename="assetly-import-template.xlsx"')
-      .send(templateXlsx(templateHeaders(catalog)));
+      .send(templateXlsx(catalog, lists, dateFormat));
   });
 
   return app;

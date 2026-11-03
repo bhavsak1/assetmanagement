@@ -149,7 +149,7 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | 8.1 | Custom service skeleton, deployed, using user token or `SET LOCAL` tenant context | D1, OQ-28 | Done |
 | 8.2 | Upload and streaming parse into staged rows | | Done |
 | 8.3 | Column mapping step (pluggable) and mapping templates | | Done |
-| 8.3b | Drop-downs in the import template: Excel lists (data validation) on Category, Location, Status, vendors, Criticality and list-type custom fields, filled from the tenant's own data as the user may see it (a hidden "Lists" sheet), plus date and number checks on date and number columns. Builds on `GET /imports/template` (8.3). Lists are a snapshot at download time; 8.4 still checks every value | | Todo |
+| 8.3b | Drop-downs in the import template: Excel lists (data validation) on Category, Location, Status, vendors, Criticality and list-type custom fields, filled from the tenant's own data as the user may see it (a hidden "Lists" sheet), plus date and number checks on date and number columns. Builds on `GET /imports/template` (8.3). Lists are a snapshot at download time; 8.4 still checks every value | | In review |
 | 8.4 | Deterministic validation and dry run | | In review |
 | 8.5 | Import review screen | | Todo |
 | 8.6 | Idempotent commit and batch undo | | Todo |
