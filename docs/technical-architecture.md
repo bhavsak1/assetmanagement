@@ -39,7 +39,7 @@
 - ORM or query layer: Drizzle or Kysely preferred over Prisma (RLS needs per-transaction tenant context via `SET LOCAL`).
 - Service hosting (decided by the owner, 2 Nov 2026, OQ-28): Google Cloud Run from a Docker image, scale to zero. Staging in asia-northeast1 (Tokyo), production later in asia-south1 (Mumbai). Fallback Fly.io Singapore. Background jobs are triggered by `pg_cron` or Cloud Scheduler calling the service. Static egress IP (Cloud NAT) only when a customer asks.
 - Frontend hosting: Cloudflare Pages or similar (free tier).
-- Email: Amazon SES. WhatsApp: a business solution provider (Gupshup, Twilio or Meta Cloud API).
+- Email (owner, 4 Nov 2026, story 9.1): Resend to start; ZeptoMail or Amazon SES later if volume or compliance asks (one `sendEmail()` function in `services/api/src/email.ts`). WhatsApp: a business solution provider (Gupshup, Twilio or Meta Cloud API).
 - AI provider: Anthropic Claude as primary, second provider as fallback, behind the AI gateway.
 - Observability: Sentry plus uptime checks, OpenTelemetry later.
 

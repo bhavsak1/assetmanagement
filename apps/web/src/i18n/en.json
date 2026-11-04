@@ -29,6 +29,26 @@
     "account": "Account",
     "signOut": "Sign out"
   },
+  "notifications": {
+    "title": "Notifications",
+    "bell": "Alerts",
+    "bellUnread": "Alerts, {count} unread",
+    "markAll": "Mark all as read",
+    "emailDigest": "Email me a daily summary",
+    "emailHint": "One email at 8:00 with alerts you have not read yet. Alerts always show here.",
+    "alert": "Alert",
+    "when": "Date",
+    "new": "New",
+    "none": "No alerts yet. Overdue and due-soon services and expiring coverage show here.",
+    "failed": "Could not save. Try again.",
+    "events": {
+      "obligation.overdue": "Overdue: {name} on {asset}, due {date}",
+      "obligation.due_soon": "Due soon: {name} on {asset}, due {date}",
+      "coverage.expiring": "Coverage expiring: {asset}, ends {date}",
+      "coverage.expired": "Coverage expired: {asset}, ended {date}",
+      "other": "Alert on {asset}"
+    }
+  },
   "login": {
     "headline": "Every asset, contract and service date in one place.",
     "tagline": "Industry-ready setup. Import from Excel in a day.",

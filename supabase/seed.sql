@@ -109,3 +109,6 @@ $$;
 
 -- LOCAL SERVICE ROLE PASSWORD (story 8.1). Test value for services/api; staging sets its own.
 alter role assetly_api password 'assetly-local-api';
+
+-- LOCAL JOBS ROLE PASSWORD (story 9.1). Test value for the services/api email job; staging sets its own.
+alter role assetly_jobs password 'assetly-local-jobs';
