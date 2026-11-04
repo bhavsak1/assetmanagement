@@ -447,17 +447,23 @@ isOneToOne: false
                   ]
                 },"import_batch": {
                   Row: {
-                    "columns": (string)[],"created_at": string,"created_by": string | null,"deleted_at": string | null,"expires_at": string,"file_name": string,"file_sha256": string,"file_size": number,"header_row": number,"id": string,"mapping": Json | null,"mapping_template_id": string | null,"row_count": number,"sheet_name": string,"sheet_names": (string)[],"status": string,"summary": Json | null,"tenant_id": string,"updated_at": string,"updated_by": string | null,"warnings": NonNullable<Json>
+                    "columns": (string)[],"committed_at": string | null,"committed_by": string | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"expires_at": string,"file_name": string,"file_sha256": string,"file_size": number,"header_row": number,"id": string,"mapping": Json | null,"mapping_template_id": string | null,"outcome": Json | null,"row_count": number,"sheet_name": string,"sheet_names": (string)[],"status": string,"summary": Json | null,"tenant_id": string,"undone_at": string | null,"undone_by": string | null,"updated_at": string,"updated_by": string | null,"warnings": NonNullable<Json>
                   }
                   ComputedFields: never
                   Insert: {
-                    "columns": (string)[],"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"expires_at"?: string,"file_name": string,"file_sha256": string,"file_size": number,"header_row": number,"id"?: string,"mapping"?: Json | null,"mapping_template_id"?: string | null,"row_count": number,"sheet_name": string,"sheet_names": (string)[],"status"?: string,"summary"?: Json | null,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null,"warnings"?: NonNullable<Json>
+                    "columns": (string)[],"committed_at"?: string | null,"committed_by"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"expires_at"?: string,"file_name": string,"file_sha256": string,"file_size": number,"header_row": number,"id"?: string,"mapping"?: Json | null,"mapping_template_id"?: string | null,"outcome"?: Json | null,"row_count": number,"sheet_name": string,"sheet_names": (string)[],"status"?: string,"summary"?: Json | null,"tenant_id": string,"undone_at"?: string | null,"undone_by"?: string | null,"updated_at"?: string,"updated_by"?: string | null,"warnings"?: NonNullable<Json>
                   }
                   Update: {
-                    "columns"?: (string)[],"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"expires_at"?: string,"file_name"?: string,"file_sha256"?: string,"file_size"?: number,"header_row"?: number,"id"?: string,"mapping"?: Json | null,"mapping_template_id"?: string | null,"row_count"?: number,"sheet_name"?: string,"sheet_names"?: (string)[],"status"?: string,"summary"?: Json | null,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null,"warnings"?: NonNullable<Json>
+                    "columns"?: (string)[],"committed_at"?: string | null,"committed_by"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"expires_at"?: string,"file_name"?: string,"file_sha256"?: string,"file_size"?: number,"header_row"?: number,"id"?: string,"mapping"?: Json | null,"mapping_template_id"?: string | null,"outcome"?: Json | null,"row_count"?: number,"sheet_name"?: string,"sheet_names"?: (string)[],"status"?: string,"summary"?: Json | null,"tenant_id"?: string,"undone_at"?: string | null,"undone_by"?: string | null,"updated_at"?: string,"updated_by"?: string | null,"warnings"?: NonNullable<Json>
                   }
                   Relationships: [
                     {
+      foreignKeyName: "import_batch_committed_by_fkey"
+      columns: ["committed_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
       foreignKeyName: "import_batch_created_by_fkey"
       columns: ["created_by"]
 isOneToOne: false
@@ -475,6 +481,12 @@ isOneToOne: false
 isOneToOne: false
       referencedRelation: "import_mapping_template"
       referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "import_batch_undone_by_fkey"
+      columns: ["undone_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
     },{
       foreignKeyName: "import_batch_updated_by_fkey"
       columns: ["updated_by"]
@@ -517,14 +529,14 @@ isOneToOne: false
                   ]
                 },"import_row": {
                   Row: {
-                    "batch_id": string,"cells": NonNullable<Json>,"created_at": string,"id": string,"messages": Json | null,"payload": Json | null,"result": string | null,"row_number": number,"tenant_id": string
+                    "batch_id": string,"cells": NonNullable<Json>,"created_at": string,"id": string,"messages": Json | null,"payload": Json | null,"result": string | null,"row_number": number,"tenant_id": string,"undo_blocked": string | null,"undone_at": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "batch_id": string,"cells": NonNullable<Json>,"created_at"?: string,"id"?: string,"messages"?: Json | null,"payload"?: Json | null,"result"?: string | null,"row_number": number,"tenant_id": string
+                    "batch_id": string,"cells": NonNullable<Json>,"created_at"?: string,"id"?: string,"messages"?: Json | null,"payload"?: Json | null,"result"?: string | null,"row_number": number,"tenant_id": string,"undo_blocked"?: string | null,"undone_at"?: string | null
                   }
                   Update: {
-                    "batch_id"?: string,"cells"?: NonNullable<Json>,"created_at"?: string,"id"?: string,"messages"?: Json | null,"payload"?: Json | null,"result"?: string | null,"row_number"?: number,"tenant_id"?: string
+                    "batch_id"?: string,"cells"?: NonNullable<Json>,"created_at"?: string,"id"?: string,"messages"?: Json | null,"payload"?: Json | null,"result"?: string | null,"row_number"?: number,"tenant_id"?: string,"undo_blocked"?: string | null,"undone_at"?: string | null
                   }
                   Relationships: [
                     {
@@ -1595,6 +1607,9 @@ isOneToOne: false
               "code": string,"id": string
             }[]
                            },
+"import_commit":
+{ Args: { "p_batch_id": string }; Returns: Json
+                           },
 "import_save_mapping":
 { Args: { "p_batch_id": string,"p_mapping": Json,"p_template_id"?: string }; Returns: undefined
                            },
@@ -1602,6 +1617,9 @@ isOneToOne: false
 { Args: Record<PropertyKey, never>; Returns: {
               "category_id": string,"kind": string,"label": string,"required": boolean,"sort_order": number,"target": string
             }[]
+                           },
+"import_undo":
+{ Args: { "p_batch_id": string }; Returns: Json
                            },
 "import_validate":
 { Args: { "p_batch_id": string }; Returns: Json

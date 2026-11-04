@@ -686,3 +686,91 @@ Keep the 8.4 check card (first 200 problems) and add only the count cards and Ba
 ## 17.6 Owner review
 
 No migration, no policy, no definer function. The errors file holds tenant data that the user can already read on screen (RLS on `import_row`).
+
+---
+
+# Story 8.6: idempotent commit and batch undo
+
+**Status:** designed and built 3 to 4 Nov 2026 while the owner was away. Every DECIDE lean below was taken by me: "lean taken, owner away (3 Nov 2026)". 8.6 In review. Stacked on 8.5.
+
+**READ FIRST: speed.** The story asks for 20,000 rows in seconds. That is not met. Commit inserts as the user, so every row goes through the asset triggers of 3.1 to 5.1 (tag, status, values, vendors, obligations, audit and outbox, then the coverage checks), one row at a time. Measured locally: 1,000 rows 9.4 s, 3,000 rows 36.7 s, 5,000 rows 61.4 s (§18.4). The cost is in triggers that already exist, not in the commit. Making 20,000 rows fast means moving those triggers to statement level (transition tables). That changes every asset write path and needs its own story and the owner's review. I took the safe, small option: commit and undo run through the service with a 280 s limit (K1), and one commit takes at most 2,000 rows (K8). Lifting the cap is one constant.
+
+**Goal:** commit writes the rows the check passed as assets (and one warranty line each), in one transaction, with audit and outbox rows, under the user's own rights and scope. Committing twice creates nothing twice. Undo soft-deletes what one batch created, row by row, keeps rows changed since, and says why.
+
+**Facts checked (3 Nov 2026):**
+- Asset insert rights are in RLS: `asset_insert` checks `asset_core.create`, `tenant_can_write()` and the 6.1 create scope. A security definer insert would skip all three.
+- The tag, status, value, vendor, 6.2 and audit triggers run for any writer. `check_soft_delete` acts only when `current_user = 'authenticated'`; definer actions check their own domain (as `transfer_asset`).
+- A warranty line needs `coverage_contract.create` (coverage) and `coverage_contract.update` (the link), as `create_asset_with_warranty` (4.5).
+- `set_updated_at` and the asset audit skip changes to `coverage_state` only (4.4), so `updated_at` moves only on a real edit.
+- Domains exist: `excel_import.commit` and `import_undo.undo` (1.2). Administrator and Asset manager hold both (1.6).
+- `refresh_coverage_state` (4.4) used `a.id = any (ids)`; with thousands of ids it compared every asset with every id (minutes).
+
+## 18.1 Flow
+
+```
+web Review: Commit N rows --> POST /imports/:id/commit (service, withUser, statement_timeout 280 s)
+  public.import_commit (security invoker)
+    excel_import.commit and tenant_can_write, else 42501; committed or undone: return the outcome (K2)
+    import_validate again (V2; it locks the batch to the end of the transaction); more than 2,000 rows: 54000 (K8)
+    insert asset from the payload of ok and warning rows, id = the staged row id (K3); RLS and triggers apply
+    insert coverage and coverage_asset (M9), id derived from the row id
+    private.import_commit_finish (definer): the check ran in this transaction for this user and every row has
+      its asset; status committed, committed_at, outcome
+web Committed card: Undo --> POST /imports/:id/undo
+  public.import_undo (security definer, import_undo.undo): per row, kept or soft-deleted (K5 to K7)
+```
+
+## 18.2 Storage
+
+- `import_batch`: status gains `committed` and `undone`; `committed_at`, `committed_by`, `undone_at`, `undone_by`, `outcome` (`created_assets`, `created_coverages`, `skipped`, `committed_at`, `as_user`; after an undo also `undone`, `blocked`, `blocked_by`, `undone_at`, `undone_by`).
+- `import_row`: `undone_at`, `undo_blocked` (`changed`, `gone`, `has_children`, `out_of_scope`).
+- No link column: an asset's id is its staged row's id; the warranty line's id is `md5(row id || ':coverage')`. Committed and undone batches are not purged (I9 covers staged, mapped and validated only), so the rows stay as the record undo needs.
+
+## 18.3 Undo rules
+
+A row is undone when its asset and warranty line are live and unchanged since the commit. Otherwise it is kept and marked:
+- `changed`: the asset or warranty line has `updated_at` after `committed_at` (an edit, a transfer, a status change)
+- `gone`: already deleted
+- `has_children`: a live asset has it as parent
+- `out_of_scope`: outside the undoer's `asset_core` update scope (6.1)
+
+Undo can run again on an undone batch: it retries the kept rows only. Records added later on an asset (service records, attachments, obligations) do not block undo; they stay on the soft-deleted asset.
+
+## 18.4 Speed (measured locally, Docker on Windows)
+
+| Rows | Commit |
+|---|---|
+| 1,000 | 9.4 s |
+| 3,000 | 36.7 s |
+| 5,000 | 61.4 s (before the K8 cap and the finish fix) |
+
+Biggest costs per row: audit and outbox, `has_permission` lookups, the status and vendor sets of the category, the tag counter, the obligations copy, and the coverage link policy (`coverage_visible`). The growth beyond linear comes from plpgsql plans cached while the asset table is still small. Not fixed here (see READ FIRST).
+
+## 18.5 Not in 8.6
+
+Updating existing assets from a file (upsert), statement-level triggers, a background job with progress, undo of one row from the asset page, restore after undo.
+
+## 18.6 The smaller option
+
+Commit by calling `create_asset_with_warranty` once per row from the browser. No migration, but not atomic, not idempotent, and one round trip per row.
+
+## 18.7 DECIDE
+
+| # | Decision | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| K1 | Where commit and undo run | a SQL functions called by the service (`POST /imports/:id/commit` and `/undo`, `withUser`, `statement_timeout` 280 s inside Cloud Run's 300 s request limit), b web rpc (8 s: under 1,000 rows), c a background job with progress | a: no new infrastructure; c is the later answer for big files. Needs an API redeploy. Lean taken, owner away (3 Nov 2026) | Low: the SQL stays the same for b and c |
+| K2 | Commit twice | a a committed or undone batch returns its outcome and creates nothing; a commit that waited on the batch lock does the same, b raise an error | a. Lean taken, owner away (3 Nov 2026) | Low |
+| K3 | Idempotency key and link | a asset id = staged row id (a second insert would hit the primary key), warranty id derived from it, no link columns, b `import_row.asset_id` filled before the insert, c `asset.import_batch_id` on the business table | a: the key is in the database, not only in a status check, and the asset table does not change. Lean taken, owner away (3 Nov 2026) | Medium: committed assets keep these ids |
+| K4 | Security of commit | a security invoker: RLS and every trigger check the inserts as the user (scope, rights, 6.2); one small definer step marks the batch, b security definer like `transfer_asset` (skips RLS, relies on `import_validate` alone) | a: two guards instead of one. The definer step refuses unless the check ran in the same transaction for the same user and every row has its asset. Lean taken, owner away (3 Nov 2026) | Low |
+| K5 | Security of undo | a security definer: `import_undo.undo`, plus the caller's `asset_core` update scope per row, b invoker (also needs `asset_core.delete` and `coverage_contract` update and delete) | a: undo is its own action domain (CLAUDE.md §7.8), and scope still limits it. Lean taken, owner away (3 Nov 2026) | Low |
+| K6 | Rows changed after commit | a keep and report them (`changed`), undo the rest, b refuse the whole undo, c undo anyway | a (the lean in the brief). Lean taken, owner away (3 Nov 2026) | Low |
+| K7 | Undo window | a none: the row checks guard it, b 7 days | a. Lean taken, owner away (3 Nov 2026) | Low |
+| K8 | Rows per commit | a at most 2,000 rows (`54000`, the service answers 413 `too_many_rows`): the user splits the file, b no cap, the 280 s timeout stops it (a long transaction holding the tag counters of the tenant), c 20,000 | a: fits the 280 s limit with room on a slower machine. Safest, and one constant. Lean taken, owner away (3 Nov 2026) | Low |
+| K9 | Error rows | a skipped (V3), downloadable from Review (8.5), b all or nothing | a (V3). Lean taken, owner away (3 Nov 2026) | Low |
+
+## 18.8 Owner review
+
+- `public.import_commit` (invoker), `private.import_commit_finish` (definer, executable by `authenticated`), `public.import_undo` (definer, action domain `import_undo.undo`).
+- `private.refresh_coverage_state` (4.4, definer) redefined with one line changed (`in (select unnest(...))`).
+- K3: committed assets carry the staged row's id.
+- New service routes `POST /imports/:id/commit` and `/undo`: API redeploy.

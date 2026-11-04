@@ -152,7 +152,7 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | 8.3b | Drop-downs in the import template: Excel lists (data validation) on Category, Location, Status, vendors, Criticality and list-type custom fields, filled from the tenant's own data as the user may see it (a hidden "Lists" sheet), plus date and number checks on date and number columns. Builds on `GET /imports/template` (8.3). Lists are a snapshot at download time; 8.4 still checks every value | | In review |
 | 8.4 | Deterministic validation and dry run | | Done |
 | 8.5 | Import review screen | | In review |
-| 8.6 | Idempotent commit and batch undo | | Todo |
+| 8.6 | Idempotent commit and batch undo | | In review |
 
 ### Goal 9: Notifications, API, webhooks
 **Review point:** an overdue service or expiring coverage produces an alert, and an external script reads assets through the API.

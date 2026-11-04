@@ -16,6 +16,8 @@ type Deps = {
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const MAX_FILE = 10 * 2 ** 20; // I2
+const ACTION_TIMEOUT = '280s';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function buildApp({ verify, withUser, logger = false, corsOrigins = [], maxParses = 3 }: Deps) {
   const app = Fastify({ logger });
@@ -101,6 +103,33 @@ export function buildApp({ verify, withUser, logger = false, corsOrigins = [], m
       .header('content-disposition', 'attachment; filename="assetly-import-template.xlsx"')
       .send(templateXlsx(catalog, lists, dateFormat));
   });
+
+  // Commit and undo (§18). Here, not as web rpc calls: every row goes through the asset triggers one by one,
+  // far past the 8 s statement timeout of the web role (K1). The SQL functions do every check.
+  for (const action of ['commit', 'undo'] as const) {
+    app.post<{ Params: { id: string } }>(`/imports/:id/${action}`, async (req, reply) => {
+      const claims = await claimsOf(req, reply);
+      if (!claims) return reply;
+      if (!UUID.test(req.params.id)) return reply.code(404).send({ error: 'not_found' });
+      try {
+        const outcome = await withUser(claims, async (q) => {
+          await q(`set local statement_timeout = '${ACTION_TIMEOUT}'`); // inside Cloud Run's 300 s request timeout
+          return (await q<{ r: unknown }>(`select public.import_${action}($1) as r`, [req.params.id])).rows[0]!.r;
+        });
+        req.log.info({ user_id: claims.sub, tenant_id: claims.tenant_id, batch_id: req.params.id, outcome }, `import ${action}`);
+        return outcome;
+      } catch (e) {
+        const code = (e as { code?: string }).code ?? '';
+        if (code === '42501') return reply.code(403).send({ error: 'forbidden' });
+        if (code === 'P0002') return reply.code(404).send({ error: 'not_found' });
+        // The batch moved on, or a trigger refused a row (something changed since the check).
+        if (code === '22023' || code === 'P0001' || code.startsWith('23')) return reply.code(409).send({ error: 'changed' });
+        if (code === '54000') return reply.code(413).send({ error: 'too_many_rows' }); // K8
+        if (code === '57014') return reply.code(504).send({ error: 'timeout' });
+        throw e;
+      }
+    });
+  }
 
   return app;
 }
