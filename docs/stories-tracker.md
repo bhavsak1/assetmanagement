@@ -159,7 +159,8 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 
 | ID | Story | Open items | Status |
 |---|---|---|---|
-| 9.1 | Outbox poller, in-app and email notifications | | Todo |
+| 9.1 | Outbox poller, in-app and email notifications (docs/data-model-goal9.md) | | In review |
+| 9.1b | Forgot password: Supabase Auth SMTP through the 9.1 provider (Resend), reset page, show the "Forgot password" link (CLAUDE.md §13). Owner-review area (Auth settings) | | Todo |
 | 9.2 | Public REST API `/v1`, API keys, integration users | | Todo |
 | 9.3 | Webhooks with signing and retries. Payloads masked by the subscriber identity's field domains (outbox rows carry raw values; 6.2 R3) | | Todo |
 | 9.4 | WhatsApp channel | OQ-14 | Todo |
@@ -233,3 +234,4 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 | 3 Nov 2026 | Story 8.3 widened by the owner: a field list on the Import page and a Download template button, both from the mapping catalog (docs/data-model-goal8.md §14.8). 8.2 Done |
 | 3 Nov 2026 | Backlog item BL-4 added (drop-downs in the import template), asked by the owner after the 8.3 template download |
 | 3 Nov 2026 | Backlog item BL-4 (drop-downs in the import template, from tenant values) moved into Goal 8 as story 8.3b, asked by the owner |
+| 4 Nov 2026 | 8.5 and 8.6 Done (owner). Story 9.1b added: forgot password split from 9.1, owner accepted N9 a (docs/data-model-goal9.md). Email provider for 9.1: Resend (owner, N5) |

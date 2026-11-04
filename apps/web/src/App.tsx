@@ -11,6 +11,7 @@ import { DashboardPage } from './Dashboard'
 import { ImportPage } from './Import'
 import { LocationsPage } from './Locations'
 import { MaintenancePage } from './Maintenance'
+import { NotificationBell, NotificationsPage } from './Notifications'
 import { SettingsPage } from './Settings'
 import { SecurityPage } from './Security'
 import { VendorsPage } from './Vendors'
@@ -145,6 +146,7 @@ function Shell({ companies, tenantId, canImport }: { companies: Company[]; tenan
           ) : (
             <span className="muted">{companies.find((c) => c.id === tenantId)?.name}</span>
           )}
+          <NotificationBell tenantId={tenantId} />
           <div className="avatar" role="img" aria-label={t.topbar.account}>
             {t.topbar.initials}
           </div>
@@ -356,6 +358,7 @@ export function App() {
           path="/settings"
           element={<SettingsPage tenantId={tenantId ?? ''} canView={can('tenant_settings', 'view')} canManage={can('tenant_settings', 'manage')} />}
         />
+        <Route path="/notifications" element={<NotificationsPage tenantId={tenantId ?? ''} userId={userId ?? ''} />} />
         <Route path="/security" element={<SecurityPage tenantId={tenantId ?? ''} canView={can('users_security', 'view')} canManage={can('users_security', 'manage')} />} />
         <Route path="/assets/:assetId" element={<AssetDetailPage can={can} />} />
         <Route path="/assets/:assetId/label" element={<AssetLabelPage />} />

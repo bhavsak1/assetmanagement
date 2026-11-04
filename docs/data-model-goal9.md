@@ -1,6 +1,20 @@
 # Goal 9 data model: notifications (story 9.1)
 
-**Status:** design, waiting for the owner's answers to §10 (4 Nov 2026). Nothing built yet.
+**Status:** built 4 Nov 2026, In review. The owner chose Resend for N5 and accepted the leans for N1 to N4 and N6 to
+N11 (4 Nov 2026). Not pushed to staging; email needs the owner steps in §14 first.
+
+**As built (differences from the design below):**
+- Migrations: `9_1_coverage_events` (4.4/8.6 `refresh_coverage_state` plus the event), `9_1_notification` (helper
+  `private.user_can`, table, RLS, switch, fan-out, `pg_cron` every minute), `9_1_notification_email` (summary table,
+  hourly queue at minute 5, claim, finish, role `assetly_jobs`).
+- The fan-out marks events no consumer wants (every `<table>.insert|update|delete`) published in one statement of
+  up to 50,000 rows a run, so an import never backs up the alert queue.
+- Email is plain text only (tenant data is untrusted; no HTML to escape). Dates use the tenant date format.
+- The Alerts link sits in the top bar (text and count, no icon set exists). Rows open the asset page; the asset
+  page has no tab in its URL, so it opens on Overview.
+- Tests: `supabase/tests/9_1_notifications.test.sql` (49), `1_6_starter_groups` gains a notification fixture,
+  `services/api/test/email.test.ts` (6), `apps/web/src/Notifications.test.tsx` (6). No `tests.cross_tenant` line:
+  users cannot insert alerts, so the harness does not fit; the 9.1 file has its own cross-tenant checks.
 
 **Goal (9.1):** an obligation that becomes due soon or overdue, or coverage that is about to expire or has
 expired, produces an in-app notification for the right users, and a short email. Review point of Goal 9 (first half):
@@ -226,12 +240,36 @@ password, both needing the same provider. **Say if you want this instead.**
 | N10 | Jobs role and endpoint | a `assetly_jobs` with two functions + OIDC, b reuse `assetly_api`, c shared secret | a | Low |
 | N11 | Size of 9.1 | a full (in-app + email), b in-app only, email to 9.1b (§12) | a | Low |
 
-## 14. Owner steps (after §13, only if email is in)
+N1 to N4 and N6 to N11: owner accepted the leans, 4 Nov 2026.
 
-1. Pick or buy a domain. Create the Resend account, add its DNS records, create an API key with send rights only.
-2. Put the key in Secret Manager as `EMAIL_API_KEY`; I add the variable to `.env.example` and the deploy workflow.
-3. Create the `assetly_jobs` password secret and the Cloud Scheduler job (I write the `gcloud` commands).
-4. Optional (N8 b): the log alert command.
+## 14. Owner steps (before the next service deploy; I never handle the keys)
+
+The deploy workflow now reads two new secrets. **Create them before running "Deploy API"**, or the deploy fails.
+Until `API_URL` is set, the email route stays off.
+
+1. Domain and Resend: pick or buy a domain, create the Resend account, add its DNS records (SPF, DKIM), create an
+   API key with **sending access only**.
+2. Staging database: set a password for the jobs role (SQL editor, not in git):
+   `alter role assetly_jobs password '<new password>';`
+3. Secrets (Secret Manager), readable by `assetly-api-run@<project>.iam.gserviceaccount.com`:
+   - `assetly-api-jobs-db-url`: the pooler URL as `assetly_jobs.blhxyfgkkhpqbfuhpnww` with that password (same host
+     and port 6543 as `assetly-api-db-url`).
+   - `assetly-api-email-key`: the Resend key.
+   ```
+   printf '%s' '<url>' | gcloud secrets create assetly-api-jobs-db-url --data-file=-
+   printf '%s' '<key>' | gcloud secrets create assetly-api-email-key --data-file=-
+   for s in assetly-api-jobs-db-url assetly-api-email-key; do gcloud secrets add-iam-policy-binding $s      --member serviceAccount:assetly-api-run@$PROJECT.iam.gserviceaccount.com --role roles/secretmanager.secretAccessor; done
+   ```
+4. GitHub repository variables: `API_URL` (the service URL, `https://assetly-api-....run.app`) and `EMAIL_FROM`
+   (`Assetly <alerts@your-domain>`).
+5. Scheduler (one of the 3 free jobs), every 15 minutes, with a Google OIDC token:
+   ```
+   gcloud iam service-accounts create assetly-scheduler
+   gcloud scheduler jobs create http assetly-email --location asia-northeast1 --schedule '*/15 * * * *'      --uri "$API_URL/jobs/email" --http-method POST      --oidc-service-account-email assetly-scheduler@$PROJECT.iam.gserviceaccount.com --oidc-token-audience "$API_URL"
+   ```
+6. N8 b, the failure alert (free): a log-based alert on `resource.type="cloud_run_revision"
+   resource.labels.service_name="assetly-api" severity>=ERROR`, emailing you (Cloud Monitoring, Alerting).
+7. Then run "Deploy API", and push the migrations to staging (your usual `db push` from current `main`).
 
 ## 15. Not in 9.1
 

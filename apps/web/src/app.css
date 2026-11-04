@@ -1099,3 +1099,15 @@ a.kpi:focus-visible {
   color: inherit;
   font-weight: var(--weight-semibold);
 }
+
+/* Story 9.1: the Alerts link in the top bar and unread rows on /notifications. */
+.bell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  text-decoration: none;
+}
+
+tr.unread .row-link {
+  font-weight: var(--weight-semibold);
+}

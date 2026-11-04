@@ -591,6 +591,44 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"notification": {
+                  Row: {
+                    "asset_id": string,"created_at": string,"domain": string,"emailed_on": string | null,"event_id": string,"event_type": string,"id": string,"payload": NonNullable<Json>,"read_at": string | null,"tenant_id": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "asset_id": string,"created_at"?: string,"domain": string,"emailed_on"?: string | null,"event_id": string,"event_type": string,"id"?: string,"payload": NonNullable<Json>,"read_at"?: string | null,"tenant_id": string,"user_id": string
+                  }
+                  Update: {
+                    "asset_id"?: string,"created_at"?: string,"domain"?: string,"emailed_on"?: string | null,"event_id"?: string,"event_type"?: string,"id"?: string,"payload"?: NonNullable<Json>,"read_at"?: string | null,"tenant_id"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "notification_tenant_id_asset_id_fkey"
+      columns: ["tenant_id","asset_id"]
+isOneToOne: false
+      referencedRelation: "asset"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "notification_tenant_id_asset_id_fkey"
+      columns: ["tenant_id","asset_id"]
+isOneToOne: false
+      referencedRelation: "asset_view"
+      referencedColumns: ["tenant_id","id"]
+    },{
+      foreignKeyName: "notification_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "notification_tenant_id_user_id_fkey"
+      columns: ["tenant_id","user_id"]
+isOneToOne: false
+      referencedRelation: "tenant_membership"
+      referencedColumns: ["tenant_id","user_id"]
+    }
+                  ]
                 },"obligation": {
                   Row: {
                     "anchor": string,"asset_id": string,"created_at": string,"created_by": string | null,"deleted_at": string | null,"due_state": string,"due_state_until": string | null,"first_due_date": string,"id": string,"interval_count": number,"interval_unit": string,"is_active": boolean,"last_done_date": string | null,"name": string,"next_due_date": string,"notes": string | null,"obligation_type": string,"tenant_id": string,"updated_at": string,"updated_by": string | null
@@ -1099,14 +1137,14 @@ isOneToOne: false
                   ]
                 },"tenant_membership": {
                   Row: {
-                    "created_at": string,"created_by": string | null,"deleted_at": string | null,"id": string,"permission_version": number,"status": string,"tenant_id": string,"updated_at": string,"updated_by": string | null,"user_id": string
+                    "created_at": string,"created_by": string | null,"deleted_at": string | null,"email_digest": boolean,"id": string,"permission_version": number,"status": string,"tenant_id": string,"updated_at": string,"updated_by": string | null,"user_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"id"?: string,"permission_version"?: number,"status"?: string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null,"user_id": string
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"email_digest"?: boolean,"id"?: string,"permission_version"?: number,"status"?: string,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null,"user_id": string
                   }
                   Update: {
-                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"id"?: string,"permission_version"?: number,"status"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null,"user_id"?: string
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"email_digest"?: boolean,"id"?: string,"permission_version"?: number,"status"?: string,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null,"user_id"?: string
                   }
                   Relationships: [
                     {
@@ -1714,6 +1752,9 @@ isOneToOne: false
                            },
 "set_asset_tag_pattern":
 { Args: { "p_pattern": string }; Returns: undefined
+                           },
+"set_email_digest":
+{ Args: { "p_on": boolean }; Returns: boolean
                            },
 "set_group_policies":
 { Args: { "p_group_id": string,"p_operation_ids": (string)[] }; Returns: undefined
