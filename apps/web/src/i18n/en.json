@@ -1169,8 +1169,7 @@
       "status": "Status",
       "warnings": "Warnings ({n})",
       "preview": "First {n} rows",
-      "row": "Row",
-      "next": "Commit comes next (story 8.6)."
+      "row": "Row"
     },
     "warnings": {
       "cell_truncated": "Row {row}, column {column}: text cut to 4,000 characters.",
@@ -1287,6 +1286,34 @@
       "createWithWarranty": "Add asset and warranty",
       "skip": "Skip",
       "range": "Rows {from} to {to} of {n}"
+    },
+    "commit": {
+      "button": "Commit {n} rows",
+      "committing": "Committing. Large files can take a few minutes…",
+      "title": "Committed",
+      "undoneTitle": "Commit undone",
+      "when": "{file} · committed {when}",
+      "done": "Added {assets} assets and {coverages} warranty lines. {skip} rows with errors were skipped.",
+      "undo": "Undo this import",
+      "undoAgain": "Try undo again",
+      "undoing": "Undoing…",
+      "undoConfirm": "Remove the assets and warranty lines this import added? Assets changed since the commit are kept.",
+      "undone": "{n} assets removed. {blocked} kept.",
+      "why": "Kept because",
+      "blocked": {
+        "changed": "The asset or its warranty was changed after the commit.",
+        "gone": "The asset or its warranty was already removed.",
+        "has_children": "Another asset has it as its parent.",
+        "out_of_scope": "Outside the locations or categories you may change."
+      },
+      "errors": {
+        "forbidden": "You do not have permission for this, or this company is read-only.",
+        "not_found": "This upload was not found. Reload the page.",
+        "changed": "Something changed since the check. Check the rows again, then retry.",
+        "too_many_rows": "One commit takes at most 2,000 rows. Split the file and import the parts.",
+        "timeout": "The commit took too long. Split the file and import the parts.",
+        "generic": "It did not work. Try again: nothing is added twice."
+      }
     },
     "check": {
       "title": "Row check",
