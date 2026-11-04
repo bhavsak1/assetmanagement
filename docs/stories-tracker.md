@@ -179,6 +179,7 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 |---|---|---|---|
 | BL-1 | Background jobs monitor: a `job_run` log (job, tenant, start, end, status, rows, error) written by every background job; a "Background jobs" page for a platform admin (like Workday's background process monitor); a `job.failed` outbox event for alerts. Needs a platform-admin role, which does not exist yet | Goal 9 (notifications, API) and Goal 10 (AI gateway) | Backlog |
 | BL-2 | Optional BOM per asset (reference parts list, no inventory). Parked from 5.5 by the owner | Later | Backlog |
+| BL-5 | Guidance in the import template: mark mandatory columns (for example a "*" and a bold header), and show the format each column needs (date as yyyy-mm-dd, number, currency code, Yes/No, a value from the list) as a header note and on an "Instructions" sheet, from the same mapping catalog as `GET /imports/template` (8.3, 8.3b). Text only; 8.4 still checks every value | Goal 8 follow-up (small) | Backlog |
 
 ---
 
@@ -235,3 +236,4 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 | 3 Nov 2026 | Backlog item BL-4 added (drop-downs in the import template), asked by the owner after the 8.3 template download |
 | 3 Nov 2026 | Backlog item BL-4 (drop-downs in the import template, from tenant values) moved into Goal 8 as story 8.3b, asked by the owner |
 | 4 Nov 2026 | 8.5 and 8.6 Done (owner). Story 9.1b added: forgot password split from 9.1, owner accepted N9 a (docs/data-model-goal9.md). Email provider for 9.1: Resend (owner, N5) |
+| 4 Nov 2026 | Backlog item BL-5 added (mandatory columns and formats shown in the import template), asked by the owner after trying import on staging |
