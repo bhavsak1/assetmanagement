@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { applyTemplate, codeName, columnLetter, commitWill, errorRows, messageText, normalise, saveError, templateOf, uploadError, type Target } from './Import'
+import { actError, applyTemplate, codeName, columnLetter, commitWill, errorRows, messageText, normalise, saveError, templateOf, uploadError, type Target } from './Import'
 import { t } from './i18n'
 import { crc32, sheetXlsx } from './xlsx'
 
@@ -64,6 +64,14 @@ describe('import page helpers', () => {
 Category is required.`],
       ['Fan', null, null, ''],
     ])
+  })
+
+  it('maps commit and undo errors to messages (8.6)', () => {
+    const e = t.import.commit.errors
+    expect(actError(413, 'too_many_rows')).toBe(e.too_many_rows)
+    expect(actError(409, 'changed')).toBe(e.changed)
+    expect(actError(401)).toBe(e.forbidden)
+    expect(actError(0)).toBe(e.generic)
   })
 
   it('writes a stored zip with the right CRC and formula-safe text cells', () => {

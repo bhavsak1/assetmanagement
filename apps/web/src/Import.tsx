@@ -4,7 +4,7 @@ import { supabase } from './supabase'
 import type { Json, Tables } from './types/database'
 import { sheetXlsx, type XlsxCell } from './xlsx'
 
-type Batch = Pick<Tables<'import_batch'>, 'id' | 'file_name' | 'sheet_name' | 'sheet_names' | 'header_row' | 'columns' | 'row_count' | 'warnings' | 'status' | 'created_at' | 'mapping' | 'mapping_template_id' | 'summary'>
+type Batch = Pick<Tables<'import_batch'>, 'id' | 'file_name' | 'sheet_name' | 'sheet_names' | 'header_row' | 'columns' | 'row_count' | 'warnings' | 'status' | 'created_at' | 'mapping' | 'mapping_template_id' | 'summary' | 'outcome'>
 export type Target = { target: string; label: string; kind: string; required: boolean; category_id: string | null }
 type Template = Pick<Tables<'import_mapping_template'>, 'id' | 'name' | 'headers' | 'targets'>
 // source: how the target was chosen; 'user' once the person changes it here.
@@ -85,7 +85,7 @@ function send(file: File, token: string, opts: { sheet?: string; headerRow?: num
 async function loadBatches(): Promise<Batch[]> {
   const { data } = await supabase
     .from('import_batch')
-    .select('id, file_name, sheet_name, sheet_names, header_row, columns, row_count, warnings, status, created_at, mapping, mapping_template_id, summary')
+    .select('id, file_name, sheet_name, sheet_names, header_row, columns, row_count, warnings, status, created_at, mapping, mapping_template_id, summary, outcome')
     .order('created_at', { ascending: false })
     .limit(10)
   return data ?? []
@@ -415,11 +415,112 @@ async function downloadErrors(batch: Batch, catalog: Target[]): Promise<boolean>
   return true
 }
 
+type Outcome = { created_assets: number; created_coverages: number; skipped: number; committed_at: string; undone?: number; blocked?: number }
+
+export function actError(status: number, code?: string): string {
+  const e = t.import.commit.errors
+  if (code && code in e) return e[code as keyof typeof e]
+  return status === 401 ? e.forbidden : e.generic
+}
+
+// 8.6: commit and undo go through the service, past the 8 s web timeout (K1). The SQL functions do every check.
+async function act(batchId: string, action: 'commit' | 'undo'): Promise<{ error?: string }> {
+  const token = (await supabase.auth.getSession()).data.session?.access_token ?? ''
+  const r = await fetch(`${import.meta.env.VITE_API_URL}/imports/${batchId}/${action}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => null)
+  if (r?.ok) return {}
+  const body = (await r?.json().catch(() => ({}))) as { error?: string } | undefined
+  return { error: actError(r?.status ?? 0, body?.error) }
+}
+
+// 8.6: what the commit did, and undo (K5 to K7).
+function CommitCard({ batch, canUndo, onDone }: { batch: Batch; canUndo: boolean; onDone: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
+  const [blocked, setBlocked] = useState<{ row_number: number; undo_blocked: string | null }[]>()
+  const k = t.import.commit
+  const o = batch.outcome as Outcome | null
+  const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+
+  useEffect(() => {
+    if (!o?.blocked) return
+    let live = true
+    void supabase
+      .from('import_row')
+      .select('row_number, undo_blocked')
+      .eq('batch_id', batch.id)
+      .not('undo_blocked', 'is', null)
+      .is('undone_at', null)
+      .order('row_number')
+      .limit(PAGE)
+      .then(({ data }) => live && setBlocked(data ?? []))
+    return () => {
+      live = false
+    }
+  }, [batch.id, o?.blocked])
+
+  async function undo() {
+    if (!window.confirm(k.undoConfirm)) return
+    setBusy(true)
+    setError(undefined)
+    const r = await act(batch.id, 'undo')
+    setBusy(false)
+    if (r.error) return setError(r.error)
+    onDone()
+  }
+
+  if (!o) return null
+  return (
+    <div className="card stack">
+      <div className="page-head">
+        <div>
+          <h2>{batch.status === 'undone' ? k.undoneTitle : k.title}</h2>
+          <p className="muted">{k.when.replace('{file}', batch.file_name).replace('{when}', when(o.committed_at))}</p>
+        </div>
+        {canUndo && (batch.status === 'committed' || !!o.blocked) && (
+          <button type="button" className="btn" disabled={busy} onClick={() => void undo()}>
+            {batch.status === 'undone' ? k.undoAgain : k.undo}
+          </button>
+        )}
+      </div>
+      {busy && <p role="status">{k.undoing}</p>}
+      {error && <p className="field-error" role="alert">{error}</p>}
+      <p>
+        {k.done
+          .replace('{assets}', String(o.created_assets))
+          .replace('{coverages}', String(o.created_coverages))
+          .replace('{skip}', String(o.skipped))}
+      </p>
+      {batch.status === 'undone' && <p>{k.undone.replace('{n}', String(o.undone ?? 0)).replace('{blocked}', String(o.blocked ?? 0))}</p>}
+      {!!blocked?.length && (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>{t.import.check.row}</th>
+                <th>{k.why}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {blocked.map((b) => (
+                <tr key={b.row_number}>
+                  <td>{b.row_number}</td>
+                  <td>{k.blocked[b.undo_blocked as keyof typeof k.blocked] ?? b.undo_blocked}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // 8.5: the Review step of the ImportReview screen. 8.4 results per row, paged and filtered on the server (R4).
-function ReviewCard({ batch, catalog, canRun, onChecked, onRemap }: {
+function ReviewCard({ batch, catalog, canRun, canCommit, onChecked, onRemap }: {
   batch: Batch
   catalog: Target[]
   canRun: boolean
+  canCommit: boolean
   onChecked: () => void
   onRemap?: () => void
 }) {
@@ -427,7 +528,8 @@ function ReviewCard({ batch, catalog, canRun, onChecked, onRemap }: {
   const [code, setCode] = useState('')
   const [page, setPage] = useState(0)
   const [rows, setRows] = useState<{ key: string; list: ReviewRow[]; count: number }>()
-  const [state, setState] = useState<'idle' | 'running' | 'failed' | 'downloadFailed'>('idle')
+  const [state, setState] = useState<'idle' | 'running' | 'failed' | 'downloadFailed' | 'committing'>('idle')
+  const [commitError, setCommitError] = useState<string>()
   const c = t.import.check
   const r = t.import.review
   const s = batch.summary as Summary | null
@@ -448,6 +550,15 @@ function ReviewCard({ batch, catalog, canRun, onChecked, onRemap }: {
       live = false
     }
   }, [batch.id, s, show, code, page, key])
+
+  async function commit() {
+    setState('committing')
+    setCommitError(undefined)
+    const r = await act(batch.id, 'commit')
+    setState('idle')
+    if (r.error) return setCommitError(r.error)
+    onChecked()
+  }
 
   async function run() {
     setState('running')
@@ -483,12 +594,19 @@ function ReviewCard({ batch, catalog, canRun, onChecked, onRemap }: {
             </button>
           )}
           {canRun && (
-            <button type="button" className="btn" disabled={state === 'running'} onClick={() => void run()}>
+            <button type="button" className="btn" disabled={state === 'running' || state === 'committing'} onClick={() => void run()}>
               {s ? c.again : c.run}
+            </button>
+          )}
+          {canCommit && batch.status === 'validated' && !!s?.create_assets && (
+            <button type="button" className="btn btn-primary" disabled={state === 'running' || state === 'committing'} onClick={() => void commit()}>
+              {t.import.commit.button.replace('{n}', String(s.create_assets))}
             </button>
           )}
         </div>
       </div>
+      {state === 'committing' && <p role="status">{t.import.commit.committing}</p>}
+      {commitError && <p className="field-error" role="alert">{commitError}</p>}
       {state === 'running' && <p role="status">{c.running}</p>}
       {state === 'failed' && <p className="field-error" role="alert">{c.failed}</p>}
       {state === 'downloadFailed' && <p className="field-error" role="alert">{r.downloadFailed}</p>}
@@ -614,11 +732,13 @@ function ReviewCard({ batch, catalog, canRun, onChecked, onRemap }: {
   )
 }
 
-function BatchView({ tenantId, batch, catalog, canRun, onSaved, onHeaderRow }: {
+function BatchView({ tenantId, batch, catalog, canRun, canCommit, canUndo, onSaved, onHeaderRow }: {
   tenantId: string
   batch: Batch
   catalog: Target[] | undefined
   canRun: boolean
+  canCommit: boolean
+  canUndo: boolean
   onSaved: () => void
   onHeaderRow?: (row: number) => void
 }) {
@@ -637,9 +757,10 @@ function BatchView({ tenantId, batch, catalog, canRun, onSaved, onHeaderRow }: {
   const [remapFor, setRemapFor] = useState<string>()
   const remap = remapFor === batch.id || batch.status !== 'validated'
   const live = batch.status === 'staged' || batch.status === 'mapped' || batch.status === 'validated'
+  const done = batch.status === 'committed' || batch.status === 'undone'
   return (
     <>
-      {live && <Steps at={batch.status === 'staged' || remapFor === batch.id ? 1 : 2} />}
+      {(live || done) && <Steps at={done ? 4 : batch.status === 'staged' || remapFor === batch.id ? 1 : 2} />}
       {live && remap && catalog && rows?.batchId === batch.id && (
         <MappingStep
           tenantId={tenantId}
@@ -661,10 +782,12 @@ function BatchView({ tenantId, batch, catalog, canRun, onSaved, onHeaderRow }: {
           batch={batch}
           catalog={catalog ?? []}
           canRun={canRun}
+          canCommit={canCommit}
           onChecked={onSaved}
           onRemap={batch.status === 'validated' && remapFor !== batch.id ? () => setRemapFor(batch.id) : undefined}
         />
       )}
+      {done && <CommitCard key={`commit-${batch.id}-${batch.status}`} batch={batch} canUndo={canUndo} onDone={onSaved} />}
     <div className="card stack">
       <h2>{batch.file_name}</h2>
       <dl className="facts">
@@ -693,7 +816,7 @@ function BatchView({ tenantId, batch, catalog, canRun, onSaved, onHeaderRow }: {
           </ul>
         </div>
       )}
-      {live && (
+      {(live || done) && (
         <div className="table-wrap">
           <p className="muted">{s.preview.replace('{n}', String(Math.min(PREVIEW_ROWS, batch.row_count)))}</p>
           <table>
@@ -719,14 +842,13 @@ function BatchView({ tenantId, batch, catalog, canRun, onSaved, onHeaderRow }: {
           </table>
         </div>
       )}
-      <p className="hint">{s.next}</p>
     </div>
     </>
   )
 }
 
-// Stories 8.2 to 8.5: upload, staged rows, column mapping, the row check and the review. Commit is 8.6.
-export function ImportPage({ tenantId, canRun }: { tenantId: string; canRun: boolean }) {
+// Stories 8.2 to 8.6: upload, staged rows, column mapping, the row check, the review, commit and undo.
+export function ImportPage({ tenantId, canRun, canCommit = false, canUndo = false }: { tenantId: string; canRun: boolean; canCommit?: boolean; canUndo?: boolean }) {
   const [file, setFile] = useState<File>()
   const [sheet, setSheet] = useState<string>()
   const [upload, setUpload] = useState<Upload>({ state: 'idle' })
@@ -823,6 +945,8 @@ export function ImportPage({ tenantId, canRun }: { tenantId: string; canRun: boo
           batch={current}
           catalog={fields}
           canRun={canRun}
+          canCommit={canCommit}
+          canUndo={canUndo}
           onSaved={() => void refresh()}
           onHeaderRow={sameFile ? (row) => void start(file!, current.sheet_name, row) : undefined}
         />
