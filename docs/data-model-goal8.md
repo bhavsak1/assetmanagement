@@ -637,3 +637,52 @@ With D1 a there is no schema change and no new policy. The file shows tenant dat
 1. Service: read the lists in the template route; `templateXlsx` writes the `Lists` sheet, the validations and the date styles; tests as in §16.6.
 2. Open the file locally in LibreOffice (headless convert) and openpyxl; fix what breaks.
 3. 8.3b `In review`, PR, demo note, owner-review list.
+
+---
+
+# Story 8.5: import review screen
+
+**Status:** designed and built 3 Nov 2026 while the owner was away. Every DECIDE lean below was taken by me: "lean taken, owner away (3 Nov 2026)". 8.5 In review. Web only: no migration, no service change.
+
+**Goal:** after the row check (8.4), `/import` shows the Review step of the ImportReview screen: counts, what the commit would do, and every row's result with its problems, filtered and paged. The user can download the rows that would be skipped, go back to the mapping, save it and see the new check. Commit and undo are 8.6. Nothing here writes to business tables.
+
+**Facts checked (3 Nov 2026):**
+- The screen (`docs/assetly-screens.html`, ImportReview): title "Import review", "<file> · dry run, nothing saved yet", buttons Back to mapping, Download errors, Commit N rows; the stepper; three count cards (Accepted, Needs attention, Rejected); a "Needs attention" table with an "All issues" filter; the AI suggestion, confidence and "Accept all above 90%" parts are Goal 10.
+- 8.4 stores `import_row.result`, `messages` (codes and fixed params, never cell text) and `payload`, and `import_batch.summary` with `codes` (count per code). 8.4 never updates an existing asset (15.6), so the dry run only creates or skips.
+- The select policy on `import_row` already allows `excel_import.run` or `review`. PostgREST returns at most 1,000 rows per request (`max_rows`).
+- §13.3 and §15.5 put the "Download errors" file, with formula-safe cells, in 8.5. Uploads are `.xlsx` only (I1).
+
+## 17.1 What the Review step shows
+
+- Head: "Import review", "<file> · dry run, nothing saved yet", Back to mapping, Download errors, Check again.
+- Stepper at Review once the batch is `validated`.
+- Cards: Accepted (`ok`), Needs attention (`warning`: imported, but look), Rejected (`error`: skipped). One line: commit would add N assets and M warranty lines, skip K rows, change no existing asset.
+- Rows table, 50 rows a page: Row, Result, Column, Problem, Value in file, Commit will (Create asset, Create asset and warranty, Skip). Filters: Show (Needs attention, Errors, Warnings, Accepted rows, All rows) and Problem (each code in `summary.codes` with its count). Paged on the server with an exact count.
+
+## 17.2 The errors file
+
+Built in the browser: an `.xlsx` with the error rows only (the ones commit skips), each with its original cells under the original headers, plus a last column "Problems" with every message of the row in words. Strings are written as inline strings with the `quotePrefix` style, so `=HYPERLINK(...)` stays text in Excel even after an edit (§13.3), and the values are unchanged when the file is uploaded again. The "Problems" header matches no field, so it maps to Ignore. Rows are read 1,000 at a time. The zip is "stored" (no compression: CRC-32 only), about 40 lines, since the web app has no zip library and `services/api/src/zip.ts` uses `node:zlib`.
+
+## 17.3 Not in 8.5
+
+Cell editing on screen, AI suggestions and confidence, "Accept all", commit and undo (8.6), updating existing assets, CSV.
+
+## 17.4 The smaller option
+
+Keep the 8.4 check card (first 200 problems) and add only the count cards and Back to mapping. About a third of the work, but a 20,000-row file with more than 200 problems cannot be reviewed, and the skipped rows have no way back into a file.
+
+## 17.5 DECIDE
+
+| # | Decision | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| R1 | Fixing values | a fix in Excel: download the rejected rows, fix, upload again; the screen fixes only the mapping, b edit cells in the grid (a security definer function that rewrites `import_row.cells`, then check again) | a: no write path on staged rows, no migration, and the file stays the record. Lean taken, owner away (3 Nov 2026) | Low: b is additive |
+| R2 | Errors file format | a `.xlsx` built in the browser (§17.2), uploadable again, b CSV in the browser (cannot be uploaded again, I1; formula escaping changes values), c a service route (needs an English copy of every message in the service and an API redeploy) | a. Lean taken, owner away (3 Nov 2026) | Low |
+| R3 | Rows in the errors file | a error rows only (the ones commit skips), with all their messages, b also warning rows | a: warning rows are committed; uploading them again would make duplicates. Lean taken, owner away (3 Nov 2026) | Low |
+| R4 | Rows table | a server paging, 50 rows, filters by result and by code (`messages @> [{"code": ...}]`), exact count, b load every row into the browser | a: 20,000 rows do not fit one request (`max_rows` 1,000). Lean taken, owner away (3 Nov 2026) | Low |
+| R5 | Card names | a the screen's names: Accepted = ok, Needs attention = warning (still imported, as V3), Rejected = error, b OK, Warnings, Errors (8.4 wording) | a. Lean taken, owner away (3 Nov 2026) | Low |
+| R6 | Back to mapping | a Review hides the mapping card; Back to mapping opens it above the review (the stepper goes back to Mapping); Save checks again (V8) and returns to Review, b both always shown (8.4) | a. Lean taken, owner away (3 Nov 2026) | Low |
+| R7 | Who sees what | a Review for `excel_import.run` or `review` (as the select policy); Check again, Back to mapping and (8.6) Commit for `run` only, as today; Download errors for both, b Review for `run` only | a. Lean taken, owner away (3 Nov 2026) | Low |
+
+## 17.6 Owner review
+
+No migration, no policy, no definer function. The errors file holds tenant data that the user can already read on screen (RLS on `import_row`).

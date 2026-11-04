@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { applyTemplate, columnLetter, messageText, normalise, saveError, templateOf, uploadError, type Target } from './Import'
+import { applyTemplate, codeName, columnLetter, commitWill, errorRows, messageText, normalise, saveError, templateOf, uploadError, type Target } from './Import'
 import { t } from './i18n'
+import { crc32, sheetXlsx } from './xlsx'
 
 vi.mock('./supabase', () => ({ supabase: {} }))
 
@@ -42,5 +43,36 @@ describe('import page helpers', () => {
     expect(messageText({ code: 'some_new_code' }, catalog)).toBe('some_new_code')
     // Every code import_validate can write has words.
     expect(Object.keys(t.import.check.codes)).toHaveLength(25)
+  })
+
+  it('says what commit would do with each row (8.5)', () => {
+    expect(commitWill(null)).toBe(t.import.review.skip)
+    expect(commitWill({ asset: { name: 'Pump' } })).toBe(t.import.review.create)
+    expect(commitWill({ asset: { name: 'Pump' }, coverage: { vendor_id: 'v' } })).toBe(t.import.review.createWithWarranty)
+    expect(codeName('required')).toBe('… is required.')
+  })
+
+  it('builds the errors file from the rows as they were, plus a Problems column (8.5 R2)', () => {
+    const catalog = [{ target: 'category', label: 'Category' } as Target]
+    const rows = errorRows(['Name', 'Cat', 'Cost'], [
+      { cells: ['=HYPERLINK("x")', 'Pumpz', 1200], messages: [{ col: 1, code: 'not_found' }, { code: 'required', params: { field: 'category' } }] },
+      { cells: ['Fan', null], messages: [] },
+    ], catalog)
+    expect(rows).toEqual([
+      ['Name', 'Cat', 'Cost', t.import.review.problems],
+      ['=HYPERLINK("x")', 'Pumpz', 1200, `B · Cat: ${t.import.check.codes.not_found}
+Category is required.`],
+      ['Fan', null, null, ''],
+    ])
+  })
+
+  it('writes a stored zip with the right CRC and formula-safe text cells', () => {
+    expect(crc32(new TextEncoder().encode('123456789'))).toBe(0xcbf43926)
+    const file = sheetXlsx('Assets', [['Name', 'Qty'], ['=1+1', 2], [true, null]])
+    expect([...file.slice(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04])
+    const text = new TextDecoder().decode(file)
+    expect(text).toContain('<c r="A2" t="inlineStr" s="1"><is><t xml:space="preserve">=1+1</t></is></c><c r="B2"><v>2</v></c>')
+    expect(text).toContain('<c r="A3" t="b"><v>1</v></c></row>')
+    expect(text).toContain('quotePrefix="1"')
   })
 })

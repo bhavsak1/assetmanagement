@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import type { Json, Tables } from './types/database'
+import { sheetXlsx, type XlsxCell } from './xlsx'
 
 type Batch = Pick<Tables<'import_batch'>, 'id' | 'file_name' | 'sheet_name' | 'sheet_names' | 'header_row' | 'columns' | 'row_count' | 'warnings' | 'status' | 'created_at' | 'mapping' | 'mapping_template_id' | 'summary'>
 export type Target = { target: string; label: string; kind: string; required: boolean; category_id: string | null }
@@ -345,12 +346,15 @@ function cellText(v: Json | undefined): string {
   return typeof v === 'object' ? JSON.stringify(v) : String(v)
 }
 
-type Summary = { ok: number; warning: number; error: number; create_assets: number; create_coverages: number; skip: number; validated_at: string }
+type Summary = { ok: number; warning: number; error: number; create_assets: number; create_coverages: number; skip: number; codes?: Record<string, number>; validated_at: string }
 type Message = { col?: number; code: string; params?: Record<string, Json> }
-type Issue = { row: number; warn: boolean; col?: number; text: string; value: string }
-const ISSUES = 200
+type ReviewRow = { row_number: number; result: string | null; messages: Json; cells: Json; payload: Json }
+type Show = 'attention' | 'error' | 'warning' | 'ok' | 'all'
+const PAGE = 50
+const READ = 1000 // PostgREST max_rows
 // Same list as import_validate: these never make a row an error.
 const WARNINGS = ['currency_defaulted', 'possible_duplicate']
+const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 // One message in words. Messages hold a code and fixed params, never cell text (8.4 §15.5).
 export function messageText(m: Message, catalog: Target[]): string {
@@ -362,39 +366,88 @@ export function messageText(m: Message, catalog: Target[]): string {
   )
 }
 
-// 8.4: the row check and dry run. The full review grid is 8.5.
-function CheckCard({ batch, catalog, canRun, onChecked }: { batch: Batch; catalog: Target[]; canRun: boolean; onChecked: () => void }) {
-  const [issues, setIssues] = useState<Issue[]>()
-  const [state, setState] = useState<'idle' | 'running' | 'failed'>('idle')
+// A code's name in the Problem filter: its words with the per-row parts left out.
+export const codeName = (code: string) => messageText({ code }, []).replace(/\{\w+\}/g, '…')
+
+// What commit (8.6) would do with the row: the payload is what it inserts (V2).
+export function commitWill(payload: Json): string {
+  const r = t.import.review
+  if (!payload) return r.skip
+  return (payload as { coverage?: Json }).coverage ? r.createWithWarranty : r.create
+}
+
+// The rows commit would skip, as in the file plus a Problems column, so they can be fixed and uploaded again (R2, R3).
+export function errorRows(columns: string[], rows: { cells: Json; messages: Json }[], catalog: Target[]): XlsxCell[][] {
+  return [
+    [...columns, t.import.review.problems],
+    ...rows.map((r) => [
+      ...columns.map((_, i): XlsxCell => {
+        const v = (r.cells as Json[])[i]
+        if (v === undefined || v === null) return null
+        return typeof v === 'object' ? JSON.stringify(v) : v
+      }),
+      ((r.messages ?? []) as Message[])
+        .map((m) => (m.col === undefined ? '' : `${columnLetter(m.col)} · ${columns[m.col]}: `) + messageText(m, catalog))
+        .join('\n'),
+    ]),
+  ]
+}
+
+async function downloadErrors(batch: Batch, catalog: Target[]): Promise<boolean> {
+  const rows: { cells: Json; messages: Json }[] = []
+  for (let from = 0; from < batch.row_count; from += READ) {
+    const { data, error } = await supabase
+      .from('import_row')
+      .select('cells, messages')
+      .eq('batch_id', batch.id)
+      .eq('result', 'error')
+      .order('row_number')
+      .range(from, from + READ - 1)
+    if (error) return false
+    rows.push(...data)
+    if (data.length < READ) break
+  }
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob([sheetXlsx(batch.sheet_name.slice(0, 31), errorRows(batch.columns, rows, catalog))], { type: XLSX }))
+  a.download = `${batch.file_name.replace(/\.xlsx$/i, '')}-errors.xlsx`
+  a.click()
+  URL.revokeObjectURL(a.href)
+  return true
+}
+
+// 8.5: the Review step of the ImportReview screen. 8.4 results per row, paged and filtered on the server (R4).
+function ReviewCard({ batch, catalog, canRun, onChecked, onRemap }: {
+  batch: Batch
+  catalog: Target[]
+  canRun: boolean
+  onChecked: () => void
+  onRemap?: () => void
+}) {
+  const [show, setShow] = useState<Show>('attention')
+  const [code, setCode] = useState('')
+  const [page, setPage] = useState(0)
+  const [rows, setRows] = useState<{ key: string; list: ReviewRow[]; count: number }>()
+  const [state, setState] = useState<'idle' | 'running' | 'failed' | 'downloadFailed'>('idle')
   const c = t.import.check
+  const r = t.import.review
   const s = batch.summary as Summary | null
+  const key = `${batch.id}|${show}|${code}|${page}`
 
   useEffect(() => {
     if (!s) return
     let live = true
-    void supabase
-      .from('import_row')
-      .select('row_number, messages, cells')
-      .eq('batch_id', batch.id)
-      .in('result', ['error', 'warning'])
+    let q = supabase.from('import_row').select('row_number, result, messages, cells, payload', { count: 'exact' }).eq('batch_id', batch.id)
+    if (show === 'attention') q = q.in('result', ['error', 'warning'])
+    else if (show !== 'all') q = q.eq('result', show)
+    if (code) q = q.contains('messages', JSON.stringify([{ code }]))
+    void q
       .order('row_number')
-      .limit(ISSUES)
-      .then(({ data }) => {
-        if (!live) return
-        const list = (data ?? []).flatMap((r) =>
-          ((r.messages ?? []) as Message[]).map((m) => ({
-            row: r.row_number,
-            warn: WARNINGS.includes(m.code),
-            col: m.col,
-            text: messageText(m, catalog),
-            value: m.col === undefined ? '' : cellText((r.cells as Json[])[m.col]),
-          })))
-        setIssues(list.slice(0, ISSUES))
-      })
+      .range(page * PAGE, page * PAGE + PAGE - 1)
+      .then(({ data, count }) => live && setRows({ key, list: data ?? [], count: count ?? 0 }))
     return () => {
       live = false
     }
-  }, [batch.id, s, catalog])
+  }, [batch.id, s, show, code, page, key])
 
   async function run() {
     setState('running')
@@ -403,64 +456,156 @@ function CheckCard({ batch, catalog, canRun, onChecked }: { batch: Batch; catalo
     if (!error) onChecked()
   }
 
+  const shown = rows?.key === key ? rows : undefined
+  const lines = (shown?.list ?? []).flatMap((x) => {
+    const msgs = ((x.messages ?? []) as Message[]).filter((m) => !code || m.code === code)
+    return (msgs.length ? msgs : [undefined]).map((m, i) => ({ x, m, first: i === 0 }))
+  })
+  const codes = Object.entries(s?.codes ?? {}).sort((a, b) => b[1] - a[1])
+  const tone = (result: string | null) => (result === 'error' ? 'tag error' : result === 'warning' ? 'tag warn' : 'tag ok')
+
   return (
     <div className="card stack">
       <div className="page-head">
         <div>
-          <h2>{c.title}</h2>
-          <p className="muted">{c.subtitle}</p>
+          <h2>{r.title}</h2>
+          <p className="muted">{r.subtitle.replace('{file}', batch.file_name)}</p>
         </div>
-        {canRun && (
-          <button type="button" className="btn" disabled={state === 'running'} onClick={() => void run()}>
-            {s ? c.again : c.run}
-          </button>
-        )}
+        <div className="filters">
+          {canRun && onRemap && (
+            <button type="button" className="btn" onClick={onRemap}>
+              {r.backToMapping}
+            </button>
+          )}
+          {!!s?.error && (
+            <button type="button" className="btn" onClick={() => void downloadErrors(batch, catalog).then((ok) => setState(ok ? 'idle' : 'downloadFailed'))}>
+              {r.downloadErrors}
+            </button>
+          )}
+          {canRun && (
+            <button type="button" className="btn" disabled={state === 'running'} onClick={() => void run()}>
+              {s ? c.again : c.run}
+            </button>
+          )}
+        </div>
       </div>
       {state === 'running' && <p role="status">{c.running}</p>}
       {state === 'failed' && <p className="field-error" role="alert">{c.failed}</p>}
+      {state === 'downloadFailed' && <p className="field-error" role="alert">{r.downloadFailed}</p>}
       {s && (
         <>
-          <dl className="facts">
-            <dt>{c.ok}</dt>
-            <dd>{s.ok}</dd>
-            <dt>{c.warning}</dt>
-            <dd>{s.warning}</dd>
-            <dt>{c.error}</dt>
-            <dd>{s.error}</dd>
-          </dl>
+          <div className="kpis">
+            <div className="card kpi">
+              <span>{r.accepted}</span>
+              <b>{s.ok}</b>
+            </div>
+            <div className="card kpi">
+              <span>{r.attention}</span>
+              <b className="warn">{s.warning}</b>
+            </div>
+            <div className="card kpi">
+              <span>{r.rejected}</span>
+              <b className="error">{s.error}</b>
+            </div>
+          </div>
           <p>
             {c.dryRun
               .replace('{assets}', String(s.create_assets))
               .replace('{coverages}', String(s.create_coverages))
-              .replace('{skip}', String(s.skip))}
+              .replace('{skip}', String(s.skip))}{' '}
+            {r.noUpdates}
           </p>
           <p className="hint">{c.asOf.replace('{when}', new Date(s.validated_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }))}</p>
-          {issues && !issues.length && <p className="save-ok">{c.none}</p>}
-          {!!issues?.length && (
+          <div className="filters">
+            <label className="field">
+              <span>{r.show}</span>
+              <select
+                className="filter"
+                value={show}
+                onChange={(e) => {
+                  setShow(e.target.value as Show)
+                  setPage(0)
+                  if (e.target.value === 'ok') setCode('')
+                }}
+              >
+                {(Object.keys(r.shows) as Show[]).map((k) => (
+                  <option key={k} value={k}>
+                    {r.shows[k]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>{r.problem}</span>
+              <select
+                className="filter"
+                value={code}
+                disabled={show === 'ok'}
+                onChange={(e) => {
+                  setCode(e.target.value)
+                  setPage(0)
+                }}
+              >
+                <option value="">{r.allProblems}</option>
+                {codes.map(([k, n]) => (
+                  <option key={k} value={k}>
+                    {`${codeName(k)} (${n})`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {shown && !shown.count && <p className="save-ok">{show === 'attention' && !code ? c.none : r.noRows}</p>}
+          {!!shown?.count && (
             <div className="table-wrap">
-              <p className="muted">{c.issues.replace('{n}', String(issues.length))}</p>
               <table>
                 <thead>
                   <tr>
                     <th>{c.row}</th>
+                    <th>{r.result}</th>
                     <th>{c.column}</th>
                     <th>{c.problem}</th>
                     <th>{c.value}</th>
+                    <th>{r.commitWill}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {issues.map((x, i) => (
-                    <tr key={i}>
-                      <td>{x.row}</td>
-                      <td>{x.col === undefined ? '' : `${columnLetter(x.col)} · ${batch.columns[x.col]}`}</td>
+                  {lines.map(({ x, m, first }, i) => (
+                    <tr key={`${x.row_number}-${i}`}>
+                      <td>{first ? x.row_number : ''}</td>
+                      <td>{first && <span className={tone(x.result)}>{r.results[x.result as keyof typeof r.results]}</span>}</td>
+                      <td>{m?.col === undefined ? '' : `${columnLetter(m.col)} · ${batch.columns[m.col]}`}</td>
                       <td>
-                        <span className={x.warn ? 'tag warn' : 'tag error'}>{x.warn ? c.warningTag : c.errorTag}</span> {x.text}
+                        {m && (
+                          <>
+                            <span className={WARNINGS.includes(m.code) ? 'tag warn' : 'tag error'}>{WARNINGS.includes(m.code) ? c.warningTag : c.errorTag}</span>{' '}
+                            {messageText(m, catalog)}
+                          </>
+                        )}
                       </td>
-                      <td className="muted">{x.value}</td>
+                      <td className="muted">{m?.col === undefined ? '' : cellText((x.cells as Json[])[m.col])}</td>
+                      <td>{first ? commitWill(x.payload) : ''}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+          {!!shown?.count && (
+            <div className="filters">
+              <span className="muted">
+                {r.range
+                  .replace('{from}', String(page * PAGE + 1))
+                  .replace('{to}', String(Math.min(shown.count, page * PAGE + PAGE)))
+                  .replace('{n}', String(shown.count))}
+              </span>
+              <div className="spacer" />
+              <button type="button" className="btn" disabled={page === 0} onClick={() => setPage(page - 1)}>
+                {t.assets.previous}
+              </button>
+              <button type="button" className="btn" disabled={(page + 1) * PAGE >= shown.count} onClick={() => setPage(page + 1)}>
+                {t.assets.next}
+              </button>
             </div>
           )}
         </>
@@ -488,11 +633,14 @@ function BatchView({ tenantId, batch, catalog, canRun, onSaved, onHeaderRow }: {
   const warnings = (batch.warnings ?? {}) as { list?: Warning[]; total?: number }
   const s = t.import.summary
 
+  // R6: once checked, the mapping card opens only through Back to mapping; a save checks again and closes it.
+  const [remapFor, setRemapFor] = useState<string>()
+  const remap = remapFor === batch.id || batch.status !== 'validated'
   const live = batch.status === 'staged' || batch.status === 'mapped' || batch.status === 'validated'
   return (
     <>
-      {live && <Steps at={batch.status === 'staged' ? 1 : 2} />}
-      {live && catalog && rows?.batchId === batch.id && (
+      {live && <Steps at={batch.status === 'staged' || remapFor === batch.id ? 1 : 2} />}
+      {live && remap && catalog && rows?.batchId === batch.id && (
         <MappingStep
           tenantId={tenantId}
           key={`${batch.id}-${batch.status}`}
@@ -500,12 +648,22 @@ function BatchView({ tenantId, batch, catalog, canRun, onSaved, onHeaderRow }: {
           catalog={catalog}
           sample={rows.list[0]?.cells as Json[] | undefined}
           canRun={canRun}
-          onSaved={onSaved}
+          onSaved={() => {
+            setRemapFor(undefined)
+            onSaved()
+          }}
           onHeaderRow={onHeaderRow}
         />
       )}
       {(batch.status === 'mapped' || batch.status === 'validated') && (
-        <CheckCard key={`check-${batch.id}-${batch.status}`} batch={batch} catalog={catalog ?? []} canRun={canRun} onChecked={onSaved} />
+        <ReviewCard
+          key={`review-${batch.id}-${batch.status}`}
+          batch={batch}
+          catalog={catalog ?? []}
+          canRun={canRun}
+          onChecked={onSaved}
+          onRemap={batch.status === 'validated' && remapFor !== batch.id ? () => setRemapFor(batch.id) : undefined}
+        />
       )}
     <div className="card stack">
       <h2>{batch.file_name}</h2>
@@ -567,7 +725,7 @@ function BatchView({ tenantId, batch, catalog, canRun, onSaved, onHeaderRow }: {
   )
 }
 
-// Stories 8.2 to 8.4: upload, staged rows, column mapping and the row check. Review and commit are 8.5 and 8.6.
+// Stories 8.2 to 8.5: upload, staged rows, column mapping, the row check and the review. Commit is 8.6.
 export function ImportPage({ tenantId, canRun }: { tenantId: string; canRun: boolean }) {
   const [file, setFile] = useState<File>()
   const [sheet, setSheet] = useState<string>()
