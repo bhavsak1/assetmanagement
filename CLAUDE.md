@@ -188,7 +188,7 @@ Never treat these as finished without the owner's review. Flag them in your end-
 
 - Email and password only. No SSO. No SSO button.
 - Public signup is off. Pilot tenants and users are created by a provisioning script (sales-led, OQ-16).
-- "Forgot password" is hidden until email sending exists. It is in the backlog.
+- "Forgot password" uses Supabase Auth's recovery email through Resend SMTP (9.1b). The reply never says whether the email exists.
 - Wrong credentials show one generic message that does not reveal whether the email exists.
 - Users hold all roles assigned to them in the active tenant combined. There is no role selection at login.
 

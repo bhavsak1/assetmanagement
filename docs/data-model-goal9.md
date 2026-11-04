@@ -278,7 +278,16 @@ Webhooks (9.3), WhatsApp (9.4), the `/v1` API (9.2), escalation, quiet hours, pe
 
 ---
 
-## 16. Story 9.1b: forgot password (design, waiting for the owner)
+## 16. Story 9.1b: forgot password
+
+**Status:** built 4 Nov 2026, In review. The owner accepted every lean (F1 to F9), 4 Nov 2026. Not pushed to
+staging: needs the owner steps below.
+
+**As built:** `supabase/config.toml` (staging SMTP, `otp_expiry`, `email_sent`; recovery template for every
+environment; local `site_url` moved to the Vite port `http://localhost:5173` so local links work),
+`supabase/templates/recovery.html`, `ForgotPasswordPage` and `ResetPasswordPage` in `apps/web/src/App.tsx`, strings
+under `reset` in `en.json`, 4 new tests in `App.test.tsx`. The sender is an env var too
+(`SUPABASE_AUTH_SMTP_ADMIN_EMAIL`), so the domain stays out of git like `EMAIL_FROM`.
 
 **Goal:** a user who forgot the password asks for a link on the login page, gets one email through Resend, sets a
 new password on `/reset-password`, and signs in. Lifts the CLAUDE.md §13 rule "Forgot password is hidden until email
@@ -411,7 +420,8 @@ they expire (`jwt_expiry`, 1 hour).
 ### Owner steps (after you answer; I never handle keys or passwords)
 
 1. Resend: create a second API key, **sending access only**, named `supabase-auth-smtp`.
-2. In your own shell (not in git, not in the repo `.env`): `export SUPABASE_AUTH_SMTP_PASS=<that key>`.
+2. In your own shell (not in git, not in the repo `.env`): `export SUPABASE_AUTH_SMTP_PASS=<that key>` and
+   `export SUPABASE_AUTH_SMTP_ADMIN_EMAIL=no-reply@<9.1 domain>`.
 3. `npx supabase config diff --project-ref blhxyfgkkhpqbfuhpnww`: check that only SMTP, the recovery template,
    `otp_expiry` and `email_sent` change. Then `npx supabase config push --project-ref blhxyfgkkhpqbfuhpnww`.
 4. Merge the PR; Cloudflare deploys the web app. Then try a reset on staging with your own account.

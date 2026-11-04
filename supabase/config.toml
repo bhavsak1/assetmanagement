@@ -157,11 +157,11 @@ max_indexes = 5
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "http://127.0.0.1:3000"
+site_url = "http://localhost:5173"  # Vite dev server; the 9.1b reset link is built from it
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+additional_redirect_urls = ["http://localhost:5173"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -245,6 +245,12 @@ otp_expiry = 3600
 # pass = "env(SENDGRID_API_KEY)"
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
+
+# Story 9.1b: the reset link points at our /reset-password page with a token_hash, so mail scanners
+# that open links do not use up the one-time token (docs/data-model-goal9.md §16, F3).
+[auth.email.template.recovery]
+subject = "Reset your Assetly password"
+content_path = "./supabase/templates/recovery.html"
 
 # Uncomment to customize email template
 # [auth.email.template.invite]
@@ -423,6 +429,22 @@ enable_signup = false
 enable_confirmations = true
 max_frequency = "1m0s"
 otp_length = 8
+otp_expiry = 3600  # 9.1b F8: reset links last 1 hour, as the email says
+
+# 9.1b F1: Auth mail through Resend SMTP. Local keeps Mailpit (no smtp block above).
+# Set both env vars in your own shell before `config push`; neither goes in git.
+[remotes.staging.auth.email.smtp]
+enabled = true
+host = "smtp.resend.com"
+port = 465
+user = "resend"
+pass = "env(SUPABASE_AUTH_SMTP_PASS)"  # send-only Resend key `supabase-auth-smtp`
+admin_email = "env(SUPABASE_AUTH_SMTP_ADMIN_EMAIL)"  # no-reply@<9.1 domain> (F2)
+sender_name = "Assetly"
+
+# 9.1b F7: whole-project cap on Auth emails per hour once SMTP is on.
+[remotes.staging.auth.rate_limit]
+email_sent = 30
 
 [remotes.staging.auth.mfa.totp]
 enroll_enabled = true

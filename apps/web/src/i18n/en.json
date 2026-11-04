@@ -57,7 +57,25 @@
     "email": "Work email",
     "emailPlaceholder": "name@company.com",
     "password": "Password",
-    "error": "Email or password is incorrect."
+    "error": "Email or password is incorrect.",
+    "forgot": "Forgot password?"
+  },
+  "reset": {
+    "forgotTitle": "Reset password",
+    "forgotIntro": "Enter your work email. We will send you a link to set a new password.",
+    "send": "Send link",
+    "sent": "If an account exists for this email, we sent a link. Check your inbox.",
+    "sendError": "Could not send. Try again.",
+    "backToLogin": "Back to sign in",
+    "resetTitle": "Set a new password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm new password",
+    "save": "Set password",
+    "mismatch": "The passwords do not match.",
+    "weak": "Could not set this password. Use a longer one.",
+    "badLink": "This link has expired or was already used.",
+    "askAgain": "Ask for a new link",
+    "done": "Password changed. Sign in with your new password."
   },
   "company": {
     "chooseTitle": "Choose company",

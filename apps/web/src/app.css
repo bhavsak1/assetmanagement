@@ -243,6 +243,18 @@ h1 {
   color: var(--tag-ok-text);
 }
 
+/* 9.1b: "Forgot password?" and the other links under the login form, as in the screens file. */
+.login-link {
+  display: block;
+  margin-top: var(--space-6);
+  color: var(--color-primary-dark);
+  text-align: center;
+}
+
+.login-note {
+  margin: 0 0 var(--space-6);
+}
+
 .login-error.save-error {
   margin: 0;
 }
