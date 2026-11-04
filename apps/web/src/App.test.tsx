@@ -2,6 +2,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
+import { AuthApiError, AuthRetryableFetchError } from '@supabase/supabase-js'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { App, safeNext } from './App'
 import { t } from './i18n'
@@ -13,6 +14,9 @@ const auth = vi.hoisted(() => ({
   signInWithPassword: vi.fn(),
   signOut: vi.fn(),
   refreshSession: vi.fn(),
+  resetPasswordForEmail: vi.fn(),
+  verifyOtp: vi.fn(),
+  updateUser: vi.fn(),
   rpc: vi.fn(),
   memberships: [] as { tenant_id: string; tenant: { name: string; status: string; deleted_at: null } }[],
   entitlements: [] as { id: string }[],
@@ -30,6 +34,9 @@ vi.mock('./supabase', () => ({
       signInWithPassword: auth.signInWithPassword,
       signOut: auth.signOut,
       refreshSession: auth.refreshSession,
+      resetPasswordForEmail: auth.resetPasswordForEmail,
+      verifyOtp: auth.verifyOtp,
+      updateUser: auth.updateUser,
     },
     rpc: auth.rpc,
     // Any query chain; awaiting it gives the mocked memberships or entitlements, else no rows
@@ -92,7 +99,70 @@ const heading = () => container.querySelector('h1')?.textContent
 test('signed out: a protected route shows the login screen', async () => {
   await render('/assets', null)
   expect(heading()).toBe(t.pages.login)
-  expect(container.textContent).not.toMatch(/SSO|forgot/i)
+  expect(container.textContent).not.toMatch(/SSO/i)
+  expect(container.querySelector('a[href="/forgot-password"]')?.textContent).toBe(t.login.forgot)
+})
+
+async function submitEmail(email: string) {
+  container.querySelector<HTMLInputElement>('[name="email"]')!.value = email
+  await act(async () => container.querySelector('form')!.requestSubmit())
+}
+
+test('forgot password: the same message whether or not the email exists, even on a 429 [9.1b F6]', async () => {
+  for (const error of [null, new AuthApiError('For security purposes, you can only request this after 60 seconds.', 429, 'over_email_send_rate_limit')]) {
+    auth.resetPasswordForEmail.mockResolvedValue({ data: {}, error })
+    await render('/forgot-password', null)
+    await submitEmail('someone@example.com')
+    expect(auth.resetPasswordForEmail).toHaveBeenLastCalledWith('someone@example.com')
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(t.reset.sent)
+    act(() => root.unmount())
+    root = createRoot(container)
+  }
+})
+
+test('forgot password: a network failure asks to try again', async () => {
+  auth.resetPasswordForEmail.mockResolvedValue({ data: null, error: new AuthRetryableFetchError('Failed to fetch', 0) })
+  await render('/forgot-password', null)
+  await submitEmail('someone@example.com')
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(t.reset.sendError)
+})
+
+test('reset password: a missing or used link shows one message and a way to ask again', async () => {
+  await render('/reset-password', null)
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(t.reset.badLink)
+  expect(auth.verifyOtp).not.toHaveBeenCalled()
+  act(() => root.unmount())
+  root = createRoot(container)
+  auth.verifyOtp.mockResolvedValue({ data: {}, error: new AuthApiError('Token has expired or is invalid', 403, 'otp_expired') })
+  await render('/reset-password?token_hash=h1&type=recovery', null)
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(t.reset.badLink)
+  expect(container.querySelector('a[href="/forgot-password"]')).not.toBeNull()
+})
+
+test('reset password: verify once, check the match, set it, sign out everywhere [9.1b F9]', async () => {
+  auth.verifyOtp.mockResolvedValue({ data: {}, error: null })
+  auth.updateUser.mockResolvedValueOnce({ data: {}, error: new AuthApiError('Password should be at least 6 characters.', 422, 'weak_password') })
+  auth.updateUser.mockResolvedValueOnce({ data: {}, error: null })
+  auth.signOut.mockResolvedValue({ error: null })
+  await render('/reset-password?token_hash=h1&type=recovery', null)
+  expect(auth.verifyOtp).toHaveBeenCalledTimes(1)
+  expect(auth.verifyOtp).toHaveBeenCalledWith({ token_hash: 'h1', type: 'recovery' })
+  expect(heading()).toBe(t.reset.resetTitle)
+  const fill = async (a: string, b: string) => {
+    container.querySelector<HTMLInputElement>('[name="password"]')!.value = a
+    container.querySelector<HTMLInputElement>('[name="confirm"]')!.value = b
+    await act(async () => container.querySelector('form')!.requestSubmit())
+  }
+  await fill('new-pass-1', 'new-pass-2')
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(t.reset.mismatch)
+  expect(auth.updateUser).not.toHaveBeenCalled()
+  await fill('short', 'short')
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(t.reset.weak)
+  await fill('new-pass-1', 'new-pass-1')
+  expect(auth.updateUser).toHaveBeenLastCalledWith({ password: 'new-pass-1' })
+  expect(auth.signOut).toHaveBeenCalledWith({ scope: 'global' })
+  expect(heading()).toBe(t.pages.login)
+  expect(container.textContent).toContain(t.reset.done)
 })
 
 test('signed in with a tenant: protected route renders, and sign out returns to login', async () => {

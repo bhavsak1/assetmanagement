@@ -1,6 +1,6 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { NavLink, Navigate, Outlet, Route, Routes, useLocation, useSearchParams } from 'react-router'
-import type { Session } from '@supabase/supabase-js'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { Link, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router'
+import { isAuthRetryableFetchError, type Session } from '@supabase/supabase-js'
 import { AssetDetailPage } from './AssetDetail'
 import { AssetFormPage } from './AssetForm'
 import { AssetLabelPage, ScanPage } from './AssetLabel'
@@ -220,6 +220,7 @@ function NoAccess() {
 }
 
 function LoginPage() {
+  const [params] = useSearchParams()
   const [failed, setFailed] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -239,6 +240,7 @@ function LoginPage() {
   return (
     <LoginFrame title={t.pages.login}>
       <p className="muted">{t.login.welcome}</p>
+      {params.get('reset') === 'done' && <p className="save-ok login-note">{t.reset.done}</p>}
       <form onSubmit={(e) => void signIn(e)}>
         <label className="field">
           {t.login.email}
@@ -257,6 +259,121 @@ function LoginPage() {
           {t.pages.login}
         </button>
       </form>
+      <Link className="login-link" to="/forgot-password">
+        {t.login.forgot}
+      </Link>
+    </LoginFrame>
+  )
+}
+
+// Story 9.1b. Supabase Auth sends the mail; the template links to /reset-password (docs/data-model-goal9.md §16).
+export function ForgotPasswordPage() {
+  const [state, setState] = useState<'idle' | 'busy' | 'sent' | 'failed'>('idle')
+
+  async function send(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const email = String(new FormData(e.currentTarget).get('email'))
+    setState('busy')
+    const { error } = await supabase.auth.resetPasswordForEmail(email)
+    // Same answer for success, unknown email and 429 (a 429 means the account exists) [F6]. Only a network failure differs.
+    setState(error && isAuthRetryableFetchError(error) ? 'failed' : 'sent')
+  }
+
+  return (
+    <LoginFrame title={t.reset.forgotTitle}>
+      <p className="muted">{t.reset.forgotIntro}</p>
+      {state === 'sent' ? (
+        <p className="save-ok login-note" role="status">
+          {t.reset.sent}
+        </p>
+      ) : (
+        <form onSubmit={(e) => void send(e)}>
+          <label className="field">
+            {t.login.email}
+            <input name="email" type="email" autoComplete="username" placeholder={t.login.emailPlaceholder} required />
+          </label>
+          {state === 'failed' && (
+            <p className="login-error" role="alert">
+              {t.reset.sendError}
+            </p>
+          )}
+          <button className="btn btn-primary" type="submit" disabled={state === 'busy'}>
+            {t.reset.send}
+          </button>
+        </form>
+      )}
+      <Link className="login-link" to="/login">
+        {t.reset.backToLogin}
+      </Link>
+    </LoginFrame>
+  )
+}
+
+export function ResetPasswordPage() {
+  const [params] = useSearchParams()
+  const navigate = useNavigate()
+  const token_hash = params.get('type') === 'recovery' ? params.get('token_hash') : null
+  const [state, setState] = useState<'checking' | 'ready' | 'bad' | 'busy'>(token_hash ? 'checking' : 'bad')
+  const [error, setError] = useState<'mismatch' | 'weak'>()
+  const verified = useRef(false)
+
+  useEffect(() => {
+    // The token is single use: React's dev double effect must not spend it twice.
+    if (!token_hash || verified.current) return
+    verified.current = true
+    void supabase.auth.verifyOtp({ token_hash, type: 'recovery' }).then(({ error }) => setState(error ? 'bad' : 'ready'))
+  }, [token_hash])
+
+  async function save(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const form = new FormData(e.currentTarget)
+    const password = String(form.get('password'))
+    if (password !== String(form.get('confirm'))) return setError('mismatch')
+    setError(undefined)
+    setState('busy')
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) {
+      setError('weak')
+      setState('ready')
+      return
+    }
+    // Sign out on every device, then sign in with the new password [F9].
+    await supabase.auth.signOut({ scope: 'global' })
+    void navigate('/login?reset=done', { replace: true })
+  }
+
+  if (state === 'checking') return null
+  return (
+    <LoginFrame title={t.reset.resetTitle}>
+      {state === 'bad' ? (
+        <>
+          <p className="login-error" role="alert">
+            {t.reset.badLink}
+          </p>
+          <Link className="login-link" to="/forgot-password">
+            {t.reset.askAgain}
+          </Link>
+        </>
+      ) : (
+        <form onSubmit={(e) => void save(e)}>
+          <label className="field">
+            {t.reset.newPassword}
+            <input name="password" type="password" autoComplete="new-password" required />
+          </label>
+          <label className="field">
+            {t.reset.confirmPassword}
+            <input name="confirm" type="password" autoComplete="new-password" required />
+          </label>
+          {error && (
+            <p className="login-error" role="alert">
+              {error === 'mismatch' ? t.reset.mismatch : t.reset.weak}
+            </p>
+          )}
+          <button className="btn btn-primary" type="submit" disabled={state === 'busy'}>
+            {t.reset.save}
+          </button>
+        </form>
+      )}
     </LoginFrame>
   )
 }
@@ -327,6 +444,9 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={session ? <Navigate to={safeNext(params.get('next')) ?? '/dashboard'} replace /> : <LoginPage />} />
+      {/* Outside the sign-in guard: the recovery link signs the user in on this page [9.1b]. */}
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       {/* The target page survives sign-in, and the company pick too (it renders in place) [3.6b]. */}
       <Route element={session ? signedIn : <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />}>
         {navGroups.flatMap(({ items }) =>
