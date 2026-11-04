@@ -128,7 +128,7 @@ Text is built in the browser from `event_type` and `payload` through i18n, so no
 | b Amazon SES | Credits for new AWS accounts only | $0.10 per 1,000 (cheapest at scale) | AWS account, leave the sandbox (a request to AWS), DNS records | SigV4 signing: the AWS SDK (new dependency) or hand-rolled signing. No idempotency key |
 | c Brevo | 300 a day | from about $9 | Account, DNS | Plain `fetch` |
 
-**Lean: a Resend for staging and pilots**, behind one `sendEmail()` function. Move to SES when volume passes the
+**Decided (owner, 4 Nov 2026): a Resend** for staging and pilots; ZeptoMail (no daily cap, about $2.5 per 10,000) or SES are the later options, behind one `sendEmail()` function. Move to SES when volume passes the
 free tier. Cost to reverse: low (one function, DNS records). `technical-architecture.md` §2 says SES; it becomes
 out of date if you pick a.
 
@@ -218,7 +218,7 @@ password, both needing the same provider. **Say if you want this instead.**
 | N2 | Claim and retry | skip-locked claims, unique `(event_id, user_id)`, email row per user per day, provider idempotency key, 5 tries with backoff | as §3 | Low |
 | N3 | Events and recipients | events: obligation due soon / overdue, coverage expiring / expired (new event). Recipients hold a `view`, b `update`, c new alert domains; plus 6.1 scope | b | Low |
 | N4 | In-app table and RLS | own rows, rechecks domain and scope on read, update `read_at` only, no `tenant_can_write` for mark read | as §5 | Medium |
-| N5 | Email provider | a Resend, b SES, c Brevo | a (SES later) | Low |
+| N5 | Email provider | a Resend, b SES, c Brevo, d ZeptoMail | **a (owner, 4 Nov 2026)**; ZeptoMail or SES later if needed | Low |
 | N6 | Email timing | a daily summary 08:00 tenant time, b every 15 min, c per event | a | Low |
 | N7 | Preferences | a none, b one email switch, c matrix | b | Low |
 | N8 | Failures | a data + logs, b plus a Cloud Monitoring email alert, c jobs page (BL-1) | b | Low |
