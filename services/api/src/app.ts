@@ -2,6 +2,7 @@ import cors from '@fastify/cors';
 import Fastify, { type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import type { Verify } from './auth.ts';
 import type { createDb } from './db.ts';
+import type { JobsVerify } from './email.ts';
 import { HEADER_SCAN, stageXlsx } from './imports.ts';
 import { templateLists, templateXlsx, type Target } from './mapping.ts';
 import { ImportError } from './xlsx.ts';
@@ -12,6 +13,8 @@ type Deps = {
   logger?: FastifyServerOptions['logger'];
   corsOrigins?: string[];
   maxParses?: number;
+  // 9.1: off (no route) unless configured.
+  jobs?: { verify: JobsVerify; email: () => Promise<{ sent: number; failed: number; failures: string[] }> };
 };
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -19,7 +22,7 @@ const MAX_FILE = 10 * 2 ** 20; // I2
 const ACTION_TIMEOUT = '280s';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function buildApp({ verify, withUser, logger = false, corsOrigins = [], maxParses = 3 }: Deps) {
+export function buildApp({ verify, withUser, logger = false, corsOrigins = [], maxParses = 3, jobs }: Deps) {
   const app = Fastify({ logger });
 
   // I12, I13: only the listed web origins; the token goes in a header, never a cookie.
@@ -128,6 +131,18 @@ export function buildApp({ verify, withUser, logger = false, corsOrigins = [], m
         if (code === '57014') return reply.code(504).send({ error: 'timeout' });
         throw e;
       }
+    });
+  }
+
+  // Story 9.1: the daily email summary, called by Cloud Scheduler with a Google OIDC token. Outside /v1.
+  if (jobs) {
+    app.post('/jobs/email', async (req, reply) => {
+      const token = /^Bearer (\S+)$/.exec(req.headers.authorization ?? '')?.[1];
+      if (!token || !(await jobs.verify(token))) return reply.code(401).send({ error: 'unauthorized' });
+      const { sent, failed, failures } = await jobs.email();
+      for (const f of failures) req.log.error({ job: 'email' }, `email failed ${f}`);
+      req.log.info({ job: 'email', sent, failed }, 'email job');
+      return { sent, failed };
     });
   }
 

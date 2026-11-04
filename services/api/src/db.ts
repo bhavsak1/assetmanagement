@@ -28,3 +28,11 @@ export function createDb(connectionString: string, max = 5) {
 
   return { pool, withUser };
 }
+
+// System jobs (story 9.1): role assetly_jobs, which can only run the job functions it is granted. No user,
+// no tenant context, no service-role key (CLAUDE.md §6.4). Each call is its own transaction.
+export function createJobsDb(connectionString: string, max = 2) {
+  const pool = new pg.Pool({ connectionString, max });
+  const query: Query = (text, values) => pool.query(text, values);
+  return { pool, query };
+}
