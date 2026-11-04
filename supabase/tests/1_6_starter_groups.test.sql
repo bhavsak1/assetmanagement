@@ -182,6 +182,11 @@ select tenant_id, id, 2, '["row"]' from public.security_group where code = 'tena
 -- 8.3: a mapping template.
 insert into public.import_mapping_template (tenant_id, name, headers, targets)
 select tenant_id, 'row', '{a}', '{}' from public.security_group where code = 'tenant_admin';
+-- 9.1: one alert per tenant, for its tenant admin (...a0001, ...b0001).
+insert into public.notification (tenant_id, user_id, event_id, event_type, domain, asset_id, payload)
+select tenant_id, ('00000000-0000-0000-0000-0000000' || left(name, 1) || '0001')::uuid, gen_random_uuid(),
+       'obligation.overdue', 'obligation', id, '{}'
+from public.asset where name in ('a-row', 'b-row');
 select is(array(select name from tenant_table where pg_temp.count_rows(name, $$tenant_id = '00000000-0000-0000-0000-00000000000b'$$) = 0 order by 1),
           '{}', 'every public tenant_id table holds tenant B rows to hide');
 -- One test per tenant A user, each acting as that user over every table. Plain queries, so RLS decides.
