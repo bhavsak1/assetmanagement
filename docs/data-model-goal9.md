@@ -275,3 +275,162 @@ Until `API_URL` is set, the email route stays off.
 
 Webhooks (9.3), WhatsApp (9.4), the `/v1` API (9.2), escalation, quiet hours, per-event preferences, a jobs page
 (BL-1), push notifications, notification retention or purge.
+
+---
+
+## 16. Story 9.1b: forgot password (design, waiting for the owner)
+
+**Goal:** a user who forgot the password asks for a link on the login page, gets one email through Resend, sets a
+new password on `/reset-password`, and signs in. Lifts the CLAUDE.md §13 rule "Forgot password is hidden until email
+sending exists". Auth settings: owner-review area (CLAUDE.md §9).
+
+**Facts checked (4 Nov 2026):**
+- `supabase/config.toml` has no `[auth.email.smtp]`. Local mail goes to Mailpit (`http://127.0.0.1:54324`), enough
+  for local tests. Staging is set through `[remotes.staging.auth]` and `config push` (README, 1.6b).
+- Staging is pinned to `max_frequency = "1m0s"` (one reset mail per address per minute) and `otp_length = 8`.
+  `otp_expiry` is not pinned, so a push sends the base value 3600 (1 hour). `config diff` shows the real value first.
+- The web client uses the default implicit flow (`apps/web/src/supabase.ts`). The screens file shows only a
+  "Forgot password?" link under Sign in; there is no reset screen, so the two new screens reuse `LoginFrame`.
+- Supabase answers `resetPasswordForEmail` with success for an unknown address, but with a 429 for a known address
+  asked again inside `max_frequency`. So the error itself can reveal the account (F6).
+- With custom SMTP, Supabase's own email limit (`email_sent`, per hour, whole project) applies. Resend free is
+  100 a day, shared with the 9.1 daily summary.
+
+### Flow
+
+```
+Login ──"Forgot password?"──> /forgot-password (email) ──resetPasswordForEmail──> Supabase Auth ──SMTP──> Resend ──> inbox
+inbox link: <site>/reset-password?token_hash=...&type=recovery
+/reset-password ──verifyOtp(token_hash, 'recovery')──> recovery session ──updateUser({ password })──> sign out ──> /login "Password changed"
+```
+
+No table, no migration, no token store: Supabase Auth issues, checks and expires the token (CLAUDE.md §14).
+
+### F1 Where SMTP settings live
+
+| Option | For | Against |
+|---|---|---|
+| **a `[remotes.staging.auth.email.smtp]` in `config.toml`, `pass = "env(SUPABASE_AUTH_SMTP_PASS)"`, applied with `config push`** | In git and reviewed; same path as every other Auth setting (1.6b); local keeps Mailpit | The owner sets the env var in the shell for each push, or the push fails |
+| b Dashboard only | No env var | Breaks CLAUDE.md §14 (no dashboard-only Auth changes); drifts from git |
+
+Settings: host `smtp.resend.com`, port `465`, user `resend`, pass = a Resend API key. **Lean: a**, with a **second
+Resend key, sending access only, just for Auth SMTP**, so it can be revoked without stopping the 9.1 summary. Cost to
+reverse: low.
+
+### F2 Sender
+
+| Option | |
+|---|---|
+| **a `Assetly <no-reply@<9.1 domain>>`** | Same verified domain, no new DNS. Tells users not to reply |
+| b `Assetly <alerts@<9.1 domain>>` | Same address as the summary; mixes alerts and security mail |
+
+**Lean: a.** Cost to reverse: none (one config line). **Owner: tell me the domain** (it is in the `EMAIL_FROM`
+GitHub variable, not in git).
+
+### F3 Email template
+
+`[auth.email.template.recovery]` with `subject` and `content_path = "./supabase/templates/recovery.html"` (in git,
+English only, like the 9.1 email). Short HTML:
+
+> **Subject:** Reset your Assetly password
+>
+> Someone asked to reset the password for your Assetly account. Use this link within 1 hour:
+> Set a new password (`{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}&type=recovery`)
+>
+> If you did not ask, ignore this email. Your password stays the same.
+
+| Option for the link | For | Against |
+|---|---|---|
+| **a `token_hash` link to our page; the page calls `verifyOtp`** | Mail scanners (Outlook Safe Links and similar) that open links do not burn the token, since only our page's script uses it. Works on any device | The template builds the URL itself |
+| b `{{ .ConfirmationURL }}` (Supabase verifies, redirects with tokens in the URL hash) | Default | A scanner's visit uses the one-time token; the user then sees "link expired" |
+| c PKCE flow | Token not in the URL | Works only in the browser that asked; a link opened on the phone fails |
+
+**Lean: a.** Cost to reverse: low (template and one page).
+
+### F4 Redirect URLs
+
+With F3 a the link uses `{{ .SiteURL }}`, so only `site_url` matters. Staging already has `site_url` and
+`additional_redirect_urls` = `https://assetly-staging.pages.dev`. Cloudflare preview URLs
+(`*.assetly-staging.pages.dev`) are **not** added: a reset link always lands on the main staging site.
+**Lean: no change.** Cost to reverse: none.
+
+### F5 Reset page
+
+- `/forgot-password` and `/reset-password` sit outside the signed-in guard, in `LoginFrame`.
+- `/reset-password` calls `verifyOtp` once on load. Bad, used or expired link: one message, "This link has expired
+  or was already used", and a link to ask again.
+- New password twice, must match. Length is checked by Auth (`minimum_password_length`, now 6). A weak-password
+  error from Auth shows one message.
+
+**Lean: as above.** Cost to reverse: low.
+
+### F6 Not revealing whether an email exists (CLAUDE.md §13)
+
+| Option | |
+|---|---|
+| **a Always the same message** after submit, whatever Auth returns (success, unknown, 429): "If an account exists for this email, we sent a link. Check your inbox." Only a network failure shows "Could not send. Try again." | Nothing leaks, including the 429 |
+| b Show the 429 as "Wait a minute" | Friendlier, but tells a stranger the address has an account |
+
+**Lean: a.** Cost to reverse: none.
+
+### F7 Rate limits
+
+| Setting | Now (staging) | Lean |
+|---|---|---|
+| `max_frequency` (per address) | 1 minute (pinned) | keep |
+| `email_sent` (per hour, whole project, applies once SMTP is on) | default 30 | **pin 30** in `[remotes.staging.auth.rate_limit]` |
+| `sign_in_sign_ups`, `token_verifications` (per IP, 5 min) | 30 | keep |
+| CAPTCHA on the forgot form | off | keep off for pilots (Turnstile later if abused; new account and secret) |
+
+Resend free is 100 a day for summaries and resets together; 30 an hour stops one burst from using it all.
+Cost to reverse: none.
+
+### F8 Link expiry
+
+| Option | |
+|---|---|
+| **a 1 hour** (`otp_expiry = 3600`, pin it on staging) | Supabase default; matches the email text |
+| b 15 minutes | Safer; users with slow mail miss it |
+| c 24 hours | Convenient; a long-lived key in an inbox |
+
+`otp_expiry` also sets other email links (invites, email change). **Lean: a.** Cost to reverse: none.
+
+### F9 Other sessions after a reset
+
+Supabase revokes the user's other refresh tokens when the password changes. Their access tokens still work until
+they expire (`jwt_expiry`, 1 hour).
+
+| Option | |
+|---|---|
+| a Stay signed in here, others out (Supabase default) | Smoothest |
+| **b Sign out everywhere (`signOut({ scope: 'global' })`), then the login page says "Password changed. Sign in with your new password."** | Clear; proves the new password works; the recovery session never becomes a working session |
+| c b, plus Supabase's "password changed" notice email (`[auth.email.notification.password_changed]`) | Tells the account owner if someone else did it; one more email against the quota |
+
+**Lean: b.** c is cheap; say if you want it. Cost to reverse: none.
+
+### Owner steps (after you answer; I never handle keys or passwords)
+
+1. Resend: create a second API key, **sending access only**, named `supabase-auth-smtp`.
+2. In your own shell (not in git, not in the repo `.env`): `export SUPABASE_AUTH_SMTP_PASS=<that key>`.
+3. `npx supabase config diff --project-ref blhxyfgkkhpqbfuhpnww`: check that only SMTP, the recovery template,
+   `otp_expiry` and `email_sent` change. Then `npx supabase config push --project-ref blhxyfgkkhpqbfuhpnww`.
+4. Merge the PR; Cloudflare deploys the web app. Then try a reset on staging with your own account.
+
+No migration, no `db push`, no service deploy.
+
+### DECIDE (9.1b)
+
+| # | Decision | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| F1 | SMTP settings | a `config.toml` + `env()` + `config push`, b dashboard | a, separate send-only Resend key | Low |
+| F2 | Sender | a `no-reply@<domain>`, b `alerts@<domain>` | a (tell me the domain) | None |
+| F3 | Template and link | a `token_hash` to our page, b `ConfirmationURL`, c PKCE | a, text as above | Low |
+| F4 | Redirect URLs | staging site only, no preview URLs | no change | None |
+| F5 | Reset page | `verifyOtp`, two fields, one message per case | as above | Low |
+| F6 | Generic message | a always the same, b show the 429 | a | None |
+| F7 | Rate limits | keep 1 min per address, pin `email_sent` 30/h, no CAPTCHA | as table | None |
+| F8 | Link expiry | a 1 h, b 15 min, c 24 h | a | None |
+| F9 | Other sessions | a default, b sign out everywhere, c b + changed-password email | b | None |
+
+**Not in 9.1b:** CAPTCHA, invites or signup, password rules beyond Auth's length check (raising
+`minimum_password_length` is a separate Auth change), MFA, SSO (Phase 2).
