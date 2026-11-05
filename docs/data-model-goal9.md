@@ -744,3 +744,266 @@ review point with about half the work, but you create keys by hand. **Say if you
 **Not in 9.2:** webhooks (9.3), upsert by tag, actions through the API (transfer, status, retire), bulk import by
 API, per-tenant rate limits, key scopes narrower than the integration user's groups, IP allowlists, a public docs
 site, OAuth client credentials, user tokens on `/v1`.
+
+---
+
+## 18. Story 9.3: webhooks with signing and retries
+
+**Status:** design, 5 Nov 2026. Nothing built. **Webhook signing and secrets are an owner-review area (CLAUDE.md §9).**
+
+**Goal:** an admin points a webhook at an HTTPS URL for chosen events. Each event is sent once per subscription,
+signed, retried on failure, and carries only what the subscriber identity may see (6.2 R3). Review point: "an
+external receiver gets a signed `asset.created` and can verify it; a field the identity cannot see is not in it".
+
+**Already decided, not reopened:**
+1. §3 N2: the 9.1 fan-out is the one outbox publisher. Webhooks fill their own delivery table in the same step.
+2. §17 A1: integration users are real identities with groups and scope. §17 A5: the service runs queries as an
+   identity by setting claims per transaction (`withUser`, `withKey`). One engine (CLAUDE.md §7.3).
+3. §10 N10: system jobs run as role `assetly_jobs` with execute on named definer functions only, called by Cloud
+   Scheduler with OIDC. No service-role key.
+4. 6.2 R3: outbox rows carry raw `old` and `new`. They must never be sent as they are.
+
+**Facts checked (5 Nov 2026):**
+- Outbox event types now: `<table>.insert|update|soft_delete|delete` (audit trigger), `obligation.due_soon|overdue`
+  (5.1), `coverage.expiring|expired` (9.1). Coverage-state refreshes write no event (4.4 C12). Status changes and
+  transfers update `asset`, so they arrive as `asset.update`. An import commit (8.6) writes one `asset.insert` per row.
+- The fan-out marks every event no consumer wants as published, up to 50,000 a run (§3). It must stop doing that for
+  events a live subscription wants.
+- `public.asset_view` (6.2) already masks money fields and filters custom-field keys for `auth.uid()`. `/v1`
+  builds its asset object from it (`ASSET_COLUMNS` in `services/api/src/v1.ts`).
+- Domain `api_keys` (`view`, `manage`) exists; Administrator holds both, Auditor `view`.
+- No webhook screen in `docs/assetly-screens.html` (open-items Section D lists it as missing).
+- Cloud Scheduler: 3 free jobs per billing account; 9.1 uses one.
+
+### Flow
+
+```
+change ──> outbox_event ──> fan-out (pg_cron, 1 min) ──> webhook_delivery rows (one per live subscription that wants the type)
+Cloud Scheduler (1 min) ──> POST /jobs/webhooks (service)
+   as assetly_jobs:  private.claim_webhooks(200)  -> delivery, url, secret(s), event, identity
+   as assetly_api:   withUser({sub: integration user, tenant_id}) -> build payload from asset_view etc. (RLS + 6.2 masks)
+   HTTPS POST, signed ──> receiver
+   as assetly_jobs:  private.finish_webhook(id, ok, status_code, error, ms) -> succeeded | retry later | failed
+```
+
+### W1 Who owns a webhook (the subscriber identity)
+
+| Option | For | Against |
+|---|---|---|
+| **a An integration user (9.2).** The subscription names one; payloads are built as that identity | Masking, scope and lost grants come from the existing engine. Same identity as the customer's API key, so webhook and `/v1` show the same fields | The admin must make an integration user first (already needed for a key) |
+| b The person who created it | No extra step | Breaks when the person leaves or changes groups; rejected for keys in A1 c |
+| c No identity, mask everything sensitive | Simple | Not "masked by the subscriber's field domains"; useless for finance integrations |
+
+**Lean: a.** Disabling the integration user, its membership or the tenant (suspended) stops its webhooks.
+Cost to reverse: medium once customers rely on it.
+
+### W2 Who manages webhooks
+
+| Option | |
+|---|---|
+| **a Reuse `api_keys`** (`view` lists subscriptions and deliveries, `manage` creates, edits, rotates, disables) | Same people, same screen, same owner-review area. No new domain or starter-group seed |
+| b New domain `webhooks` (`view`, `manage`) | Finer control; a seed migration and starter-group change to review |
+
+**Lean: a.** Cost to reverse: low (b is a later seed migration plus a function change). Note: as with keys (A2), a
+`manage` holder can point any integration user's data at any URL.
+
+### W3 Event types (v1 catalogue)
+
+| Webhook type | From outbox | Payload `data` |
+|---|---|---|
+| `asset.created` | `asset.insert` | `{ asset }` |
+| `asset.updated` | `asset.update` (includes status change, transfer, retire) | `{ asset }` |
+| `asset.deleted` | `asset.soft_delete` | `{ asset }` (soft-deleted rows stay readable) |
+| `obligation.due_soon`, `obligation.overdue` | 5.1 | `{ asset, obligation: { id, name, due_date } }` |
+| `coverage.expiring`, `coverage.expired` | 9.1 | `{ asset, coverage: { id, vendor_id, end_date } }` |
+| `webhook.test` | the "Send test" button | `{}` |
+
+A subscription picks one or more types (no wildcard). Nothing else in 9.3: no vendor, location, category, service
+record, security or import-level events. Each is additive later. `asset.updated` has **no list of changed fields**
+in v1: the raw diff can name a hidden field (W4).
+
+| Option | |
+|---|---|
+| **a As above** | Matches the knowledge base F17 (asset created, coverage expiring, service overdue) plus update and delete for sync |
+| b Alerts only (obligation and coverage) | Smallest; no sync use |
+| c Every table event | Large masking surface; one object shape per table |
+
+**Lean: a.** Cost to reverse: low (types are additive).
+
+### W4 Payload shape and masking (6.2 R3)
+
+The outbox payload is **never sent**. The sender uses only `event_type`, `aggregate_id` (and the asset id for alert
+events) from the outbox row, then reads the object **as the integration user** through `withUser` on the
+`assetly_api` pool: the same `asset_view` select and `ASSET_COLUMNS` as `GET /v1/assets/{id}`, and RLS selects for
+obligation and coverage. So:
+- money fields come out null without `asset_financials.view`, hidden custom keys are absent, scope applies;
+- a row the identity cannot see (no `view`, out of scope) gives no object: the delivery is marked `skipped`, not sent;
+- the object is its state **at send time**, so a retry carries the newest state.
+
+Body (Standard Webhooks shape, W5):
+
+```json
+{ "type": "asset.updated", "timestamp": "2026-11-05T10:00:00Z",
+  "data": { "event_id": "<outbox id>", "occurred_at": "...", "tenant_id": "...", "asset": { "...": "same as GET /v1/assets/{id}" } } }
+```
+
+| Option | For | Against |
+|---|---|---|
+| **a Fat event, built at send time as the identity** (above) | Masking by the one engine, no second mask list; same shape as `/v1` | One extra read per delivery; not a snapshot of the moment |
+| b Thin event (`type` + ids only); the receiver calls `/v1` | No masking question at all; smallest | Every receiver needs a key and a second call; alert details not in `/v1` yet |
+| c Mask the outbox diff in SQL per subscriber | Snapshot of the change | A second mask implementation that can drift from 6.2: the leak R3 warns about |
+
+**Lean: a.** Not stored: bodies are rebuilt on each attempt, so no masked data sits in the delivery log. Cost to
+reverse: medium after customers rely on the shape.
+
+### W5 Signing
+
+**Standard Webhooks** (an open spec; receivers can use its published libraries):
+- Headers `webhook-id` (the delivery id, same on every retry, for dedupe), `webhook-timestamp` (Unix seconds),
+  `webhook-signature: v1,<base64 HMAC-SHA256(secret, id + "." + timestamp + "." + body)>`.
+- Secret `whsec_` + base64 of 32 random bytes, made in Postgres with `gen_random_bytes` (like A3), **shown once**
+  at create and at rotate.
+- Replay window: the receiver rejects a timestamp more than 5 minutes old (stated in `docs/api-v1.md`, with a
+  Node and a Python verify snippet).
+- Rotate: a new secret; the old one keeps signing for 24 hours. During the overlap the header carries both
+  signatures (`v1,<new> v1,<old>`), which the spec allows. Receivers swap at their pace.
+
+| Option for storing the secret | For | Against |
+|---|---|---|
+| **a Plain in a `private` table**, readable only by `claim_webhooks` (jobs role) and never by any `authenticated` path | Simple; HMAC needs the raw secret, so a hash cannot work. A leaked secret lets someone forge webhooks to the customer; it reads no data | A database dump holds the secrets |
+| b Encrypted with a key in Secret Manager (service encrypts and decrypts, `node:crypto` AES-GCM) | A dump alone is useless | One more secret; creation and rotate must go through the service (a new user route), not a SQL function |
+| c Supabase Vault | Encrypted at rest, in SQL | Supabase-only (portability, CLAUDE.md §3) |
+
+**Lean: a,** with the reasons above. Cost to reverse: low (b is a migration plus a re-encrypt of a few rows).
+
+### W6 Who sends, how often
+
+| Option | For | Against |
+|---|---|---|
+| **a Service, `POST /jobs/webhooks`, Cloud Scheduler every minute with OIDC** (second of three free jobs) | Same path as 9.1 email (N1, N10); signing secret and HTTP calls stay out of Postgres | Cold start once a minute (Cloud Run free tier covers it); about 1 to 2 minutes from change to delivery |
+| b `pg_cron` + `pg_net` | No scheduler job | Supabase-only; HTTP from the database; hard SSRF control |
+| c Every 5 minutes | Fewer cold starts | Up to 6 minutes late |
+
+**Lean: a.** One run claims up to 200 deliveries, sends 10 at a time, 10 s timeout each, stops after 50 s. A run
+that hits the cap leaves the rest for the next minute. Cost to reverse: low.
+
+### W7 Enqueue, claim, retry, dead letter, auto-disable
+
+- **Enqueue** (in `private.fan_out_events`, before the bulk "published" mark): one `insert ... select` of
+  `private.webhook_delivery` rows for every unpublished event whose tenant has a live subscription for its mapped
+  type, `unique (subscription_id, event_id)`, `on conflict do nothing`. No permission check here; it happens at send
+  (W4), so a grant lost in between counts too.
+- **Claim:** `private.claim_webhooks(n)`, security definer, `for update skip locked`, rows `pending` and due, or
+  `sending` older than 2 minutes (crashed run). Oldest first. At most 20 per subscription per run, so one big import
+  for one customer does not starve the others.
+- **Success:** any 2xx within 10 s. Redirects are not followed (W8). Everything else, timeouts and network errors
+  are failures.
+- **Retry backoff** (from the first try): 1 min, 5 min, 30 min, 2 h, 6 h, 12 h, 24 h, 24 h: 9 attempts over about
+  3 days. Then `failed` (the dead letter: the row stays, visible in the log, W9). A `410 Gone` fails at once.
+- **Auto-disable:** a subscription whose deliveries have all failed for 3 days (no 2xx since, at least one `failed`)
+  is set `disabled_failing`. New events stop queuing for it. The admin sees it on the screen and re-enables it;
+  missed events are not re-sent.
+- **Ordering:** none promised. Receivers order by `occurred_at` or `asset.updated_at`. At least once: dedupe on
+  `webhook-id`.
+
+| Option | |
+|---|---|
+| **a As above** | Industry-normal (Stripe, Svix retry for about 3 days) |
+| b 5 tries over 1 day, like 9.1 email | Simpler; a weekend outage at the receiver loses events |
+| c a plus "Resend" on a failed delivery | Useful; one more function and button. Later |
+
+**Lean: a.** Cost to reverse: low.
+
+### W8 Target URL and SSRF guards
+
+- `https://` only, port 443 only, no user and password in the URL, at most 2,000 characters. Checked in SQL on
+  create and edit, and again in the service.
+- The service resolves the host itself and refuses private, loopback, link-local (`169.254.0.0/16`, the cloud
+  metadata server), CGNAT, multicast and IPv6 local ranges, then connects to the checked address (`node:https` with
+  a `lookup` hook, so DNS rebinding cannot swap it). Stdlib only, no new dependency.
+- Redirects are not followed. The response body is read up to 1 KB for the log, then dropped.
+- Locally and in tests, `WEBHOOK_ALLOW_INSECURE=1` allows `http://` and loopback. Never set on Cloud Run.
+
+| Option | |
+|---|---|
+| **a As above** | Blocks the known SSRF paths with stdlib |
+| b a, plus an egress proxy or VPC firewall | Stronger; costs money and setup |
+| c Only the scheme check | Smallest; the metadata server is reachable |
+
+**Lean: a.** Cost to reverse: low.
+
+### W9 Data, limits, retention
+
+- `private.webhook_subscription (id, tenant_id, integration_user_id, url, event_types text[], status
+  active|disabled|disabled_failing, secret, previous_secret, previous_until, last_success_at, created_at,
+  created_by, updated_at, updated_by, deleted_at)`. RLS on, no policies, no grants to `authenticated` (like
+  `api_key`). Composite FK `(tenant_id, integration_user_id)` to membership.
+- `private.webhook_delivery (id, tenant_id, subscription_id, event_id, event_type, status
+  pending|sending|succeeded|failed|skipped, attempts, next_try_at, claimed_at, last_status_code, last_error,
+  last_ms, created_at, finished_at)`. No body stored (W4).
+- Public functions (security definer, fixed `search_path`, checking `api_keys` and `tenant_can_write()` for writes):
+  `webhooks()`, `create_webhook(integration_user_id, url, event_types)` returns the secret once,
+  `update_webhook(id, url, event_types)`, `set_webhook_status(id, active|disabled)`,
+  `rotate_webhook_secret(id)` returns the new secret once, `delete_webhook(id)` (soft), `webhook_deliveries(id)`
+  (last 100, no body), `test_webhook(id)` (queues a `webhook.test`).
+- Limits: 10 live subscriptions per tenant; body at most 256 KB (larger: delivery `failed` with "too large", which
+  only an asset with huge custom fields could hit).
+- Delivery rows older than 30 days are deleted by a daily `pg_cron` job (like the 9.2 usage purge).
+
+**Lean: as above.** Cost to reverse: low before customers, medium after.
+
+### W10 Audit
+
+Subscription create, edit, status change, rotate and delete write `security` audit rows through
+`private.audit_security` (9.2), **never the secret**. No row trigger on the two tables, so the secret never reaches
+`audit_log` or the outbox (and a webhook about webhooks cannot loop). Deliveries are not audited (the delivery log is
+the record); each failure is also logged at `ERROR` by the service, so the 9.1 N8 b alert covers it.
+
+### W11 UI
+
+No screen in `docs/assetly-screens.html`. Lean: a **Webhooks** section in each integration user's panel on the
+existing Integrations tab (`/security?tab=integrations`), under its keys:
+- List: URL, events, status tag (Active, Disabled, Failing), last success.
+- "New webhook": URL and event checkboxes; then the secret once, with Copy and "You will not see this secret again".
+- Per row: Edit, Send test, Rotate secret (secret once), Disable or Enable, Delete (confirm).
+- "Deliveries": the last 100 (time, event, status, HTTP code, attempts, error).
+- Buttons need `api_keys.manage`; the list needs `api_keys.view`. All text in `en.json`.
+
+Option b: its own `/security?tab=webhooks` tab listing all subscriptions. Lean a: a webhook belongs to an
+integration user, like a key. Cost to reverse: low.
+
+### W12 Jobs role, endpoint, owner steps
+
+- `assetly_jobs` gains execute on `private.claim_webhooks` and `private.finish_webhook` only. Payload reads run on
+  the `assetly_api` pool as the integration user (W4), so the jobs role still reads no table.
+- `POST /jobs/webhooks`, same OIDC check as `/jobs/email`, on only when `JOBS_AUDIENCE` is set.
+- **Owner steps after the build:** push the migrations; deploy the API (no new secret); create the second Cloud
+  Scheduler job, every minute, OIDC, URI `$API_URL/jobs/webhooks` (command in the demo note).
+
+### Smaller option
+
+W3 b (alerts only) plus W4 b (thin events) and no screen (SQL functions on staging): drops masking and the UI,
+about a third of the work. It does not meet "payloads masked by the subscriber's field domains" in any useful way.
+**Say if you want it.**
+
+### DECIDE (9.3)
+
+| # | Decision | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| W1 | Subscriber identity | a integration user, b creator, c none (mask all) | a | Medium later |
+| W2 | Managing domain | a reuse `api_keys`, b new `webhooks` domain | a | Low |
+| W3 | Event types | a asset created / updated / deleted + 4 alerts + test, b alerts only, c every table | a, no changed-field list | Low |
+| W4 | Payload and masking | a fat, built at send as the identity from `asset_view`, b thin ids only, c mask the diff in SQL | a, not stored | Medium later |
+| W5 | Signing and secret | Standard Webhooks headers, `whsec_`, 5 min replay window, 24 h rotate overlap; store a plain in `private`, b encrypted with a service key, c Vault | a | Low |
+| W6 | Sender | a service via Cloud Scheduler every minute, b `pg_cron` + `pg_net`, c every 5 min | a, 200 a run, 10 parallel, 10 s timeout | Low |
+| W7 | Retry and disable | a 9 tries over ~3 days, `failed` dead letter, auto-disable after 3 days of failure, b 5 tries / 1 day, c a + Resend | a | Low |
+| W8 | SSRF | a https:443, resolve and block private ranges, pin address, no redirects, b + egress proxy, c scheme only | a | Low |
+| W9 | Data, limits | two `private` tables, definer functions, 10 subscriptions a tenant, 256 KB body, 30-day log | as W9 | Low now |
+| W10 | Audit | `audit_security`, no secret, no row trigger | as W10 | Low |
+| W11 | UI | a Webhooks section per integration user on Integrations, b own tab | a | Low |
+| W12 | Jobs path | `assetly_jobs` + 2 functions, `/jobs/webhooks` OIDC, second scheduler job | as W12 | Low |
+
+**Not in 9.3:** Resend or replay of a failed delivery, changed-field lists, wildcard or filtered subscriptions
+(by location or category), events for vendors, locations, service records, imports or security, ordering
+guarantees, mTLS or IP allowlists for receivers, an egress proxy, per-tenant delivery quotas, notifying admins when
+a webhook is auto-disabled (shown on the screen only), WhatsApp (9.4), MCP (9.5).
