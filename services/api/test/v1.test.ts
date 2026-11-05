@@ -115,6 +115,49 @@ test('create and change an asset; the audit row names the key', async () => {
   assert.equal((await send('POST', '/v1/assets', { name: 'Dup', category_id: category, tag: `V1-${run}-NEW` })).statusCode, 409);
 });
 
+test('9.5a: a client id makes create safe to retry', async () => {
+  const id = randomUUID();
+  const c = await send('POST', '/v1/assets', { id, name: 'Retry pump', category_id: category });
+  assert.equal(c.statusCode, 201);
+  assert.equal(c.json().id, id);
+  const again = await send('POST', '/v1/assets', { id, name: 'Retry pump', category_id: category });
+  assert.equal(again.statusCode, 409);
+  assert.equal((await get(`/v1/assets?category_id=${category}&limit=200`)).json().data.filter((a: { name: string }) => a.name === 'Retry pump').length, 1);
+});
+
+test('9.5a: deleted assets are tombstones with include_deleted, 410 on get and patch', async () => {
+  const id = randomUUID();
+  await asAdmin(async (q) => {
+    await q('insert into public.asset (id, tenant_id, tag, name, category_id, location_id, purchase_value, purchase_currency) values ($1, $2, $3, $4, $5, $6, 5, $7)',
+      [id, TENANT_A, `V1-${run}-DEL`, 'Gone pump', category, location, 'INR']);
+    await q('update public.asset set deleted_at = now() where id = $1', [id]);
+  });
+  const live = (await get(`/v1/assets?category_id=${category}&limit=200`)).json().data as { id: string }[];
+  assert.ok(!live.some((a) => a.id === id), 'left out by default');
+  assert.ok(live.every((a) => (a as { deleted_at?: unknown }).deleted_at === null), 'live rows say deleted_at null');
+
+  // Page one row at a time to the end: every live row and the tombstone, once each, in order.
+  const seen: { id: string; updated_at: string; deleted_at?: string | null }[] = [];
+  let cursor = '';
+  do {
+    const r = await get(`/v1/assets?category_id=${category}&include_deleted=true&limit=1${cursor && `&cursor=${cursor}`}`);
+    assert.equal(r.statusCode, 200);
+    seen.push(...r.json().data);
+    cursor = r.json().next_cursor ?? '';
+  } while (cursor);
+  assert.deepEqual(seen.map((a) => a.id).toSorted(), [...live.map((a) => a.id), id].toSorted());
+  const t = seen.find((a) => a.id === id)!;
+  assert.deepEqual(Object.keys(t).toSorted(), ['created_at', 'deleted_at', 'id', 'tag', 'updated_at'], 'only id, tag and timestamps');
+  assert.match(String(t.deleted_at), /Z$/);
+
+  const g = await get(`/v1/assets/${id}`);
+  assert.equal(g.statusCode, 410);
+  assert.equal(g.json().code, 'gone');
+  assert.equal(g.json().deleted_at, t.deleted_at);
+  assert.equal((await send('PATCH', `/v1/assets/${id}`, { model: 'X' })).statusCode, 410);
+  assert.equal((await get(`/v1/assets/${randomUUID()}`)).statusCode, 404, 'never existed stays 404');
+});
+
 test('bad bodies are 422 with the field named', async () => {
   const r = await send('POST', '/v1/assets', { category_id: category });
   assert.equal(r.statusCode, 422);

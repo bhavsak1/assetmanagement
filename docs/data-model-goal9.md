@@ -1008,3 +1008,259 @@ about a third of the work. It does not meet "payloads masked by the subscriber's
 (by location or category), events for vendors, locations, service records, imports or security, ordering
 guarantees, mTLS or IP allowlists for receivers, an egress proxy, per-tenant delivery quotas, notifying admins when
 a webhook is auto-disabled (shown on the screen only), WhatsApp (9.4), MCP (9.5).
+
+---
+
+## 19. Story 9.5: MCP server over `/v1`
+
+**Status:** the owner accepted every lean, M1 to M12 (5 Nov 2026). 9.5a built 5 Nov 2026 (own PR). 9.5b next.
+**API keys are an owner-review area (CLAUDE.md §9).**
+
+**As built, 9.5a:**
+- Migration `9_5a_asset_deleted_idx` (the index only; no policy change). Test `supabase/tests/9_5a_deleted_assets.test.sql` (8).
+- `src/v1.ts`: one query, a `union all` of live rows (`asset_view`) and, with `include_deleted`, tombstones
+  (`public.asset` under RLS), each branch ordered and limited, then merged by `(updated_at, id)`. Every asset row
+  now has `deleted_at` (`null` when live): an additive response field. `PATCH` of a deleted asset is `410` too.
+- A client `id` on `POST` that is already used, in any tenant, is `409` (UUID primary key). It tells a caller only
+  that a random UUID it chose exists; not worth a per-tenant check.
+- Tests: `services/api/test/v1.test.ts` (+2). Docs: api-v1.md §3 to §5.
+
+**Goal:** a customer's AI agent (Claude, ChatGPT, Cursor, an agent SDK) connects to Assetly with an `asly_` key and
+uses tools such as `list_assets`, `get_asset`, `create_asset`, `update_asset` and master-data lookups. It sees and
+changes exactly what `/v1` lets the same key see and change. Review point: "an MCP client connects to staging with a
+key, lists assets and creates one; the audit trail shows the integration user and the key; a field the key cannot see
+is in no tool result; a deleted asset reads as deleted, not as missing".
+
+**Already decided, not reopened:**
+1. §17 A1, A5: a key is an integration user; `withKey` sets claims per transaction; RLS decides. One engine
+   (CLAUDE.md §7.3). No new permission path.
+2. §17 A6: 120 calls a minute per key, counted in `private.api_key_usage`.
+3. §17 A7: data changes are audited by the row trigger with the integration user and `api_key_id`.
+4. MCP is not a model call. It is a protocol a customer's model uses to call us. So it is **not** behind the AI
+   gateway (CLAUDE.md §11), needs no AI entitlement and is not metered as AI. Goal 10 is separate.
+
+**Facts checked (5 Nov 2026):**
+- `public.asset_view` (6.1) has `a.deleted_at is null`, so `/v1` never shows a deleted asset. `GET /v1/assets/{id}`
+  answers `404` for deleted and for never-existed alike, and the list just loses the row (api-v1.md §4).
+- The `asset_select` policy (6.1) does **not** filter `deleted_at` (CLAUDE.md §7: soft-deleted rows stay readable),
+  but it applies tenant, `asset_core.view` and data scope. So a deleted row can be read from `public.asset` under
+  RLS with no new policy.
+- Soft delete is an update of `deleted_at`; the 3.1 `set_updated_at` trigger moves `updated_at` with it. Today the
+  only path that deletes assets is the 8.6 import undo. The web app has no asset delete; `/v1` has none.
+- The 3.1 index `asset_updated_idx (tenant_id, updated_at desc, id) where deleted_at is null` serves the `/v1`
+  cursor. It does not cover deleted rows.
+- `/v1` routes (`src/v1.ts`) carry full JSON Schemas (querystring, params, body, response) that Fastify's Ajv already
+  validates and `@fastify/swagger` turns into OpenAPI. They are the natural source for MCP tool schemas.
+- The CORS plugin sends nothing for `/v1/`. Fastify's `app.inject()` runs a route in-process with full validation,
+  hooks and error handler, with no network hop.
+- MCP (spec 2025-06-18 and later) has two transports: stdio (a local process) and Streamable HTTP (one `POST`
+  endpoint; JSON or SSE answers; sessions optional). The spec's HTTP auth is OAuth 2.1, but many clients can also send
+  a static `Authorization` header. To re-check at build time, since clients change fast: Claude Code, Cursor, VS Code,
+  the Claude API MCP connector (`authorization_token`) and the OpenAI Agents SDK / Responses API can send a bearer
+  header; the Claude.ai / Claude Desktop custom-connector screen and ChatGPT connectors want OAuth or no auth, so
+  Desktop needs the `mcp-remote` bridge and ChatGPT needs OAuth (M3).
+
+### Flow
+
+```
+agent -- POST /mcp, Authorization: Bearer asly_..., JSON-RPC tools/call {name, arguments} --> service
+  map tool -> /v1 route (method, path, query or body from arguments)
+  app.inject(that route, same Authorization header)   (in-process: Ajv, withKey, RLS, problem+json as today)
+  2xx -> result { structuredContent: <JSON>, content: [{ type: "text", text: <JSON> }] }
+  4xx -> result { isError: true, content: [{ type: "text", text: <problem JSON> }] }
+```
+
+One tool call = one `/v1` call = one count against the key's 120 a minute. Every check stays in Postgres.
+
+### M1 Deleted-asset visibility on `/v1` (first, its own small PR: 9.5a)
+
+An agent, and a sync script, must tell "removed" from "never existed or not yours".
+
+| Option | For | Against |
+|---|---|---|
+| **a Tombstones in the list, opt-in:** `GET /v1/assets?include_deleted=true` also returns deleted assets, in the same `(updated_at, id)` order, as `{ id, tag, deleted_at, updated_at }` only | One sync stream: a deletion arrives in order with every other change, so `updated_since` paging never misses one. Old clients do not pass the flag and see no change | Two row shapes in one `data` array (clients check `deleted_at`). The query reads `public.asset` (RLS, scope) next to `asset_view` |
+| b A separate list `GET /v1/assets/deleted?deleted_since=&cursor=`, ordered by `(deleted_at, id)` | One shape per list | A sync script runs two loops with two cursors |
+| c Only the `410` below | Smallest, no migration | A sync script still cannot learn about deletions |
+
+**With a or b: `GET /v1/assets/{id}` of a deleted asset the key could see answers `410 Gone`**, problem+json code
+`gone`, with `deleted_at`. Never existed, other tenant or out of scope stay `404` (no hint, as A10). The check is a
+second read of `public.asset` under RLS, only after the `asset_view` read finds nothing.
+
+A tombstone shows id, tag, `deleted_at`, `updated_at`. A key without `asset_core.view`, or whose scope does not cover
+the deleted row's location, gets nothing (the `asset_select` policy). No masked field is in it, so no secure view is
+needed.
+
+Index: one migration, `asset_deleted_idx on public.asset (tenant_id, updated_at, id) where deleted_at is not null`
+(small: deleted rows only). Tests: pgTAP that a deleted row reads through `public.asset` only with `asset_core.view`
+and in scope (the existing `tests.cross_tenant` line covers `asset` across tenants); service tests for the flag, the
+cursor across a deletion, `410` and `404`. Docs: api-v1.md §3 to §5.
+
+**Lean: a + `410`, shipped as 9.5a before the MCP part.** The MCP tools then expose `include_deleted` and return
+`gone`. Cost to reverse: medium once customers rely on it (additive inside v1, A9).
+
+### M2 Transport
+
+| Option | For | Against |
+|---|---|---|
+| **a Remote Streamable HTTP at `POST /mcp` in `services/api`, stateless** (no MCP session id, JSON answers, no SSE stream; `GET` and `DELETE` answer `405`) | Nothing to install for clients that take a URL and a header. No second service: same Cloud Run, pool and rate limit. Stateless fits scale-to-zero and several instances | Clients that speak only stdio, or only OAuth, need a bridge (M3) |
+| b A local stdio npm package (`@assetly/mcp`) that wraps `/v1` over HTTPS | Any stdio client, key in an env var | We publish and version an npm package; two code paths |
+| c Both | Widest reach | Most work |
+
+For stdio-only clients, the open-source `mcp-remote` bridge turns a) into stdio with no package of ours:
+`npx mcp-remote https://<api host>/mcp --header "Authorization: Bearer <key>"`. **Lean: a.** Cost to reverse: low
+(b can come later and call the same `/mcp`).
+
+### M3 Auth
+
+| Option | For | Against |
+|---|---|---|
+| **a Bearer `asly_` key only, as `/v1`.** Missing or bad key: HTTP `401` with `WWW-Authenticate: Bearer`, before any JSON-RPC work | No new auth path; nothing new for the owner to review beyond the route | Claude.ai / Desktop custom connectors and ChatGPT cannot paste a header (bridge for Desktop; ChatGPT waits) |
+| b a, plus OAuth 2.1 for MCP now (server metadata, dynamic client registration, consent screen, tokens mapped to an integration user) | Connect from Claude.ai and ChatGPT by URL with a sign-in | A whole new auth surface (owner review; CLAUDE.md §14 says no hand-rolled auth). Supabase's OAuth server issues user tokens, which `/v1` does not accept (A14) |
+
+**Lean: a; OAuth is a later story**, when a customer needs Claude.ai or ChatGPT by URL. Cost to reverse: none
+(additive). `/mcp` sends no CORS headers, like `/v1` (A14). A request with an `Origin` header outside the web
+allowlist is refused (`403`), as the MCP spec asks against DNS rebinding.
+
+### M4 Tools and schemas (one source of truth)
+
+| Tool | `/v1` route | Kind |
+|---|---|---|
+| `whoami` | `GET /v1/me` | read |
+| `list_assets` | `GET /v1/assets` (its filters, `limit`, `cursor`, M1 `include_deleted`) | read |
+| `get_asset` | `GET /v1/assets/{id}` | read |
+| `create_asset` | `POST /v1/assets` | write, idempotent with `id` (M6) |
+| `update_asset` | `PATCH /v1/assets/{id}` (`id` plus the body fields in one object) | write |
+| `list_categories`, `list_locations`, `list_asset_statuses` | the master-data lists | read |
+
+| Option | For | Against |
+|---|---|---|
+| **a A small table maps tool name to route. Input schema = the route's querystring, params and body schemas merged; output schema = its `200`/`201` schema; description = its `summary` and `description`. The call runs the route with `app.inject()`** | Schemas, validation, SQL, masking and errors exist once. A new `/v1` field shows in MCP with no MCP change | One in-process hop per call (microseconds) |
+| b MCP handlers with their own SQL through `withKey` | No inject | Two copies of every rule; drifts |
+
+**Lean: a.** The tool list is the same for every key. A key without a right gets a `403` tool error. (Filtering
+`tools/list` by the key's rights is possible with one `has_permission` query; not worth it now, since rights change
+mid-session and clients cache the list.) No delete, status-change or transfer tool: `/v1` has none (A8). Cost to
+reverse: low.
+
+### M5 How results look
+
+- Success: `structuredContent` is the `/v1` JSON as it is (`{ data, next_cursor }` for lists); `content` holds the
+  same JSON as text for clients that ignore structured content.
+- Lists keep the `/v1` limits (default 50, max 200). Tool descriptions tell the model to use filters and pass
+  `cursor` for more. No total counts (A10).
+- **Prompt injection (for docs/mcp.md):** asset names and custom values are customer text. An agent reading them may
+  meet instructions planted in the data. The customer's agent must treat tool results as untrusted. This is the main
+  reason to give an agent a read-only key unless it must write (M6).
+
+**Lean: as above.** Cost to reverse: low.
+
+### M6 Write safety
+
+The agent acts with the integration user's rights; nothing it says can widen them. What is left is mistakes and
+retries.
+
+| Measure | Lean |
+|---|---|
+| Tool annotations (`readOnlyHint`, `destructiveHint: false`, `idempotentHint`), so clients ask the human before a write | yes |
+| **Safe retries:** `create_asset` (and `POST /v1/assets`) take an optional client `id` (UUID). A retry with the same `id` gets `409 conflict`, not a second asset. Additive to v1, in 9.5a | yes |
+| A server-side `confirm: true` flag | no: the agent sets it itself, so it proves nothing. Human approval belongs to the client |
+| `dry_run`: run the write, return the result, roll back | no for now (cheap and additive later) |
+| An `Idempotency-Key` header with a stored-response table | no: a migration and storage for what the client `id` already gives |
+| Docs: one integration user and key per agent; a read-only group (Auditor) unless it must write; short expiry | yes |
+
+Cost to reverse: none (all additive).
+
+### M7 Limits
+
+- The same counter. Each `POST /mcp` costs one call against the key's 120 a minute: `tools/call` through its injected
+  `/v1` call; `initialize`, `tools/list` and `ping` through one `withKey` key check each.
+- Page limits are the `/v1` ones. Body limit: Fastify's default 1 MB. No separate MCP limit.
+
+**Lean: as above.** Cost to reverse: low.
+
+### M8 Errors
+
+| Case | MCP answer |
+|---|---|
+| Missing, bad, expired or revoked key | HTTP `401`, `WWW-Authenticate: Bearer`, problem+json (before JSON-RPC) |
+| Over the limit on `initialize`, `tools/list`, `ping` | HTTP `429` with `Retry-After` |
+| A `/v1` problem inside `tools/call` (`403`, `404`, `409`, `410`, `422`, `429`) | Tool result with `isError: true`; the text is the problem JSON (`status`, `code`, `detail`, `errors`, plus `retry_after` for 429), so the model can fix its input or wait |
+| Unknown tool, malformed JSON-RPC | JSON-RPC error (`-32602`, `-32600`) |
+| `/v1` `500` | Tool error `{ "code": "internal" }`, logged |
+
+**Lean: as above.** Cost to reverse: low.
+
+### M9 Dependency
+
+| Option | For | Against |
+|---|---|---|
+| **a `@modelcontextprotocol/sdk` (official): its low-level `Server` (takes plain JSON Schemas, so M4 a works) and `StreamableHTTPServerTransport` in stateless mode, given Fastify's raw request. Its `Client` drives the round-trip test** | Protocol version negotiation, notifications, batching rules and spec changes are kept upstream | One runtime dependency with its own tree (`zod`, `ajv`, Express-related packages); a bigger image |
+| b Hand-rolled JSON-RPC for `initialize`, `tools/list`, `tools/call`, `ping` (about 100 lines); the SDK as a dev dependency for the test only | No runtime dependency | We follow MCP spec versions ourselves |
+
+**Lean: a**, pinned to an exact version like the others. Cost to reverse: low (one module).
+
+### M10 Versioning
+
+- `/mcp` follows `/v1`'s rule (A9): only additive changes (new tools, new optional arguments, new result fields). A
+  breaking change gets new tool names or `/mcp/v2`, with the same 12-month overlap. Tool names are snake_case and
+  stable.
+- The MCP protocol version is negotiated by the SDK. `serverInfo` is `{ name: "assetly", version: "1" }`.
+
+**Lean: as above.** Cost to reverse: none now.
+
+### M11 Docs, UI, audit
+
+- **Docs:** `docs/mcp.md`: what it is, the URL, keys (link to api-v1.md §1), the tools, and setup for Claude Code
+  (`claude mcp add --transport http ... --header`), Claude Desktop (through `mcp-remote`), Cursor and VS Code, the
+  Claude API MCP connector and the OpenAI Agents SDK. ChatGPT and Claude.ai by URL: "needs OAuth, later". Plus the M5
+  injection note and the M6 advice. Each client setup is checked by hand at build time, with the date.
+- **UI:** none. (Small option: one line on the Integrations tab, "Connect an AI agent: `<api host>/mcp`, see the
+  docs".)
+- **Audit:** unchanged. A write through MCP is a `/v1` write, so its audit row has the integration user and
+  `api_key_id`. Cloud Logging gets one line per call with tool name, tenant and key id (never the key or the
+  arguments). To tell agent writes from script writes, give each agent its own integration user (M6). No `channel`
+  column.
+
+**Lean: as above.** Cost to reverse: low.
+
+### M12 Order and split
+
+- **9.5a:** M1 and the M6 client `id` (migration with the index, `/v1` changes, pgTAP and service tests,
+  api-v1.md). Its own PR.
+- **9.5b:** `/mcp` (M2 to M11), service tests including an SDK client round trip against the local database
+  (initialize, list tools, `list_assets`, `create_asset`, a hidden field absent, a `403` as a tool error, a bad key as
+  `401`), docs/mcp.md, types. Its own PR.
+
+**Lean: two PRs.** Cost to reverse: none.
+
+### Owner steps after the build (I never handle keys or passwords)
+
+1. Push the 9.5a migration to staging (your usual `db push` from current `main`).
+2. Run "Deploy API". No new secret, no new environment variable.
+3. On staging, make an integration user "Claude agent" with a key, then follow docs/mcp.md for Claude Code or Claude
+   Desktop.
+
+### DECIDE (9.5)
+
+| # | Decision | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| M1 | Deleted assets on `/v1` | a `include_deleted=true` tombstones in the list, b separate deleted list, c `410` only; `410 gone` on get with a or b | a + `410`, first, as 9.5a | Medium later |
+| M2 | Transport | a Streamable HTTP `POST /mcp` in services/api, stateless, b stdio npm package, c both | a (stdio clients use `mcp-remote`) | Low |
+| M3 | Auth | a Bearer `asly_` key only, b + OAuth 2.1 now | a, OAuth a later story | None |
+| M4 | Tools, schemas | a tool-to-route map, schemas from the route schemas, `app.inject`, same list for every key, b own handlers | a, 8 tools, no delete | Low |
+| M5 | Results | `/v1` JSON as structured content and text, `/v1` page limits, injection note in docs | as M5 | Low |
+| M6 | Write safety | annotations, optional client `id` on create; no confirm flag, no `dry_run`, no idempotency table; one key per agent | as M6 | None |
+| M7 | Limits | shared 120 a minute per key, one count per `POST /mcp` | as M7 | Low |
+| M8 | Errors | `401`/`429` at HTTP, `/v1` problems as `isError` tool results, JSON-RPC errors for protocol faults | as M8 | Low |
+| M9 | Dependency | a `@modelcontextprotocol/sdk` low-level `Server` + stateless transport, b hand-rolled JSON-RPC | a (new dependency) | Low |
+| M10 | Versioning | `/mcp` additive only, like A9 | as M10 | None now |
+| M11 | Docs, UI, audit | `docs/mcp.md` with client setups; no UI; audit unchanged plus one log line per call | as M11 | Low |
+| M12 | Split | 9.5a (`/v1` deleted visibility + client `id`), 9.5b (`/mcp`), two PRs | two PRs | None |
+
+**Smaller option:** M1 c (`410` only, no tombstones, no migration) and M9 b (no runtime dependency). Saves a
+migration and a dependency, but a sync script still cannot see deletions. **Say if you want this instead.**
+
+**Not in 9.5:** OAuth for MCP, a stdio npm package, per-key tool filtering, `dry_run`, delete, status or transfer
+tools, MCP resources and prompts, SSE streams and sessions, tools for vendors, coverage or obligations (each follows
+its own `/v1` endpoint), assets that leave a key's scope by a transfer (they drop out of the list with no tombstone,
+as today).
