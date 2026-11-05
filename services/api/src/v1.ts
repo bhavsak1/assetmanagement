@@ -70,7 +70,7 @@ const CREATE_ONLY = {
   location_id: uuidOrNull, status_id: { type: 'string', format: 'uuid', description: 'Left out: the default active status' } };
 
 const nullable = (type: string, extra: object = {}) => ({ type: [type, 'null'], ...extra });
-const ASSET = {
+export const ASSET = {
   $id: 'Asset', type: 'object',
   properties: {
     id: { type: 'string', format: 'uuid' }, tag: { type: 'string' }, name: { type: 'string' },
