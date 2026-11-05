@@ -1013,8 +1013,17 @@ a webhook is auto-disabled (shown on the screen only), WhatsApp (9.4), MCP (9.5)
 
 ## 19. Story 9.5: MCP server over `/v1`
 
-**Status:** design, 5 Nov 2026. DECIDE M1 to M12 not answered. Nothing built. **API keys are an owner-review area
-(CLAUDE.md §9).**
+**Status:** the owner accepted every lean, M1 to M12 (5 Nov 2026). 9.5a built 5 Nov 2026 (own PR). 9.5b next.
+**API keys are an owner-review area (CLAUDE.md §9).**
+
+**As built, 9.5a:**
+- Migration `9_5a_asset_deleted_idx` (the index only; no policy change). Test `supabase/tests/9_5a_deleted_assets.test.sql` (8).
+- `src/v1.ts`: one query, a `union all` of live rows (`asset_view`) and, with `include_deleted`, tombstones
+  (`public.asset` under RLS), each branch ordered and limited, then merged by `(updated_at, id)`. Every asset row
+  now has `deleted_at` (`null` when live): an additive response field. `PATCH` of a deleted asset is `410` too.
+- A client `id` on `POST` that is already used, in any tenant, is `409` (UUID primary key). It tells a caller only
+  that a random UUID it chose exists; not worth a per-tenant check.
+- Tests: `services/api/test/v1.test.ts` (+2). Docs: api-v1.md §3 to §5.
 
 **Goal:** a customer's AI agent (Claude, ChatGPT, Cursor, an agent SDK) connects to Assetly with an `asly_` key and
 uses tools such as `list_assets`, `get_asset`, `create_asset`, `update_asset` and master-data lookups. It sees and
