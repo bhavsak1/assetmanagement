@@ -448,7 +448,7 @@ No migration, no `db push`, no service deploy.
 
 ## 17. Story 9.2: public REST API `/v1`, API keys, integration users
 
-**Status:** built 5 Nov 2026, In review. The owner accepted every lean, A1 to A14 (5 Nov 2026), with A2 a: no group
+**Status:** Done (owner, 5 Nov 2026). Built 5 Nov 2026. The owner accepted every lean, A1 to A14 (5 Nov 2026), with A2 a: no group
 is made automatically with an integration user (an "own group per integration user" option is for a later review).
 Not on staging. **API keys are an owner-review area (CLAUDE.md §9).**
 
@@ -749,7 +749,8 @@ site, OAuth client credentials, user tokens on `/v1`.
 
 ## 18. Story 9.3: webhooks with signing and retries
 
-**Status:** design, 5 Nov 2026. Nothing built. **Webhook signing and secrets are an owner-review area (CLAUDE.md §9).**
+**Status:** design, 5 Nov 2026. **On hold** (owner, 5 Nov 2026): not in the demo version; resume when a customer
+needs it. DECIDE W1 to W12 not answered. Nothing built. Check the facts below again before building. **Webhook signing and secrets are an owner-review area (CLAUDE.md §9).**
 
 **Goal:** an admin points a webhook at an HTTPS URL for chosen events. Each event is sent once per subscription,
 signed, retried on failure, and carries only what the subscriber identity may see (6.2 R3). Review point: "an
