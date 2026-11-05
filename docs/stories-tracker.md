@@ -163,7 +163,7 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | 9.1b | Forgot password: Supabase Auth SMTP through the 9.1 provider (Resend), reset page, show the "Forgot password" link (CLAUDE.md §13). Owner-review area (Auth settings) | | Done |
 | 9.2 | Public REST API `/v1`, API keys, integration users (docs/data-model-goal9.md §17, docs/api-v1.md). Owner-review area (API keys) | | Done |
 | 9.3 | Webhooks with signing and retries. Payloads masked by the subscriber identity's field domains (outbox rows carry raw values; 6.2 R3). **On hold** until a customer needs it (owner, 5 Nov 2026); design ready in docs/data-model-goal9.md §18 | | Blocked |
-| 9.4 | WhatsApp channel | OQ-14 | Todo |
+| 9.4 | WhatsApp channel. **On hold**, not needed for now (owner, 5 Nov 2026); email (9.1) is the only notification channel | OQ-14 | Blocked |
 | 9.5 | MCP server over `/v1`: tools such as `list_assets`, `get_asset`, `create_asset`, `update_asset` and master-data lookups, so a customer's AI agent can call Assetly. Same API keys, integration users and security engine as 9.2; no new permission path. Not a model call, so not behind the AI gateway (CLAUDE.md §11). First add deleted-asset visibility to `/v1` (a `deleted_since` filter or tombstones), so an agent can tell removed from never existed. Owner-review area (API keys) | | Todo |
 
 ### Goal 10: AI add-on
@@ -242,3 +242,4 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 | 4 Nov 2026 | Backlog item BL-6 added (format, content and data of the daily email summary), asked by the owner after the first 9.1 email on staging |
 | 5 Nov 2026 | Story 9.5 added (MCP server over `/v1`), asked by the owner after testing 9.2 on staging |
 | 5 Nov 2026 | 9.2 Done (owner). 9.3 webhooks on hold until a real customer use, not in the demo version (owner); design kept in docs/data-model-goal9.md §18, DECIDE W1 to W12 open |
+| 5 Nov 2026 | 9.4 WhatsApp channel on hold, not needed for now (owner). OQ-14 stays open |
