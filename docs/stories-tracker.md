@@ -160,7 +160,7 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | ID | Story | Open items | Status |
 |---|---|---|---|
 | 9.1 | Outbox poller, in-app and email notifications (docs/data-model-goal9.md) | | Done |
-| 9.1b | Forgot password: Supabase Auth SMTP through the 9.1 provider (Resend), reset page, show the "Forgot password" link (CLAUDE.md §13). Owner-review area (Auth settings) | | In review |
+| 9.1b | Forgot password: Supabase Auth SMTP through the 9.1 provider (Resend), reset page, show the "Forgot password" link (CLAUDE.md §13). Owner-review area (Auth settings) | | Done |
 | 9.2 | Public REST API `/v1`, API keys, integration users | | Todo |
 | 9.3 | Webhooks with signing and retries. Payloads masked by the subscriber identity's field domains (outbox rows carry raw values; 6.2 R3) | | Todo |
 | 9.4 | WhatsApp channel | OQ-14 | Todo |
