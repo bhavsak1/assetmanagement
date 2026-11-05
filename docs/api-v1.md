@@ -6,6 +6,8 @@ person with the same groups and data scope would.
 
 The machine-readable spec (OpenAPI 3) is at `GET /v1/openapi.json`.
 
+To connect an AI agent (Claude, Cursor, an agent SDK) with the same key, see [mcp.md](mcp.md).
+
 ## 1. Get a key
 
 1. A security admin (Administrator group) opens **Security > Integrations** and clicks **New integration user**,

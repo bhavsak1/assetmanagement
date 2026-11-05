@@ -164,7 +164,7 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | 9.2 | Public REST API `/v1`, API keys, integration users (docs/data-model-goal9.md §17, docs/api-v1.md). Owner-review area (API keys) | | Done |
 | 9.3 | Webhooks with signing and retries. Payloads masked by the subscriber identity's field domains (outbox rows carry raw values; 6.2 R3). **On hold** until a customer needs it (owner, 5 Nov 2026); design ready in docs/data-model-goal9.md §18 | | Blocked |
 | 9.4 | WhatsApp channel | OQ-14 | Todo |
-| 9.5 | MCP server over `/v1`: tools such as `list_assets`, `get_asset`, `create_asset`, `update_asset` and master-data lookups, so a customer's AI agent can call Assetly. Same API keys, integration users and security engine as 9.2; no new permission path. Not a model call, so not behind the AI gateway (CLAUDE.md §11). First add deleted-asset visibility to `/v1` (a `deleted_since` filter or tombstones), so an agent can tell removed from never existed. Owner-review area (API keys) | | Todo |
+| 9.5 | MCP server over `/v1`: tools such as `list_assets`, `get_asset`, `create_asset`, `update_asset` and master-data lookups, so a customer's AI agent can call Assetly. Same API keys, integration users and security engine as 9.2; no new permission path. Not a model call, so not behind the AI gateway (CLAUDE.md §11). First add deleted-asset visibility to `/v1` (a `deleted_since` filter or tombstones), so an agent can tell removed from never existed. Owner-review area (API keys). Design and as built: data-model-goal9.md §19; two PRs, 9.5a (`/v1` deleted assets) then 9.5b (`/mcp`) | | In review |
 
 ### Goal 10: AI add-on
 **Review point:** smart import and query-based insights working behind the gateway.
