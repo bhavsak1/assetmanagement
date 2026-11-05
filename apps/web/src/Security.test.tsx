@@ -254,3 +254,58 @@ test('explainer: an asset tag the caller cannot see is not found', async () => {
   expect(container.querySelector('[role="alert"]')!.textContent).toBe(s.explain.assetNotFound)
   expect(db.rpc).not.toHaveBeenCalledWith('explain_access', expect.anything())
 })
+
+// 9.2: integration users and API keys.
+const KEY = 'asly_AbCdEfGhIjKl_' + 'x'.repeat(43)
+function integrationRpc() {
+  db.rpc.mockReset().mockImplementation((name: string) => {
+    if (name === 'security_members')
+      return {
+        data: [
+          { user_id: 'u1', display_name: 'Priya', email: 'priya@example.com', status: 'active', kind: 'person' },
+          { user_id: 'i1', display_name: 'ERP sync', email: 'i1@integration.invalid', status: 'active', kind: 'integration' },
+        ],
+        error: null,
+      }
+    if (name === 'api_keys')
+      return { data: [{ id: 'k1', user_id: 'i1', name: 'Main', prefix: 'AbCdEfGhIjKl', expires_at: '2999-01-01T00:00:00Z', revoked_at: null, last_used_at: null, created_at: '2026-11-05T00:00:00Z' }], error: null }
+    if (name === 'create_api_key') return { data: [{ id: 'k2', key: KEY }], error: null }
+    return { data: 'ok', error: null }
+  })
+}
+
+test('integrations: the tab needs api_keys.view', async () => {
+  integrationRpc()
+  await render(true, true)
+  expect(button(s.tabs.integrations)).toBeUndefined()
+})
+
+test('integrations: lists users and keys, shows a new key once, revokes', async () => {
+  integrationRpc()
+  await act(async () => root.render(<SecurityPage tenantId="ta" canView canManage canViewKeys canManageKeys />))
+  await act(async () => button(s.tabs.integrations)!.click())
+  expect(container.textContent).toContain(`ERP sync ${s.integrations.tag}`)
+  expect(container.textContent).not.toContain('i1@integration.invalid')
+  expect(container.textContent).toContain('asly_AbCdEfGhIjKl_…')
+
+  await act(async () => button(s.integrations.newKey)!.click())
+  container.querySelector<HTMLInputElement>('form input[name="name"]')!.value = 'Nightly'
+  await act(async () => container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  expect(db.rpc).toHaveBeenCalledWith('create_api_key', expect.objectContaining({ p_user_id: 'i1', p_name: 'Nightly' }))
+  expect(container.querySelector('[role="status"] code')?.textContent).toBe(KEY)
+  await act(async () => button(s.integrations.done)!.click())
+  expect(container.textContent).not.toContain(KEY)
+
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+  await act(async () => button(s.integrations.revoke)!.click())
+  expect(db.rpc).toHaveBeenCalledWith('revoke_api_key', { p_key_id: 'k1' })
+})
+
+test('integrations: view only has no buttons', async () => {
+  integrationRpc()
+  await act(async () => root.render(<SecurityPage tenantId="ta" canView canManage={false} canViewKeys canManageKeys={false} />))
+  await act(async () => button(s.tabs.integrations)!.click())
+  expect(button(s.integrations.add)).toBeUndefined()
+  expect(button(s.integrations.newKey)).toBeUndefined()
+  expect(button(s.integrations.revoke)).toBeUndefined()
+})

@@ -975,7 +975,8 @@
       "assignments": "Assignments",
       "profiles": "Scope profiles",
       "review": "Access review",
-      "changes": "Change sets"
+      "changes": "Change sets",
+      "integrations": "Integrations"
     },
     "groups": {
       "title": "Groups",
@@ -1180,6 +1181,48 @@
         "disabled": "Disabled"
       },
       "none": "No assignments match."
+    },
+    "integrations": {
+      "intro": "Integration users are identities for scripts and other systems. They cannot sign in. Give one groups on the Assignments tab, like a person, then make an API key for it.",
+      "tag": "Integration",
+      "add": "New integration user",
+      "name": "Name",
+      "users": "Integration users",
+      "noUsers": "No integration users yet.",
+      "status": "Status",
+      "groups": "Groups",
+      "noGroups": "No groups yet",
+      "activeKeys": "Active keys",
+      "actions": "Actions",
+      "active": "Active",
+      "disabled": "Disabled",
+      "disable": "Disable",
+      "enable": "Enable",
+      "keys": "API keys",
+      "noKeys": "No API keys yet.",
+      "newKey": "New key",
+      "keyName": "Key name",
+      "user": "Integration user",
+      "expiry": "Expires",
+      "days90": "In 90 days",
+      "days365": "In 1 year",
+      "onDate": "On a date",
+      "date": "Date",
+      "prefix": "Key",
+      "created": "Created",
+      "lastUsed": "Last used",
+      "never": "Never",
+      "revoked": "Revoked",
+      "expired": "Expired",
+      "revoke": "Revoke",
+      "revokeConfirm": "Revoke this key? Scripts that use it stop working at once.",
+      "shownTitle": "Your new API key",
+      "shownHint": "Copy it now and keep it safe. You will not see this key again.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "done": "Done",
+      "tooMany": "An integration user can have at most 5 active keys. Revoke one first.",
+      "badExpiry": "Pick an expiry in the future, at most 2 years away."
     }
   },
   "import": {

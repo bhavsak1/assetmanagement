@@ -207,14 +207,14 @@ isOneToOne: false
                   ]
                 },"audit_log": {
                   Row: {
-                    "action": string,"actor_type": string,"actor_user_id": string | null,"category": string,"id": string,"new_data": Json | null,"occurred_at": string,"old_data": Json | null,"reason": string | null,"record_id": string,"table_name": string,"tenant_id": string,"transaction_id": number
+                    "action": string,"actor_type": string,"actor_user_id": string | null,"api_key_id": string | null,"category": string,"id": string,"new_data": Json | null,"occurred_at": string,"old_data": Json | null,"reason": string | null,"record_id": string,"table_name": string,"tenant_id": string,"transaction_id": number
                   }
                   ComputedFields: never
                   Insert: {
-                    "action": string,"actor_type": string,"actor_user_id"?: string | null,"category": string,"id"?: string,"new_data"?: Json | null,"occurred_at"?: string,"old_data"?: Json | null,"reason"?: string | null,"record_id": string,"table_name": string,"tenant_id": string,"transaction_id"?: number
+                    "action": string,"actor_type": string,"actor_user_id"?: string | null,"api_key_id"?: string | null,"category": string,"id"?: string,"new_data"?: Json | null,"occurred_at"?: string,"old_data"?: Json | null,"reason"?: string | null,"record_id": string,"table_name": string,"tenant_id": string,"transaction_id"?: number
                   }
                   Update: {
-                    "action"?: string,"actor_type"?: string,"actor_user_id"?: string | null,"category"?: string,"id"?: string,"new_data"?: Json | null,"occurred_at"?: string,"old_data"?: Json | null,"reason"?: string | null,"record_id"?: string,"table_name"?: string,"tenant_id"?: string,"transaction_id"?: number
+                    "action"?: string,"actor_type"?: string,"actor_user_id"?: string | null,"api_key_id"?: string | null,"category"?: string,"id"?: string,"new_data"?: Json | null,"occurred_at"?: string,"old_data"?: Json | null,"reason"?: string | null,"record_id"?: string,"table_name"?: string,"tenant_id"?: string,"transaction_id"?: number
                   }
                   Relationships: [
                     {
@@ -1225,14 +1225,14 @@ isOneToOne: false
                   ]
                 },"user_profile": {
                   Row: {
-                    "created_at": string,"created_by": string | null,"deleted_at": string | null,"display_name": string,"email": string,"id": string,"updated_at": string,"updated_by": string | null
+                    "created_at": string,"created_by": string | null,"deleted_at": string | null,"display_name": string,"email": string,"id": string,"kind": string,"updated_at": string,"updated_by": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"display_name": string,"email": string,"id": string,"updated_at"?: string,"updated_by"?: string | null
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"display_name": string,"email": string,"id": string,"kind"?: string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Update: {
-                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"display_name"?: string,"email"?: string,"id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"display_name"?: string,"email"?: string,"id"?: string,"kind"?: string,"updated_at"?: string,"updated_by"?: string | null
                   }
                   Relationships: [
                     {
@@ -1587,6 +1587,11 @@ isOneToOne: false
 "allowed_asset_statuses":
 { Args: { "p_asset_id": string }; Returns: string[]
                            },
+"api_keys":
+{ Args: Record<PropertyKey, never>; Returns: {
+              "created_at": string,"expires_at": string,"id": string,"last_used_at": string,"name": string,"prefix": string,"revoked_at": string,"user_id": string
+            }[]
+                           },
 "asset_attachments":
 { Args: { "p_asset_id": string }; Returns: {
               "created_at": string,"file_name": string,"id": string,"mime_type": string,"size_bytes": number,"uploaded_by": string
@@ -1629,8 +1634,16 @@ isOneToOne: false
 "count_assets":
 { Args: { "p_category_id"?: string,"p_coverage"?: string,"p_location_id"?: string,"p_status"?: string,"p_status_id"?: string,"p_term"?: string,"p_vendor_id"?: string }; Returns: number
                            },
+"create_api_key":
+{ Args: { "p_expires_at": string,"p_name": string,"p_user_id": string }; Returns: {
+              "id": string,"key": string
+            }[]
+                           },
 "create_asset_with_warranty":
 { Args: { "p_asset": Json,"p_coverages": Json }; Returns: string
+                           },
+"create_integration_user":
+{ Args: { "p_name": string }; Returns: string
                            },
 "discard_change_set":
 { Args: { "p_change_set_id": string }; Returns: undefined
@@ -1732,9 +1745,12 @@ isOneToOne: false
 "preview_asset_tag":
 { Args: { "p_category_id"?: string,"p_location_id"?: string,"p_pattern": string }; Returns: string
                            },
+"revoke_api_key":
+{ Args: { "p_key_id": string }; Returns: string
+                           },
 "security_members":
 { Args: Record<PropertyKey, never>; Returns: {
-              "display_name": string,"email": string,"status": string,"user_id": string
+              "display_name": string,"email": string,"kind": string,"status": string,"user_id": string
             }[]
                            },
 "select_tenant":
@@ -1758,6 +1774,9 @@ isOneToOne: false
                            },
 "set_group_policies":
 { Args: { "p_group_id": string,"p_operation_ids": (string)[] }; Returns: undefined
+                           },
+"set_integration_user_status":
+{ Args: { "p_status": string,"p_user_id": string }; Returns: string
                            },
 "transfer_asset":
 { Args: { "p_asset_id": string,"p_reason": string,"p_to_location_id": string }; Returns: undefined

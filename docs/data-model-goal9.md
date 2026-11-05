@@ -449,8 +449,30 @@ No migration, no `db push`, no service deploy.
 
 ## 17. Story 9.2: public REST API `/v1`, API keys, integration users
 
-**Status:** design, 5 Nov 2026. Waiting for the owner on A1 to A14. **API keys are an owner-review area (CLAUDE.md §9).**
-Nothing is built.
+**Status:** built 5 Nov 2026, In review. The owner accepted every lean, A1 to A14 (5 Nov 2026), with A2 a: no group
+is made automatically with an integration user (an "own group per integration user" option is for a later review).
+Not on staging. **API keys are an owner-review area (CLAUDE.md §9).**
+
+**As built (differences from the design below):**
+- Migrations: `9_2_integration_user` (`user_profile.kind`, `audit_log.api_key_id` and `audit_row` filling it,
+  `private.audit_security`, `create_integration_user`, `set_integration_user_status`, `security_members` with `kind`,
+  last-admin guard and fan-out count people only) and `9_2_api_key` (`private.api_key`, `private.api_key_usage`,
+  `create_api_key`, `revoke_api_key`, `api_keys()`, `private.api_key_identity`, daily purge
+  `assetly_purge_api_key_usage` at 03:41 UTC).
+- `api_key_identity` takes the whole key and splits it in SQL. The auth user is banned until `2999-12-31`, not
+  `infinity`, to stay a plain date for Auth's own parsing. No new index: the 3.1 `asset_updated_idx` serves the cursor.
+- Key and integration-user changes are audited by `private.audit_security` (no secret, no hash), not the row
+  trigger, so the hash never reaches the audit log or the outbox (and 9.3 webhooks).
+- The asset domain is `asset_core` (the design said `asset`).
+- Service: `withKey` in `src/db.ts`, routes in `src/v1.ts`, `@fastify/swagger` 9.9.3. Fastify's Ajv now refuses
+  unknown body fields instead of stripping them (`removeAdditional: false`), so a `PATCH` with `status` is a 422, not a
+  silent no-op. Writing `purchase_value` without `asset_financials.update` is a 403 (the 3.3 trigger).
+- `/v1/me` returns `user_id, name, tenant_id, tenant_name`. Master-data lists are one page (`next_cursor: null`).
+- Web: an "Integrations" tab on `/security`, shown with `api_keys.view`. Member pickers show "(Integration)" instead
+  of the placeholder email.
+- Customer docs: `docs/api-v1.md`. No new environment variable.
+- Tests: `supabase/tests/9_2_api_keys.test.sql` (52), `services/api/test/v1.test.ts` (12),
+  `apps/web/src/Security.test.tsx` (+3).
 
 **Goal:** an admin creates an integration user, gives it groups like any user, and issues an API key. An external
 script calls `/v1` with the key and reads (and, if its groups allow, writes) assets. It sees exactly what a person

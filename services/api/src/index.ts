@@ -21,6 +21,7 @@ if (jobsDb) {
 const app = buildApp({
   verify: createVerifier(env('SUPABASE_URL')),
   withUser: db.withUser,
+  withKey: db.withKey,
   jobs,
   corsOrigins: (process.env.CORS_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
   // JSON lines on stdout; Cloud Logging reads `severity`. Pino logs no headers, so no token in logs.

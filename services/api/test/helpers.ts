@@ -36,7 +36,7 @@ export async function tokenFor(email: string, tenantId: string): Promise<string>
 
 export function makeApp(poolSize?: number) {
   const db = createDb(DATABASE_URL, poolSize);
-  const app = buildApp({ verify: createVerifier(SUPABASE_URL), withUser: db.withUser });
+  const app = buildApp({ verify: createVerifier(SUPABASE_URL), withUser: db.withUser, withKey: db.withKey });
   return { app, db };
 }
 
