@@ -1,15 +1,19 @@
 import cors from '@fastify/cors';
+import swagger from '@fastify/swagger';
 import Fastify, { type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import type { Verify } from './auth.ts';
 import type { createDb } from './db.ts';
 import type { JobsVerify } from './email.ts';
 import { HEADER_SCAN, stageXlsx } from './imports.ts';
 import { templateLists, templateXlsx, type Target } from './mapping.ts';
+import { v1 } from './v1.ts';
 import { ImportError } from './xlsx.ts';
 
 type Deps = {
   verify: Verify;
   withUser: ReturnType<typeof createDb>['withUser'];
+  // 9.2: /v1 is on only when given (tests of other routes leave it out).
+  withKey?: ReturnType<typeof createDb>['withKey'];
   logger?: FastifyServerOptions['logger'];
   corsOrigins?: string[];
   maxParses?: number;
@@ -22,15 +26,28 @@ const MAX_FILE = 10 * 2 ** 20; // I2
 const ACTION_TIMEOUT = '280s';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function buildApp({ verify, withUser, logger = false, corsOrigins = [], maxParses = 3, jobs }: Deps) {
-  const app = Fastify({ logger });
+export function buildApp({ verify, withUser, withKey, logger = false, corsOrigins = [], maxParses = 3, jobs }: Deps) {
+  // 9.2: refuse unknown fields (Fastify's default strips them, so a PATCH of status would silently do nothing).
+  const app = Fastify({ logger, ajv: { customOptions: { removeAdditional: false } } });
 
   // I12, I13: only the listed web origins; the token goes in a header, never a cookie.
+  // 9.2 A14: /v1 is server to server, so it sends no CORS headers and a browser page cannot call it.
   app.register(cors, {
-    origin: corsOrigins,
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Authorization', 'Content-Type', 'X-File-Name'],
+    delegator: async (req: FastifyRequest) => req.url.startsWith('/v1/') ? { origin: false } : {
+      origin: corsOrigins,
+      methods: ['GET', 'POST'],
+      allowedHeaders: ['Authorization', 'Content-Type', 'X-File-Name'],
+    },
   });
+  // 9.2 A11: the OpenAPI document is built from the /v1 route schemas (tagged routes only), at /v1/openapi.json.
+  app.register(swagger, {
+    hideUntagged: true,
+    openapi: {
+      info: { title: 'Assetly API', version: '1', description: 'See docs/api-v1.md. Errors are application/problem+json.' },
+      components: { securitySchemes: { apiKey: { type: 'http', scheme: 'bearer', description: 'An API key: asly_...' } } },
+    },
+  });
+  if (withKey) app.register(v1(withKey), { prefix: '/v1' });
   // The request body is the file itself; no multipart.
   app.addContentTypeParser(XLSX, { parseAs: 'buffer', bodyLimit: MAX_FILE }, (_req, body, done) => done(null, body));
 

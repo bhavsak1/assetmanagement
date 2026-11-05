@@ -444,3 +444,304 @@ No migration, no `db push`, no service deploy.
 
 **Not in 9.1b:** CAPTCHA, invites or signup, password rules beyond Auth's length check (raising
 `minimum_password_length` is a separate Auth change), MFA, SSO (Phase 2).
+
+---
+
+## 17. Story 9.2: public REST API `/v1`, API keys, integration users
+
+**Status:** built 5 Nov 2026, In review. The owner accepted every lean, A1 to A14 (5 Nov 2026), with A2 a: no group
+is made automatically with an integration user (an "own group per integration user" option is for a later review).
+Not on staging. **API keys are an owner-review area (CLAUDE.md §9).**
+
+**As built (differences from the design below):**
+- Migrations: `9_2_integration_user` (`user_profile.kind`, `audit_log.api_key_id` and `audit_row` filling it,
+  `private.audit_security`, `create_integration_user`, `set_integration_user_status`, `security_members` with `kind`,
+  last-admin guard and fan-out count people only) and `9_2_api_key` (`private.api_key`, `private.api_key_usage`,
+  `create_api_key`, `revoke_api_key`, `api_keys()`, `private.api_key_identity`, daily purge
+  `assetly_purge_api_key_usage` at 03:41 UTC).
+- `api_key_identity` takes the whole key and splits it in SQL. The auth user is banned until `2999-12-31`, not
+  `infinity`, to stay a plain date for Auth's own parsing. No new index: the 3.1 `asset_updated_idx` serves the cursor.
+- Key and integration-user changes are audited by `private.audit_security` (no secret, no hash), not the row
+  trigger, so the hash never reaches the audit log or the outbox (and 9.3 webhooks).
+- The asset domain is `asset_core` (the design said `asset`).
+- Service: `withKey` in `src/db.ts`, routes in `src/v1.ts`, `@fastify/swagger` 9.9.3. Fastify's Ajv now refuses
+  unknown body fields instead of stripping them (`removeAdditional: false`), so a `PATCH` with `status` is a 422, not a
+  silent no-op. Writing `purchase_value` without `asset_financials.update` is a 403 (the 3.3 trigger).
+- `/v1/me` returns `user_id, name, tenant_id, tenant_name`. Master-data lists are one page (`next_cursor: null`).
+- Web: an "Integrations" tab on `/security`, shown with `api_keys.view`. Member pickers show "(Integration)" instead
+  of the placeholder email.
+- Customer docs: `docs/api-v1.md`. No new environment variable.
+- Tests: `supabase/tests/9_2_api_keys.test.sql` (52), `services/api/test/v1.test.ts` (12),
+  `apps/web/src/Security.test.tsx` (+3).
+
+**Goal:** an admin creates an integration user, gives it groups like any user, and issues an API key. An external
+script calls `/v1` with the key and reads (and, if its groups allow, writes) assets. It sees exactly what a person
+with the same groups and scope would see. Review point of Goal 9 (second half): "an external script reads assets
+through the API".
+
+**Already decided, not reopened:**
+1. CLAUDE.md §6.7: `/v1` is its own contract, not Supabase's auto API. §7.3: one engine for UI, API, integration users.
+2. 8.1: every query goes through `withUser` (role `assetly_api`, `noinherit`, `set_config(..., true)` per
+   transaction). No service-role key. No minted JWTs (8.1 §2 rejected minting: too much power).
+3. technical-architecture.md §6: `/v1`, OpenAPI documented, cursor paging, keys per tenant, hashed, shown once,
+   revocable, mapped to an integration user, rate limits and usage logs per key.
+4. Webhooks are 9.3.
+
+**Facts checked (5 Nov 2026):**
+- Domain `api_keys` (platform, `view`, `manage`) is seeded since 1.2. Starter groups: Administrator holds both,
+  Auditor holds `view`. No new domain is needed for the keys screen.
+- Every identity is a `user_profile` row, and `user_profile.id` references `auth.users (id)`. Every `created_by`,
+  `updated_by`, membership, group assignment, scope profile and `user_effective_permission` row points at
+  `user_profile`. `auth.uid()` reads `sub` from the claims the service sets.
+- `has_permission`, the 6.1 scope helpers and the 6.2 secure views (`asset_view`, `hidden_field_keys`) read only
+  `auth.uid()` and `tenant_id`. So an identity that is a `user_profile` with a membership gets the whole engine
+  with **no policy change**.
+- The UI writes assets with plain `insert` and `update` on `public.asset` under RLS (3.3 write-rule triggers),
+  status through `change_asset_status`, location through `transfer_asset`. `asset.tag` is unique per tenant.
+- 9.1 fan-out notifies every active member who holds `obligation.update` or `coverage_contract.update`, and queues a
+  daily email to `user_profile.email`. The 6.3 last-admin guard counts active members with `users_security.manage`.
+  An integration user would be caught by both unless excluded (A12).
+- `docs/assetly-screens.html` has no API keys or integrations screen. The Security screen exists (6.3).
+- The service already registers `@fastify/cors` with an allowlist for the web app (8.2).
+
+### Flow
+
+```
+script -- Authorization: Bearer asly_<prefix>_<secret> --> service /v1/...
+  begin
+    as assetly_api, no role set:  select * from private.api_key_identity(prefix, secret)
+                                  (hash check, expiry, revoke, membership, rate count)
+    set_config('role', 'authenticated', true), set_config('request.jwt.claims', {sub, tenant_id, ...}, true)
+    the route's queries, under RLS, as the integration user
+  commit
+```
+
+One transaction, one extra statement. The key never leaves the service; Postgres stores only its hash.
+
+### A1 What an integration user is
+
+| Option | For | Against |
+|---|---|---|
+| **a A real `auth.users` row with no password and no identity, plus `user_profile.kind = 'integration'`, plus a normal `tenant_membership`** | Every FK, group assignment, scope profile, secure view, audit `created_by` and the explainer (6.5) work unchanged. It cannot sign in: no password, no identity, `banned_until = 'infinity'`. Same SQL insert as `seed.sql` | Writes to `auth.users` from a migration-owned function (a Supabase table; on a move to self-hosting this becomes a plain `users` row). Placeholder email `<id>@integration.invalid` |
+| b A separate `integration_user` table | Clean split from people | Every FK to `user_profile` (dozens), `user_effective_permission`, scope and the explainer must accept a second identity type. Large, risky change to the security engine |
+| c No integration user: a key acts as the person who made it | Smallest | The key dies when the person leaves; audit shows the person; breaks security-model.md §3 |
+
+**Lean: a.** One integration user belongs to one tenant only. Cost to reverse: **high** once keys and audit rows exist.
+
+### A2 Who creates them, and how they get rights
+
+- `public.create_integration_user(name)` and `public.set_integration_user_status(id, active|disabled)`: need
+  `users_security.manage` and `tenant_can_write()`, because an integration user is an identity that will hold groups.
+- Groups and scope are assigned on the existing Security screen (6.3), through the 6.4 change sets, like a person.
+  No new path to grant rights.
+- Keys (A3, A4) need `api_keys.manage`.
+
+| Option | |
+|---|---|
+| **a Two domains as above** (`users_security.manage` for the identity and its groups, `api_keys.manage` for keys) | A key holder can only use rights a security admin gave the integration user |
+| b `api_keys.manage` for everything | One domain; but a key admin could create an identity and (with 6.3) grant it rights |
+
+Note for a: a holder of `api_keys.manage` can issue a key for **any** integration user in the tenant, so gets that
+user's rights in a script. Fine for pilots (only Administrator holds it). **Lean: a.** No new starter group: the admin
+assigns an existing group (for example Auditor for read-only) or makes one. Cost to reverse: low.
+
+### A3 Key format and storage
+
+- Format: `asly_` + 12-character public prefix + `_` + 32 random bytes (base64url, 43 characters). The `asly_`
+  start lets secret scanners (GitHub push protection) spot leaked keys later.
+- Made in Postgres by `public.create_api_key(integration_user_id, name, expires_at)` with `gen_random_bytes`
+  (`pgcrypto`, already on). Returns the full key **once**. The web app shows it once with a copy button.
+- Stored: `private.api_key (id, tenant_id, integration_user_id, name, prefix unique, secret_hash bytea, expires_at,
+  revoked_at, revoked_by, last_used_at, created_at, created_by)`. `secret_hash = sha256(secret)`. Plain SHA-256 is
+  enough for 256-bit random secrets (bcrypt only helps against guessable passwords, and costs CPU per request).
+- The table is in `private`: no grants to `authenticated`. Admins read it through `public.api_keys()` (needs
+  `api_keys.view`), which never returns the hash.
+
+| Option | |
+|---|---|
+| **a As above** | Fast lookup by prefix; nothing secret at rest |
+| b Generated in the service | Needs a service route for the web app; the hash would still be in Postgres |
+| c Hash with HMAC and a pepper in Secret Manager | A stolen database dump cannot be checked against guesses; but 256-bit secrets cannot be guessed anyway; one more secret |
+
+**Lean: a.** Cost to reverse: low before customers hold keys, medium after (a format change means new keys).
+
+### A4 Expiry, rotate, revoke
+
+| Option for expiry | |
+|---|---|
+| a Optional, default never | Common, convenient |
+| **b Required: 90 days, 1 year (default) or a date up to 2 years** | A forgotten key ends by itself |
+| c 90 days fixed | Safest; pilots rotate often |
+
+- Rotate = create a second key, switch the script, revoke the old one. Up to 5 active keys per integration user.
+  No in-place rotate.
+- `public.revoke_api_key(id)`: sets `revoked_at`; takes effect on the next request (every request checks).
+- Disabling the integration user or its membership stops all its keys. A suspended tenant stops all keys.
+- `last_used_at` is updated at most once a minute per key (no extra write per request; it rides on the A6 counter).
+
+**Lean: b.** Cost to reverse: none.
+
+### A5 How a key becomes a database identity
+
+`private.api_key_identity(prefix, secret)`: `security definer`, fixed `search_path`, `execute` granted to
+`assetly_api` only (not `authenticated`, not `anon`). It runs before the role switch, so it is the one function the
+base role can use. It returns `user_id, tenant_id, key_id, calls_this_minute` only if the hash matches, the key is
+not revoked or expired, the integration user and membership are active and the tenant is not suspended. Otherwise no
+row, and the service answers `401` with one generic message (no hint whether the prefix exists).
+
+`db.ts` gains `withKey(key, fn)`, next to `withUser`: same transaction, the lookup first, then the same
+`set_config` call with claims `{sub: user_id, tenant_id, role: 'authenticated', aud: 'authenticated',
+api_key_id}`. Postgres sees an ordinary user. The 8.1 leak test gains key requests.
+
+| Option | |
+|---|---|
+| **a As above** | No service-role key, no signing key in the service, no new role |
+| b Mint a short Supabase JWT per key | Needs the signing key in the service: rejected in 8.1 §2 |
+| c Look up keys with the service-role key | Forbidden (CLAUDE.md §6.4) |
+
+Header: `Authorization: Bearer <key>`. **Lean: a.** Cost to reverse: low (one module).
+
+### A6 Rate limits and metering (Postgres only)
+
+| Option | For | Against |
+|---|---|---|
+| **a One counter row per key per minute** in `private.api_key_usage (key_id, tenant_id, minute, calls)`, upserted inside A5. Over the limit: `429` with `Retry-After`. Daily usage = sum of rows | Exact across instances; the same rows are the usage log; no Redis | One small write per request (at 120 a minute per key it is nothing for Postgres) |
+| b In-memory counter in each instance | No write | Not exact (2 instances, scale to zero resets); still needs a usage table |
+| c Only Cloud Run `--max-instances` | Nothing to build | No per-key limit |
+
+Limit: **120 calls a minute per key**, one constant in the service for now (per-tenant limits later, via
+`tenant_entitlement`). Rows older than 90 days are deleted by a daily `pg_cron` job. **Lean: a.** Cost to reverse: low.
+
+### A7 Audit
+
+- Data changes made through the API are audited as today: the audit trigger records the integration user as actor.
+  Also `api_key_id` from the claims in the audit row, so it shows which key did it (small; **lean: yes**).
+- Key create and revoke, and integration user create and disable, write `security` audit rows and outbox events,
+  like 6.3 changes.
+- Per-request lines go to Cloud Logging (time, method, path, status, ms, tenant, key prefix; never the key). No
+  per-request row in Postgres beyond the A6 counter.
+
+**Lean: as above.** Cost to reverse: low.
+
+### A8 First resources (minimal)
+
+| Route | Reads or calls | Domain checked (by RLS, not the service) |
+|---|---|---|
+| `GET /v1/me` | the key's integration user and tenant | none |
+| `GET /v1/assets` | `asset_view` (masked fields null, custom fields filtered, 6.1 scope) | `asset.view` |
+| `GET /v1/assets/{id}` | `asset_view` | `asset.view` |
+| `POST /v1/assets` | `insert into asset` (same write-rule triggers as the UI form) | `asset.create` |
+| `PATCH /v1/assets/{id}` | `update asset`; no status or location change (those are actions) | `asset.update` |
+| `GET /v1/categories`, `/v1/locations`, `/v1/asset-statuses` | the same tables or functions the UI reads | their own `view` |
+
+Asset fields in and out are the asset form's fields, by name, with `category_id` and `location_id` as ids.
+Not in v1: status change, transfer, retire, vendors, coverage, obligations, service records, attachments, import,
+upsert by tag. Each is an additive endpoint later.
+
+| Option | |
+|---|---|
+| a Read only (`me`, assets, master data) | Meets the review point; smallest |
+| **b a, plus asset create and update** | A real integration (an ERP sends new assets); same triggers as the UI |
+| c b, plus `PUT /v1/assets/by-tag/{tag}` upsert | Inbound sync by external reference (technical-architecture.md §6); more edge cases |
+
+**Lean: b**, c later. Cost to reverse: low (endpoints are additive).
+
+### A9 Versioning rule
+
+- Major version in the path: `/v1`. Inside v1 only additive changes: new endpoints, new optional parameters, new
+  response fields. Clients must ignore unknown fields.
+- A breaking change means `/v2`. `/v1` keeps working at least 12 months after `/v2` ships, with a `Deprecation`
+  header.
+- JSON field names are `snake_case`, same as the database. Dates ISO 8601, timestamps UTC.
+
+**Lean: as above.** Cost to reverse: none now; high after customers rely on it.
+
+### A10 Paging, filtering, errors
+
+- **Cursor paging (lean):** `?limit=` (default 50, max 200) and `?cursor=` (opaque, base64url of the last
+  `(updated_at, id)`). Response `{ "data": [...], "next_cursor": "..." | null }`. Ordered by `updated_at, id`, so a
+  sync script can page with `?updated_since=` and never misses or repeats rows. No total count (costly on large
+  tenants). Offset paging is simpler but skips or repeats rows when data changes, and deep pages are slow.
+- Filters on `GET /v1/assets`: `updated_since`, `category_id`, `location_id` (with descendants, like the UI),
+  `status`, `tag`. Nothing else in v1.
+- **Errors: `application/problem+json` (RFC 9457) (lean):** `{ "type", "title", "status", "detail", "code" }`, where
+  `code` is a stable string (`unauthorized`, `forbidden`, `not_found`, `validation_failed`, `rate_limited`,
+  `conflict`). Validation errors add `errors: [{ "field", "code" }]`. The existing non-`/v1` routes keep
+  `{ "error": code }`. The other option is plain `{ "error": code }` for `/v1` too: simpler, not a standard.
+- Not found and not allowed to see both answer `404` (no hint that the row exists). Allowed to see but not to write:
+  `403`.
+
+**Lean: cursor and problem+json.** Cost to reverse: medium after customers rely on it.
+
+### A11 OpenAPI spec
+
+| Option | |
+|---|---|
+| **a Generated from the Fastify route schemas with `@fastify/swagger`** (official plugin, one new dependency), served at `GET /v1/openapi.json`. The same JSON schemas validate requests | Spec and code cannot drift; validation for free |
+| b Hand-written `openapi.yaml` | No dependency; drifts |
+| c No spec in 9.2 | Smallest; breaks technical-architecture.md §6 |
+
+No Swagger UI in the service (customers open the JSON in any viewer). A test checks the spec builds. **Lean: a.**
+Cost to reverse: low.
+
+### A12 Integration users and the rest of the product
+
+- 9.1 fan-out and the daily email skip `kind = 'integration'` (they cannot read mail; the address is fake).
+- The 6.3 last-admin guard does not count integration users (an integration user cannot be the last security admin).
+- The Security screen lists them with an "Integration" tag. They cannot be invited, sign in or pick a tenant.
+
+**Lean: as above.** Cost to reverse: low.
+
+### A13 The keys screen
+
+No screen in `docs/assetly-screens.html`. Lean: a new tab **"Integrations"** on the existing `/security` page
+(`/security?tab=integrations`), shown with `api_keys.view`:
+- List of integration users (name, status, groups, number of keys). "New integration user" (needs
+  `users_security.manage`). Groups are edited in the existing member panel, so no second editor.
+- Per integration user: keys (name, prefix, created, expires, last used, status). "New key" opens a dialog: name and
+  expiry; then shows the key once with Copy and the line "You will not see this key again". "Revoke" with a confirm.
+- Manage buttons need `api_keys.manage`. All text in `en.json`.
+
+Option b: a separate `/settings/api` page. Lean a, since identities and groups already live on Security. Cost to
+reverse: low.
+
+### A14 CORS, user tokens, customer documentation
+
+- **CORS:** `/v1` is server to server. The existing CORS plugin skips `/v1` (no `Access-Control-Allow-Origin`), so a
+  browser page cannot call it. **Lean: yes.** Cost to reverse: none.
+- **User tokens on `/v1`:** `/v1` accepts only API keys in 9.2; a signed-in user's token there is `401`. Accepting
+  both later (for the web app or the AI assistant) is additive. **Lean: keys only.**
+- **Docs for customers:** `docs/api-v1.md` in the repo (quick start with `curl`, auth, paging, errors, limits,
+  versioning) plus `GET /v1/openapi.json`. A public docs site comes when the first customer asks. **Lean: as above.**
+
+### Owner steps after the build (I never handle keys or passwords)
+
+1. Push the migrations to staging (your usual `db push` from current `main`).
+2. Run "Deploy API". No new secret: the service uses the existing `assetly-api-db-url`.
+3. On staging, create an integration user and a key on the Security screen, then try the `curl` in the demo note.
+
+### DECIDE (9.2)
+
+| # | Decision | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| A1 | Integration user | a `auth.users` row with no password + `user_profile.kind` + membership, b own table, c key acts as its creator | a | **High** |
+| A2 | Who creates | a `users_security.manage` for identity and groups, `api_keys.manage` for keys, b `api_keys.manage` for all | a, no new starter group | Low |
+| A3 | Key format, storage | a `asly_<prefix>_<secret>`, made in Postgres, SHA-256 hash in `private`, shown once, b made in service, c HMAC + pepper | a | Low now, medium later |
+| A4 | Expiry | a optional, b required (90 d / 1 y default / date up to 2 y), c 90 d fixed; rotate = new key + revoke, max 5 active | b | None |
+| A5 | Key to identity | a `private.api_key_identity` for `assetly_api` only, then `withKey` sets claims, b mint JWT, c service-role key | a, `Bearer` header | Low |
+| A6 | Rate limit, metering | a per-minute counter rows in Postgres, 120/min per key, 90-day purge, b in-memory, c none | a | Low |
+| A7 | Audit | data via the existing trigger (+ `api_key_id`), key and identity changes as security audit, requests in Cloud Logging | as A7 | Low |
+| A8 | First resources | a read only, b read + asset create and update, c b + upsert by tag | b | Low |
+| A9 | Versioning | `/v1` in path, additive only, `/v2` for breaks with 12 months overlap, snake_case | as A9 | None now |
+| A10 | Paging, errors | cursor on `(updated_at, id)`, limit 50/200, problem+json, 404 for unseen | as A10 | Medium later |
+| A11 | OpenAPI | a `@fastify/swagger` from route schemas, b hand-written, c none | a (new dependency) | Low |
+| A12 | Rest of product | skip in notifications and email, not counted as last admin, tagged on Security | as A12 | Low |
+| A13 | Keys screen | a "Integrations" tab on `/security`, b `/settings/api` | a | Low |
+| A14 | CORS, tokens, docs | no CORS on `/v1`; keys only on `/v1`; `docs/api-v1.md` + `/v1/openapi.json` | as A14 | None |
+
+**Smaller option:** A8 a (read only) and no screen; an admin makes keys with a SQL function on staging. Meets the
+review point with about half the work, but you create keys by hand. **Say if you want this instead.**
+
+**Not in 9.2:** webhooks (9.3), upsert by tag, actions through the API (transfer, status, retire), bulk import by
+API, per-tenant rate limits, key scopes narrower than the integration user's groups, IP allowlists, a public docs
+site, OAuth client credentials, user tokens on `/v1`.
