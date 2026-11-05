@@ -479,7 +479,7 @@ export function App() {
           element={<SettingsPage tenantId={tenantId ?? ''} canView={can('tenant_settings', 'view')} canManage={can('tenant_settings', 'manage')} />}
         />
         <Route path="/notifications" element={<NotificationsPage tenantId={tenantId ?? ''} userId={userId ?? ''} />} />
-        <Route path="/security" element={<SecurityPage tenantId={tenantId ?? ''} canView={can('users_security', 'view')} canManage={can('users_security', 'manage')} />} />
+        <Route path="/security" element={<SecurityPage tenantId={tenantId ?? ''} canView={can('users_security', 'view')} canManage={can('users_security', 'manage')} canViewKeys={can('api_keys', 'view')} canManageKeys={can('api_keys', 'manage')} />} />
         <Route path="/assets/:assetId" element={<AssetDetailPage can={can} />} />
         <Route path="/assets/:assetId/label" element={<AssetLabelPage />} />
         <Route path="/q/:assetId" element={<ScanPage />} />

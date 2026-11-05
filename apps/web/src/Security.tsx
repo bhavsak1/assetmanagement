@@ -7,7 +7,8 @@ import type { Database, Tables } from './types/database'
 type Group = Pick<Tables<'security_group'>, 'id' | 'code' | 'name' | 'group_type'>
 type Domain = Pick<Tables<'security_domain'>, 'id' | 'code' | 'description' | 'kind'> & { domain_operation: Pick<Tables<'domain_operation'>, 'id' | 'code' | 'sort_order'>[] }
 type Assignment = Pick<Tables<'user_group_assignment'>, 'id' | 'user_id' | 'security_group_id' | 'scope_profile_id' | 'effective_from' | 'effective_to'>
-type Member = { user_id: string; display_name: string; email: string; status: string }
+type Member = { user_id: string; display_name: string; email: string; status: string; kind?: string }
+type ApiKey = Database['public']['Functions']['api_keys']['Returns'][number]
 type Profile = Pick<Tables<'scope_profile'>, 'id' | 'name'>
 type Rule = Pick<Tables<'scope_profile_rule'>, 'id' | 'scope_profile_id' | 'dimension' | 'location_id' | 'category_id'>
 type Node = { id: string; parent_id: string | null; name: string }
@@ -19,15 +20,18 @@ type DbError = { code?: string; message?: string }
 type Write = PromiseLike<{ data?: unknown; error: DbError | null }>
 
 const s = t.security
-const tabs = ['groups', 'assignments', 'profiles', 'review', 'changes'] as const
+const tabs = ['groups', 'assignments', 'profiles', 'review', 'changes', 'integrations'] as const
 type Tab = (typeof tabs)[number]
 const label = (map: Record<string, string>, code: string, fallback?: string) => map[code] ?? fallback ?? code
 // Domains in the order of the label file (the starter grid's order); a domain added later goes last.
 const domainOrder = Object.keys(s.domains)
 const rank = (code: string) => (domainOrder.includes(code) ? domainOrder.indexOf(code) : domainOrder.length)
 const now = () => new Date().toISOString()
+const daysFromNow = (n: number) => new Date(Date.now() + n * 864e5)
 // shortcut: UTC calendar date, not the tenant's format and zone; switch to Settings.formatDate when the shell holds the tenant.
 const day = (iso: string | null) => (iso ? iso.slice(0, 10) : s.assignments.open)
+// 9.2: an integration user's email is a placeholder, so it shows its tag instead.
+const memberLabel = (m: Member) => `${m.display_name} (${m.kind === 'integration' ? s.integrations.tag : m.email})`
 
 // Same as the security_group.code check (migration 1_2), unique among the live groups.
 export function groupCode(name: string, taken: string[]): string {
@@ -42,6 +46,8 @@ export function securityError(error: DbError | null): string {
   const m = error?.message ?? ''
   if (m.includes('last security admin')) return e.lastAdmin
   if (m.includes('not an open draft')) return e.notDraft
+  if (m.includes('at most 5 active keys')) return s.integrations.tooMany
+  if (m.includes('expiry must be')) return s.integrations.badExpiry
   if (error?.code === '42501') return e.noPermission
   if (m.includes('security group is assigned')) return e.groupAssigned
   if (m.includes('scope profile is assigned')) return e.profileAssigned
@@ -49,7 +55,7 @@ export function securityError(error: DbError | null): string {
   return e.generic
 }
 
-export function SecurityPage({ tenantId, canView, canManage }: { tenantId: string; canView: boolean; canManage: boolean }) {
+export function SecurityPage({ tenantId, canView, canManage, canViewKeys = false, canManageKeys = false }: { tenantId: string; canView: boolean; canManage: boolean; canViewKeys?: boolean; canManageKeys?: boolean }) {
   const [tab, setTab] = useState<Tab>('groups')
   const [groups, setGroups] = useState<Group[]>([])
   const [domains, setDomains] = useState<Domain[]>([])
@@ -156,7 +162,7 @@ export function SecurityPage({ tenantId, canView, canManage }: { tenantId: strin
       )}
       {explaining && <Explain members={members} domains={domains} onClose={() => setExplaining(false)} />}
       <div className="tabs" role="tablist">
-        {tabs.map((k) => (
+        {tabs.filter((k) => k !== 'integrations' || canViewKeys).map((k) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
             {s.tabs[k]}
           </button>
@@ -171,6 +177,9 @@ export function SecurityPage({ tenantId, canView, canManage }: { tenantId: strin
       )}
       {tab === 'review' && <AccessReview rows={assignments} members={members} groups={groups} profiles={profiles} domains={domains} />}
       {tab === 'changes' && <ChangeSets draft={draft} sets={sets} diff={diff} members={members} canManage={canManage} run={run} />}
+      {tab === 'integrations' && canViewKeys && (
+        <Integrations members={members} assignments={assignments} groups={groups} canManageUsers={canManage} canManageKeys={canManageKeys} run={run} reload={reload} />
+      )}
     </>
   )
 }
@@ -454,7 +463,7 @@ function Assignments({ tenantId, rows, members, groups, profiles, canManage, run
               </option>
               {members.map((m) => (
                 <option key={m.user_id} value={m.user_id}>
-                  {`${m.display_name} (${m.email})`}
+                  {memberLabel(m)}
                 </option>
               ))}
             </select>
@@ -527,7 +536,7 @@ function Assignments({ tenantId, rows, members, groups, profiles, canManage, run
                 <td>
                   {member(r.user_id)?.display_name ?? '—'}
                   {member(r.user_id)?.status === 'disabled' && <span className="tag">{a.disabled}</span>}
-                  <div className="muted">{member(r.user_id)?.email}</div>
+                  <div className="muted">{member(r.user_id)?.kind === 'integration' ? s.integrations.tag : member(r.user_id)?.email}</div>
                 </td>
                 <td>{name(groups, r.security_group_id)}</td>
                 <td>
@@ -878,7 +887,7 @@ function Explain({ members, domains, onClose }: { members: Member[]; domains: Do
             </option>
             {members.map((m) => (
               <option key={m.user_id} value={m.user_id}>
-                {`${m.display_name} (${m.email})`}
+                {memberLabel(m)}
               </option>
             ))}
           </select>
@@ -1101,6 +1110,240 @@ function AccessReview({ rows, members, groups, profiles, domains }: { rows: Assi
                 {r.cells.map((c, i) => (
                   <td key={i}>{c}</td>
                 ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// Story 9.2 (data-model-goal9.md §17 A13): integration users and their API keys. Groups and scope are given on
+// the Assignments tab, like a person's. A new key is shown once, here, and never again.
+function Integrations({ members, assignments, groups, canManageUsers, canManageKeys, run, reload }: { members: Member[]; assignments: Assignment[]; groups: Group[]; canManageUsers: boolean; canManageKeys: boolean; run: Run; reload: number }) {
+  const i = s.integrations
+  const [keys, setKeys] = useState<ApiKey[]>([])
+  const [adding, setAdding] = useState(false)
+  const [keyFor, setKeyFor] = useState<string>()
+  const [expiry, setExpiry] = useState('365')
+  const [shown, setShown] = useState<string>()
+  const [copied, setCopied] = useState(false)
+  const users = members.filter((m) => m.kind === 'integration')
+  const live = (k: ApiKey) => !k.revoked_at && k.expires_at > now()
+
+  useEffect(() => {
+    let on = true
+    void supabase.rpc('api_keys').then(({ data }) => on && setKeys(data ?? []))
+    return () => {
+      on = false
+    }
+  }, [reload])
+
+  async function addUser(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const name = String(new FormData(e.currentTarget).get('name') ?? '')
+    if (await run(supabase.rpc('create_integration_user', { p_name: name }), false)) setAdding(false)
+  }
+
+  async function addKey(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const form = new FormData(e.currentTarget)
+    const date = String(form.get('date') ?? '')
+    const expires = expiry === 'date' ? new Date(`${date}T23:59:59Z`) : daysFromNow(Number(expiry))
+    let key: string | undefined
+    const ok = await run(
+      supabase.rpc('create_api_key', { p_user_id: keyFor ?? '', p_name: String(form.get('name') ?? ''), p_expires_at: expires.toISOString() }).then((r) => {
+        key = r.data?.[0]?.key
+        return r
+      }),
+    )
+    if (ok) {
+      setKeyFor(undefined)
+      setCopied(false)
+      setShown(key)
+    }
+  }
+
+  return (
+    <div className="card list detail">
+      <div className="page-head">
+        <span className="muted">{i.intro}</span>
+        <div className="spacer" />
+        {canManageUsers && !adding && (
+          <button className="btn" type="button" onClick={() => setAdding(true)}>
+            {i.add}
+          </button>
+        )}
+      </div>
+      {shown && (
+        <div className="banner" role="status">
+          <strong>{i.shownTitle}</strong>
+          <p>{i.shownHint}</p>
+          <code aria-label={i.shownTitle}>{shown}</code>
+          <div className="page-head">
+            <div className="spacer" />
+            <button className="btn" type="button" onClick={() => void navigator.clipboard?.writeText(shown).then(() => setCopied(true))}>
+              {copied ? i.copied : i.copy}
+            </button>
+            <button className="btn btn-main" type="button" onClick={() => setShown(undefined)}>
+              {i.done}
+            </button>
+          </div>
+        </div>
+      )}
+      {adding && (
+        <form className="form-grid" onSubmit={(e) => void addUser(e)}>
+          <label className="field">
+            {i.name}
+            <input name="name" required maxLength={100} />
+          </label>
+          <div className="page-head">
+            <div className="spacer" />
+            <button className="btn" type="button" onClick={() => setAdding(false)}>
+              {s.cancel}
+            </button>
+            <button className="btn btn-main" type="submit">
+              {s.save}
+            </button>
+          </div>
+        </form>
+      )}
+      <h2>{i.users}</h2>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{i.name}</th>
+              <th>{i.status}</th>
+              <th>{i.groups}</th>
+              <th>{i.activeKeys}</th>
+              {(canManageUsers || canManageKeys) && <th aria-label={i.actions} />}
+            </tr>
+          </thead>
+          <tbody>
+            {users.length === 0 && (
+              <tr>
+                <td colSpan={5} className="muted">
+                  {i.noUsers}
+                </td>
+              </tr>
+            )}
+            {users.map((u) => {
+              const mine = assignments.filter((a) => a.user_id === u.user_id && (!a.effective_to || a.effective_to > now()))
+              const names = mine.map((a) => groups.find((g) => g.id === a.security_group_id)?.name).filter(Boolean)
+              return (
+                <tr key={u.user_id}>
+                  <td>
+                    {u.display_name} <span className="tag">{i.tag}</span>
+                  </td>
+                  <td>{u.status === 'active' ? i.active : i.disabled}</td>
+                  <td>{names.length ? names.join(', ') : <span className="muted">{i.noGroups}</span>}</td>
+                  <td>{keys.filter((k) => k.user_id === u.user_id && live(k)).length}</td>
+                  {(canManageUsers || canManageKeys) && (
+                    <td className="actions">
+                      {canManageKeys && u.status === 'active' && (
+                        <button className="btn" type="button" onClick={() => setKeyFor(u.user_id)}>
+                          {i.newKey}
+                        </button>
+                      )}
+                      {canManageUsers && (
+                        <button
+                          className="btn"
+                          type="button"
+                          onClick={() => void run(supabase.rpc('set_integration_user_status', { p_user_id: u.user_id, p_status: u.status === 'active' ? 'disabled' : 'active' }), false)}
+                        >
+                          {u.status === 'active' ? i.disable : i.enable}
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      {keyFor && (
+        <form className="form-grid" onSubmit={(e) => void addKey(e)}>
+          <label className="field">
+            {i.user}
+            <input value={users.find((u) => u.user_id === keyFor)?.display_name ?? ''} disabled />
+          </label>
+          <label className="field">
+            {i.keyName}
+            <input name="name" required maxLength={100} />
+          </label>
+          <label className="field">
+            {i.expiry}
+            <select name="expiry" value={expiry} onChange={(e) => setExpiry(e.target.value)}>
+              <option value="90">{i.days90}</option>
+              <option value="365">{i.days365}</option>
+              <option value="date">{i.onDate}</option>
+            </select>
+          </label>
+          {expiry === 'date' && (
+            <label className="field">
+              {i.date}
+              <input name="date" type="date" required min={new Date().toISOString().slice(0, 10)} max={daysFromNow(730).toISOString().slice(0, 10)} />
+            </label>
+          )}
+          <div className="page-head">
+            <div className="spacer" />
+            <button className="btn" type="button" onClick={() => setKeyFor(undefined)}>
+              {s.cancel}
+            </button>
+            <button className="btn btn-main" type="submit">
+              {i.newKey}
+            </button>
+          </div>
+        </form>
+      )}
+      <h2>{i.keys}</h2>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{i.keyName}</th>
+              <th>{i.prefix}</th>
+              <th>{i.user}</th>
+              <th>{i.created}</th>
+              <th>{i.expiry}</th>
+              <th>{i.lastUsed}</th>
+              <th>{i.status}</th>
+              {canManageKeys && <th aria-label={i.actions} />}
+            </tr>
+          </thead>
+          <tbody>
+            {keys.length === 0 && (
+              <tr>
+                <td colSpan={8} className="muted">
+                  {i.noKeys}
+                </td>
+              </tr>
+            )}
+            {keys.map((k) => (
+              <tr key={k.id}>
+                <td>{k.name}</td>
+                <td>
+                  <code>{`asly_${k.prefix}_…`}</code>
+                </td>
+                <td>{members.find((m) => m.user_id === k.user_id)?.display_name ?? '—'}</td>
+                <td>{day(k.created_at)}</td>
+                <td>{day(k.expires_at)}</td>
+                <td>{k.last_used_at ? day(k.last_used_at) : i.never}</td>
+                <td>
+                  <span className={`tag status${live(k) ? ' ok' : ''}`}>{k.revoked_at ? i.revoked : live(k) ? i.active : i.expired}</span>
+                </td>
+                {canManageKeys && (
+                  <td className="actions">
+                    {live(k) && (
+                      <button className="btn" type="button" onClick={() => window.confirm(i.revokeConfirm) && void run(supabase.rpc('revoke_api_key', { p_key_id: k.id }), false)}>
+                        {i.revoke}
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
