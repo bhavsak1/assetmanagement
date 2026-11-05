@@ -1013,7 +1013,7 @@ a webhook is auto-disabled (shown on the screen only), WhatsApp (9.4), MCP (9.5)
 
 ## 19. Story 9.5: MCP server over `/v1`
 
-**Status:** the owner accepted every lean, M1 to M12 (5 Nov 2026). 9.5a built 5 Nov 2026 (own PR). 9.5b next.
+**Status:** the owner accepted every lean, M1 to M12 (5 Nov 2026). Built 5 Nov 2026 as two PRs (9.5a, 9.5b). In review.
 **API keys are an owner-review area (CLAUDE.md §9).**
 
 **As built, 9.5a:**
@@ -1024,6 +1024,20 @@ a webhook is auto-disabled (shown on the screen only), WhatsApp (9.4), MCP (9.5)
 - A client `id` on `POST` that is already used, in any tenant, is `409` (UUID primary key). It tells a caller only
   that a random UUID it chose exists; not worth a per-tenant check.
 - Tests: `services/api/test/v1.test.ts` (+2). Docs: api-v1.md §3 to §5.
+
+**As built, 9.5b:**
+- `src/mcp.ts`, registered at `/mcp` with `/v1`. `@modelcontextprotocol/sdk` 1.32.2: the low-level `Server` and the
+  web-standard Streamable HTTP transport (stateless, JSON), one of each per request. Fastify's request is handed over
+  as a web `Request`; no raw socket hijack.
+- Tool schemas come from the `/v1` route schemas through an `onRoute` hook in `app.ts`; the `Asset` `$ref` is inlined
+  in output schemas.
+- `tools/call` runs its `/v1` route with `app.inject` **before** the JSON-RPC step, so a bad key on a tool call is
+  still HTTP `401` (M8) and the call counts once (M7). Other requests check the key with one `withKey` call.
+- `/mcp` is in the CORS skip list with `/v1`. A foreign `Origin` is `403` before the key check.
+- `create_asset` has no `idempotentHint` (true only with a client `id`; its description says so). `update_asset` has it.
+- Not covered by a test: the `429` tool error on `tools/call` (the `/v1` rate test covers the counter).
+- Tests: `services/api/test/mcp.test.ts` (7, an SDK `Client` over HTTP). Docs: `docs/mcp.md`; api-v1.md links it.
+  No migration, no UI change, no new environment variable.
 
 **Goal:** a customer's AI agent (Claude, ChatGPT, Cursor, an agent SDK) connects to Assetly with an `asly_` key and
 uses tools such as `list_assets`, `get_asset`, `create_asset`, `update_asset` and master-data lookups. It sees and

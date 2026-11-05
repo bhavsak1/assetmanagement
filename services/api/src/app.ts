@@ -6,6 +6,7 @@ import type { createDb } from './db.ts';
 import type { JobsVerify } from './email.ts';
 import { HEADER_SCAN, stageXlsx } from './imports.ts';
 import { templateLists, templateXlsx, type Target } from './mapping.ts';
+import { mcp, type RouteSchemas } from './mcp.ts';
 import { v1 } from './v1.ts';
 import { ImportError } from './xlsx.ts';
 
@@ -31,9 +32,9 @@ export function buildApp({ verify, withUser, withKey, logger = false, corsOrigin
   const app = Fastify({ logger, ajv: { customOptions: { removeAdditional: false } } });
 
   // I12, I13: only the listed web origins; the token goes in a header, never a cookie.
-  // 9.2 A14: /v1 is server to server, so it sends no CORS headers and a browser page cannot call it.
+  // 9.2 A14: /v1 is server to server, so it sends no CORS headers and a browser page cannot call it. 9.5 M3: /mcp too.
   app.register(cors, {
-    delegator: async (req: FastifyRequest) => req.url.startsWith('/v1/') ? { origin: false } : {
+    delegator: async (req: FastifyRequest) => /^\/(v1|mcp)(\/|$|\?)/.test(req.url) ? { origin: false } : {
       origin: corsOrigins,
       methods: ['GET', 'POST'],
       allowedHeaders: ['Authorization', 'Content-Type', 'X-File-Name'],
@@ -47,7 +48,13 @@ export function buildApp({ verify, withUser, withKey, logger = false, corsOrigin
       components: { securitySchemes: { apiKey: { type: 'http', scheme: 'bearer', description: 'An API key: asly_...' } } },
     },
   });
-  if (withKey) app.register(v1(withKey), { prefix: '/v1' });
+  if (withKey) {
+    // 9.5 M4: MCP tools take their schemas from the /v1 routes, so both stay one source of truth.
+    const schemas: RouteSchemas = new Map();
+    app.addHook('onRoute', (r) => { if (typeof r.method === 'string' && r.url.startsWith('/v1/')) schemas.set(`${r.method} ${r.url}`, r.schema ?? {}); });
+    app.register(v1(withKey), { prefix: '/v1' });
+    app.register(mcp(withKey, schemas, corsOrigins), { prefix: '/mcp' });
+  }
   // The request body is the file itself; no multipart.
   app.addContentTypeParser(XLSX, { parseAs: 'buffer', bodyLimit: MAX_FILE }, (_req, body, done) => done(null, body));
 
