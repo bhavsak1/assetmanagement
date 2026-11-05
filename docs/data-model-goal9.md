@@ -280,8 +280,7 @@ Webhooks (9.3), WhatsApp (9.4), the `/v1` API (9.2), escalation, quiet hours, pe
 
 ## 16. Story 9.1b: forgot password
 
-**Status:** built 4 Nov 2026, In review. The owner accepted every lean (F1 to F9), 4 Nov 2026. Not pushed to
-staging: needs the owner steps below.
+**Status:** Done (owner, 5 Nov 2026). Config pushed to staging and the reset flow tested there by the owner.
 
 **As built:** `supabase/config.toml` (staging SMTP, `otp_expiry`, `email_sent`; recovery template for every
 environment; local `site_url` moved to the Vite port `http://localhost:5173` so local links work),

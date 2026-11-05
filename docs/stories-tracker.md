@@ -160,10 +160,11 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 | ID | Story | Open items | Status |
 |---|---|---|---|
 | 9.1 | Outbox poller, in-app and email notifications (docs/data-model-goal9.md) | | Done |
-| 9.1b | Forgot password: Supabase Auth SMTP through the 9.1 provider (Resend), reset page, show the "Forgot password" link (CLAUDE.md §13). Owner-review area (Auth settings) | | In review |
+| 9.1b | Forgot password: Supabase Auth SMTP through the 9.1 provider (Resend), reset page, show the "Forgot password" link (CLAUDE.md §13). Owner-review area (Auth settings) | | Done |
 | 9.2 | Public REST API `/v1`, API keys, integration users (docs/data-model-goal9.md §17, docs/api-v1.md). Owner-review area (API keys) | | In review |
 | 9.3 | Webhooks with signing and retries. Payloads masked by the subscriber identity's field domains (outbox rows carry raw values; 6.2 R3) | | Todo |
 | 9.4 | WhatsApp channel | OQ-14 | Todo |
+| 9.5 | MCP server over `/v1`: tools such as `list_assets`, `get_asset`, `create_asset`, `update_asset` and master-data lookups, so a customer's AI agent can call Assetly. Same API keys, integration users and security engine as 9.2; no new permission path. Not a model call, so not behind the AI gateway (CLAUDE.md §11). First add deleted-asset visibility to `/v1` (a `deleted_since` filter or tombstones), so an agent can tell removed from never existed. Owner-review area (API keys) | | Todo |
 
 ### Goal 10: AI add-on
 **Review point:** smart import and query-based insights working behind the gateway.
@@ -239,3 +240,4 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 | 4 Nov 2026 | 8.5 and 8.6 Done (owner). Story 9.1b added: forgot password split from 9.1, owner accepted N9 a (docs/data-model-goal9.md). Email provider for 9.1: Resend (owner, N5) |
 | 4 Nov 2026 | Backlog item BL-5 added (mandatory columns and formats shown in the import template), asked by the owner after trying import on staging |
 | 4 Nov 2026 | Backlog item BL-6 added (format, content and data of the daily email summary), asked by the owner after the first 9.1 email on staging |
+| 5 Nov 2026 | Story 9.5 added (MCP server over `/v1`), asked by the owner after testing 9.2 on staging |
