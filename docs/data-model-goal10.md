@@ -1,6 +1,6 @@
 # Goal 10 design: AI add-on (stories 10.1 to 10.9)
 
-**Status:** draft, 5 Nov 2026. Docs only, nothing built. Waiting for the owner's answers to the DECIDE table (§9).
+**Status:** plan accepted by the owner, 5 Nov 2026: every story and every lean in the DECIDE table (§9), including 10.9 (D11 a). Docs only, nothing built. Items to revisit at build are in §11.
 **Owner-review areas touched (CLAUDE.md §9):** a new secret (provider key), two `security definer` functions
 (`private.ai_begin`, `private.ai_finish`), RLS on `ai_call`, and the AI semantic layer, which decides which fields
 a model may see.
@@ -448,7 +448,7 @@ Save = today's path (RLS insert, transfer_asset, change_asset_status), audited a
 
 ---
 
-## 9. DECIDE
+## 9. DECIDE (owner accepted every lean, 5 Nov 2026)
 
 | # | Decision | Options | Lean | Cost to reverse |
 |---|---|---|---|---|
@@ -473,3 +473,21 @@ Save = today's path (RLS insert, transfer_asset, change_asset_status), audited a
 Weekly insights digest (F29), document-to-asset extraction (invoice, nameplate photo), setup copilot, embeddings and
 `pgvector`, model-written answers in sentences, Batch API, AI on WhatsApp, AI on `/v1` or MCP, a background jobs
 monitor (BL-1: AI calls are synchronous user calls, so not needed yet), changing the AI cap from the UI.
+
+---
+
+## 11. Revisit at build (owner, 5 Nov 2026)
+
+Raised by the owner after the plan; not changed now, to settle when the story starts:
+
+1. **10.6, a flexible semantic layer.** Users can ask anything, so the field list may be built automatically from every
+   column of the secure views and every custom field the user may see, over more subjects (asset, coverage,
+   obligation, service record, vendor, location, category) with links fixed in code, plus hand-written derived fields
+   (asset age, days to warranty end, last service date, added on). Questions it cannot answer are logged to grow the
+   list. Still no free SQL; the model returns the JSON query and the compiler checks it. Owner: revisit when 10.6
+   starts.
+2. **"Added on" and "last changed"** (`created_at`, `updated_at`) as asset fields, so "how many assets were added last
+   week" works (10.6, 10.7).
+3. **Copy an asset.** "Create a new asset by copying X" would be a `copy_from` on the 10.9 create draft. The app has
+   no manual "Duplicate asset" today; a non-AI Duplicate button on Asset detail would come first (core works without
+   AI), and 10.9 would reuse its prefill. Not added as a story yet.

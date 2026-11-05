@@ -169,7 +169,7 @@ Note: start WhatsApp provider onboarding around this goal because of lead time (
 ### Goal 10: AI add-on
 **Review point:** smart import and query-based insights working behind the gateway.
 
-Design: `docs/data-model-goal10.md` (draft, DECIDE D1 to D12 open). Every story keeps the manual path working without the add-on. "Ask Assetly" and the Intelligence group are already hidden without a live `ai_addon` row (built in the shell); 10.7 also requires `insights_query.ask`. Owner-review areas: the provider key, `ai_begin`/`ai_finish` (security definer), RLS on `ai_call`, and the semantic layer.
+Design: `docs/data-model-goal10.md` (owner accepted the plan and every DECIDE lean, D1 to D12, 5 Nov 2026; items to revisit at build in its §11). Every story keeps the manual path working without the add-on. "Ask Assetly" and the Intelligence group are already hidden without a live `ai_addon` row (built in the shell); 10.7 also requires `insights_query.ask`. Owner-review areas: the provider key, `ai_begin`/`ai_finish` (security definer), RLS on `ai_call`, and the semantic layer.
 
 | ID | Story | Open items | Status |
 |---|---|---|---|
@@ -181,7 +181,7 @@ Design: `docs/data-model-goal10.md` (draft, DECIDE D1 to D12 open). Every story 
 | 10.6 | Semantic layer and query compiler (no model call): per-user catalog (subjects asset, obligation, coverage; fields filtered by domain and hidden custom-field keys), structured query JSON schema, deterministic compiler to parameterised SQL over the secure views in a read-only transaction, `POST /insights/run`. **Review:** hand-written queries match the Assets list counts; a hidden field is refused (`422`) and a forged query returns nulls; a scoped user sees only their rows; SQL never contains a value | OQ-21 | Todo |
 | 10.7 | Insights screen and "Ask Assetly": question to structured query through the gateway (the model sees the user's catalog, never data rows), "I understood this as" chips, chip edits re-run with no model call, results table, CSV export; top-bar "Ask Assetly" opens it. **Review:** "Which assets at the Pune plant have AMC expiring in the next 60 days?" gives the right chips and rows; a user without `asset_financials.view` cannot get purchase values by asking; at the cap the chip editor still works | OQ-11, OQ-21 | Todo |
 | 10.8 | Saved insight widgets ("Could", cut first): `insight_widget` table (domain `insights_widget`, save own, share to tenant), re-run with the viewer's permissions. **Review:** a shared widget shows each viewer only their own allowed rows | | Todo |
-| 10.9 | **Proposal (owner to accept, D11):** chat actions in "Ask Assetly": the AI drafts a search, a new asset, an asset change, a transfer or a status change; the web opens the existing form or dialog prefilled with "AI-suggested" tags; the user saves through today's path. The service writes nothing; intents offered only if the user holds the right. **Review:** "add a Kirloskar compressor at Plant 2 Nashik, serial KC-4471" opens Add asset prefilled, Save creates it audited as the user; a user without `asset_core.create` is never offered the create | OQ-11, OQ-21 | Todo |
+| 10.9 | **Accepted proposal (owner, D11 a):** chat actions in "Ask Assetly": the AI drafts a search, a new asset, an asset change, a transfer or a status change; the web opens the existing form or dialog prefilled with "AI-suggested" tags; the user saves through today's path. The service writes nothing; intents offered only if the user holds the right. **Review:** "add a Kirloskar compressor at Plant 2 Nashik, serial KC-4471" opens Add asset prefilled, Save creates it audited as the user; a user without `asset_core.create` is never offered the create | OQ-11, OQ-21 | Todo |
 
 ### Backlog (unscheduled)
 Owner ideas with no goal yet. Revisit when the goal named in the last column is planned.
@@ -209,7 +209,7 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 | 7 Onboarding and templates | No | Parked by the owner, 2 Nov 2026 |
 | 8 Excel import | No | |
 | 9 Notifications, API, webhooks | No | |
-| 10 AI add-on | No | Stories written 5 Nov 2026; DECIDE D1 to D12 open (docs/data-model-goal10.md) |
+| 10 AI add-on | No | Stories written and accepted 5 Nov 2026 (docs/data-model-goal10.md) |
 
 ## 3. Scope-pressure rules (from the Knowledge Base)
 
@@ -254,3 +254,4 @@ Owner ideas with no goal yet. Revisit when the goal named in the last column is 
 | 5 Nov 2026 | 9.2 Done (owner). 9.3 webhooks on hold until a real customer use, not in the demo version (owner); design kept in docs/data-model-goal9.md §18, DECIDE W1 to W12 open |
 | 5 Nov 2026 | 9.5 Done (owner) |
 | 5 Nov 2026 | Goal 10 stories added, 10.1 to 10.9 (docs/data-model-goal10.md): gateway, AI usage tab, smart import mapping and value matching, fuzzy duplicates (no model), semantic layer and compiler, Insights and Ask Assetly, saved widgets ("Could"). 10.9 (chat actions: AI drafts, user saves on the normal form) added as a proposal for the owner's gap: no story let a user search, create or update records by chat in the app |
+| 5 Nov 2026 | Owner accepted the Goal 10 plan, 10.1 to 10.9, and DECIDE D1 to D12. A flexible 10.6 field list, "added on" fields and copying an asset (`copy_from`, a non-AI Duplicate button) to revisit at build (data-model-goal10.md §11) |
