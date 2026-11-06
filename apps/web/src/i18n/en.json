@@ -1401,6 +1401,24 @@
       "skip": "Skip",
       "range": "Rows {from} to {to} of {n}"
     },
+    "values": {
+      "title": "Value matches",
+      "subtitle": "AI suggests an existing record for values the check could not find. A decision applies to every row with that value.",
+      "acceptAll": "Accept all above 90%",
+      "field": "Field",
+      "inFile": "Value in file",
+      "match": "Match",
+      "confidence": "Confidence",
+      "reason": "Reason",
+      "decision": "Decision",
+      "accept": "Accept",
+      "reject": "Reject",
+      "fields": { "category": "Category", "location": "Location", "vendor": "Vendor", "status": "Status" },
+      "reasons": { "name_variant": "Name variant", "abbreviation": "Abbreviation", "similar": "Similar name" },
+      "statuses": { "suggested": "Suggested", "accepted": "Accepted", "rejected": "Rejected" },
+      "notFound": "No match is right? Nothing new is created here: add the record on its own screen (Categories, Locations, Vendors), then check the rows again.",
+      "failed": "The decision was not saved. Reload and try again."
+    },
     "commit": {
       "button": "Commit {n} rows",
       "committing": "Committing. Large files can take a few minutes…",

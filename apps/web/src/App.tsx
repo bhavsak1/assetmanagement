@@ -471,7 +471,7 @@ export function App() {
         <Route path="/maintenance" element={<MaintenancePage tenantId={tenantId ?? ''} can={can} />} />
         <Route path="/categories" element={<CategoriesPage tenantId={tenantId ?? ''} canManage={can('category_config', 'manage')} />} />
         <Route path="/vendors" element={<VendorsPage tenantId={tenantId ?? ''} can={can} />} />
-        <Route path="/import" element={<ImportPage tenantId={tenantId ?? ''} canRun={can('excel_import', 'run')} canCommit={can('excel_import', 'commit')} canUndo={can('import_undo', 'undo')} />} />
+        <Route path="/import" element={<ImportPage tenantId={tenantId ?? ''} canRun={can('excel_import', 'run')} canCommit={can('excel_import', 'commit')} canUndo={can('import_undo', 'undo')} canReview={can('excel_import', 'review')} />} />
         <Route path="/coverage" element={<CoveragePage tenantId={tenantId ?? ''} can={can} />} />
         <Route path="/locations" element={<LocationsPage tenantId={tenantId ?? ''} canManage={can('location_hierarchy', 'manage')} can={can} />} />
         <Route

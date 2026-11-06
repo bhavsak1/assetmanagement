@@ -7,6 +7,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { Ajv } from 'ajv';
 import { cost, MODEL, providersFromEnv, type Feature } from '../src/ai.ts';
 import { aiChecked, type AiOutput, type Target } from '../src/mapping.ts';
+import { aiChecked as valuesChecked, type AiOutput as ValuesOutput } from '../src/values.ts';
 
 type Case = { name: string; feature: Feature; system: string; input: string; schema: Record<string, unknown>; expect: unknown };
 const dir = new URL('./cases/', import.meta.url);
@@ -20,7 +21,13 @@ const ajv = new Ajv({ strict: false });
 
 // import_map (10.3): confidence varies run to run, so score what the user would see after the code checks:
 // expect is { column: target } for every column that should get a suggestion; the rest must get none.
+// import_values (10.4): expect is { value: candidate index } for every value that should get a pick.
 function asShown(c: Case, out: unknown): unknown {
+  if (c.feature === 'import_values') {
+    const { values } = JSON.parse(c.input) as { values: { field: 'vendor'; text: string; candidates: { candidate: number; name: string }[] }[] };
+    const ask = values.map((v) => ({ column: v.field, raw: v.text, candidates: v.candidates.map((x) => ({ id: String(x.candidate), label: x.name })) }));
+    return Object.fromEntries(valuesChecked(out as ValuesOutput, ask).map((s) => [String(ask.findIndex((a) => a.raw === s.raw)), Number(s.target_id)]));
+  }
   if (c.feature !== 'import_map') return out;
   const input = JSON.parse(c.input) as { fields: { key: string }[]; columns: { column: number }[] };
   const open = input.columns.map((x) => x.column);

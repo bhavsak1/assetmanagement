@@ -4,7 +4,7 @@ import { supabase } from './supabase'
 import type { Json, Tables } from './types/database'
 import { sheetXlsx, type XlsxCell } from './xlsx'
 
-type Batch = Pick<Tables<'import_batch'>, 'id' | 'file_name' | 'sheet_name' | 'sheet_names' | 'header_row' | 'columns' | 'row_count' | 'warnings' | 'status' | 'created_at' | 'mapping' | 'mapping_template_id' | 'summary' | 'outcome'>
+type Batch = Pick<Tables<'import_batch'>, 'id' | 'file_name' | 'sheet_name' | 'sheet_names' | 'header_row' | 'columns' | 'row_count' | 'warnings' | 'status' | 'created_at' | 'mapping' | 'mapping_template_id' | 'summary' | 'outcome' | 'value_suggestions'>
 export type Target = { target: string; label: string; kind: string; required: boolean; category_id: string | null }
 type Template = Pick<Tables<'import_mapping_template'>, 'id' | 'name' | 'headers' | 'targets'>
 // source: how the target was chosen; 'user' once the person changes it here. confidence: AI entries only (10.3).
@@ -108,7 +108,7 @@ function send(file: File, token: string, opts: { sheet?: string; headerRow?: num
 async function loadBatches(): Promise<Batch[]> {
   const { data } = await supabase
     .from('import_batch')
-    .select('id, file_name, sheet_name, sheet_names, header_row, columns, row_count, warnings, status, created_at, mapping, mapping_template_id, summary, outcome')
+    .select('id, file_name, sheet_name, sheet_names, header_row, columns, row_count, warnings, status, created_at, mapping, mapping_template_id, summary, outcome, value_suggestions')
     .order('created_at', { ascending: false })
     .limit(10)
   return data ?? []
@@ -779,13 +779,142 @@ function ReviewCard({ batch, catalog, canRun, canCommit, onChecked, onRemap }: {
   )
 }
 
-function BatchView({ tenantId, batch, catalog, canRun, canCommit, canUndo, onSaved, onHeaderRow }: {
+// 10.4: AI value matches for category, location, vendor and status values the check could not find. The service
+// suggests existing records only; the user accepts (the pick or another candidate) or rejects, and every row with
+// that value follows. Without the add-on, or when AI fails, nothing shows here and the rows stay as checked.
+export type ValueMatch = { column: 'category' | 'location' | 'vendor' | 'status'; raw: string; target_id: string; confidence?: number; reason?: string; status: 'suggested' | 'accepted' | 'rejected'; candidates: { id: string; label: string }[] }
+async function aiValues(batchId: string): Promise<{ values?: ValueMatch[]; error?: string }> {
+  const token = (await supabase.auth.getSession()).data.session?.access_token ?? ''
+  const r = await fetch(`${import.meta.env.VITE_API_URL}/imports/${batchId}/ai-values`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => null)
+  return ((await r?.json().catch(() => ({}))) ?? {}) as { values?: ValueMatch[]; error?: string }
+}
+export const ACCEPT_ALL = 0.9
+
+// What import_decide_values stores: the AI pick keeps its confidence and reason; another candidate is the user's.
+export function decision(v: ValueMatch, targetId: string, status: 'accepted' | 'rejected') {
+  const ai = targetId === v.target_id
+  return { column: v.column, raw: v.raw, target_id: targetId, status, confidence: ai ? v.confidence : undefined, reason: ai ? v.reason : undefined }
+}
+
+function ValuesCard({ batch, onChecked }: { batch: Batch; onChecked: () => void }) {
+  const [values, setValues] = useState<ValueMatch[]>()
+  const [pick, setPick] = useState<Record<string, string>>({})
+  const [msg, setMsg] = useState<{ ok: boolean; text: string }>()
+  const [busy, setBusy] = useState(false)
+  const v = t.import.values
+  // One call per check result (the key changes with validated_at); the ref keeps it to one under StrictMode.
+  const asked = useRef(false)
+  useEffect(() => {
+    if (asked.current) return
+    asked.current = true
+    void aiValues(batch.id).then(({ values: got, error }) => {
+      const text = aiError(error)
+      if (text) setMsg({ ok: false, text })
+      setValues(got ?? [])
+    })
+  }, [batch.id])
+
+  const keyOf = (x: ValueMatch) => `${x.column}|${x.raw}`
+  async function decide(list: ReturnType<typeof decision>[]) {
+    setBusy(true)
+    const { error } = await supabase.rpc('import_decide_values', { p_batch_id: batch.id, p_decisions: list })
+    if (error) {
+      setBusy(false)
+      return setMsg({ ok: false, text: v.failed })
+    }
+    // A decision makes the batch mapped again (V8); check the rows straight away, as after a mapping save.
+    setMsg({ ok: true, text: t.import.check.running })
+    await supabase.rpc('import_validate', { p_batch_id: batch.id })
+    onChecked()
+  }
+
+  if (!values?.length) return msg ? <p className="hint">{msg.text}</p> : null
+  const high = values.filter((x) => x.status === 'suggested' && (x.confidence ?? 0) >= ACCEPT_ALL)
+  return (
+    <div className="card stack">
+      <div className="page-head">
+        <div>
+          <h2>{v.title}</h2>
+          <p className="muted">{v.subtitle}</p>
+        </div>
+        <button type="button" className="btn" disabled={busy || !high.length} onClick={() => void decide(high.map((x) => decision(x, x.target_id, 'accepted')))}>
+          {v.acceptAll}
+        </button>
+      </div>
+      {msg && (
+        <p className={msg.ok ? 'save-ok' : 'field-error'} role={msg.ok ? 'status' : 'alert'}>
+          {msg.text}
+        </p>
+      )}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{v.field}</th>
+              <th>{v.inFile}</th>
+              <th>{v.match}</th>
+              <th>{v.confidence}</th>
+              <th>{v.reason}</th>
+              <th>{v.decision}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {values.map((x) => {
+              const chosen = pick[keyOf(x)] ?? x.target_id
+              const ai = chosen === x.target_id && x.confidence !== undefined
+              return (
+                <tr key={keyOf(x)}>
+                  <td>{v.fields[x.column]}</td>
+                  <td>{x.raw}</td>
+                  <td>
+                    <select className="filter" aria-label={`${v.match}: ${x.raw}`} value={chosen} disabled={busy} onChange={(e) => setPick({ ...pick, [keyOf(x)]: e.target.value })}>
+                      {x.candidates.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    {ai ? (
+                      <span className={`tag ${(x.confidence ?? 0) >= ACCEPT_ALL ? 'ok' : 'warn'}`}>{t.import.mapping.aiSuggested.replace('{percent}', String(Math.round((x.confidence ?? 0) * 100)))}</span>
+                    ) : (
+                      <span className="tag">{t.import.mapping.changed}</span>
+                    )}
+                  </td>
+                  <td>{ai && x.reason ? v.reasons[x.reason as keyof typeof v.reasons] : ''}</td>
+                  <td>
+                    {x.status !== 'suggested' && <span className={`tag ${x.status === 'accepted' ? 'ok' : ''}`}>{v.statuses[x.status]}</span>}{' '}
+                    {(x.status !== 'accepted' || chosen !== x.target_id) && (
+                      <button type="button" className="btn" disabled={busy} onClick={() => void decide([decision(x, chosen, 'accepted')])}>
+                        {v.accept}
+                      </button>
+                    )}{' '}
+                    {x.status !== 'rejected' && (
+                      <button type="button" className="btn" disabled={busy} onClick={() => void decide([decision(x, x.target_id, 'rejected')])}>
+                        {v.reject}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="hint">{v.notFound}</p>
+    </div>
+  )
+}
+
+function BatchView({ tenantId, batch, catalog, canRun, canCommit, canUndo, canReview = false, onSaved, onHeaderRow }: {
   tenantId: string
   batch: Batch
   catalog: Target[] | undefined
   canRun: boolean
   canCommit: boolean
   canUndo: boolean
+  canReview?: boolean
   onSaved: () => void
   onHeaderRow?: (row: number) => void
 }) {
@@ -822,6 +951,9 @@ function BatchView({ tenantId, batch, catalog, canRun, canCommit, canUndo, onSav
           }}
           onHeaderRow={onHeaderRow}
         />
+      )}
+      {canReview && batch.status === 'validated' && (!!batch.value_suggestions || ['not_found', 'ambiguous'].some((k) => (batch.summary as Summary | null)?.codes?.[k])) && (
+        <ValuesCard key={`values-${batch.id}-${(batch.summary as Summary | null)?.validated_at}`} batch={batch} onChecked={onSaved} />
       )}
       {(batch.status === 'mapped' || batch.status === 'validated') && (
         <ReviewCard
@@ -895,7 +1027,7 @@ function BatchView({ tenantId, batch, catalog, canRun, canCommit, canUndo, onSav
 }
 
 // Stories 8.2 to 8.6: upload, staged rows, column mapping, the row check, the review, commit and undo.
-export function ImportPage({ tenantId, canRun, canCommit = false, canUndo = false }: { tenantId: string; canRun: boolean; canCommit?: boolean; canUndo?: boolean }) {
+export function ImportPage({ tenantId, canRun, canCommit = false, canUndo = false, canReview = false }: { tenantId: string; canRun: boolean; canCommit?: boolean; canUndo?: boolean; canReview?: boolean }) {
   const [file, setFile] = useState<File>()
   const [sheet, setSheet] = useState<string>()
   const [upload, setUpload] = useState<Upload>({ state: 'idle' })
@@ -994,6 +1126,7 @@ export function ImportPage({ tenantId, canRun, canCommit = false, canUndo = fals
           canRun={canRun}
           canCommit={canCommit}
           canUndo={canUndo}
+          canReview={canReview}
           onSaved={() => void refresh()}
           onHeaderRow={sameFile ? (row) => void start(file!, current.sheet_name, row) : undefined}
         />

@@ -8,6 +8,7 @@ import type { JobsVerify } from './email.ts';
 import { HEADER_SCAN, stageXlsx } from './imports.ts';
 import { aiMapper, loadChain, matchTemplate, rulesMapper, suggestMapping, templateLists, templateXlsx, type Target } from './mapping.ts';
 import { mcp, type RouteSchemas } from './mcp.ts';
+import { askModel, candidates, key, openValues, type Stored, type Value } from './values.ts';
 import { v1 } from './v1.ts';
 import { ImportError, type Cell } from './xlsx.ts';
 
@@ -195,6 +196,48 @@ export function buildApp({ verify, withUser, withKey, logger = false, corsOrigin
       if (e instanceof AiError) return reply.code(AI_STATUS[e.code]).send({ error: e.code });
       throw e;
     }
+  });
+
+  // Story 10.4 (data-model-goal10.md §4.2): AI matches for values 8.4 could not find, on a validated batch. Values
+  // already suggested or decided are not sent again. Returns every stored suggestion with its candidates (the
+  // screen's Edit list). Like 10.3 it runs outside any transaction that holds the model call.
+  app.post<{ Params: { id: string } }>('/imports/:id/ai-values', async (req, reply) => {
+    const claims = await claimsOf(req, reply);
+    if (!claims) return reply;
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ error: 'not_found' });
+    const id = req.params.id;
+    // 'gone': not theirs, or no excel_import (RLS). 'changed': not validated now.
+    const read = async () => withUser(claims, async (q) => {
+      const batch = (await q<{ status: string; mapping: { target: string }[] | null; value_suggestions: Stored[] | null }>(
+        'select status, mapping, value_suggestions from public.import_batch where id = $1', [id])).rows[0];
+      if (!batch) return 'gone' as const;
+      if (batch.status !== 'validated' || !batch.mapping) return 'changed' as const;
+      const stored = batch.value_suggestions ?? [];
+      const seen = new Set(stored.map(key));
+      const open = (await openValues(q, id, batch.mapping)).filter((v) => !seen.has(key(v)));
+      const found = await candidates(q, [...stored, ...open]);
+      return { stored, found, ask: open.map((v) => ({ ...v, candidates: found.get(key(v)) ?? [] })).filter((v) => v.candidates.length) };
+    });
+    let r = await read();
+    if (r === 'gone') return reply.code(404).send({ error: 'not_found' });
+    if (r === 'changed') return reply.code(409).send({ error: 'changed' });
+    if (r.ask.length) {
+      if (!callModel) return reply.code(503).send({ error: 'ai_off' });
+      try {
+        const got = await askModel(callModel, claims, id, r.ask);
+        req.log.info({ user_id: claims.sub, tenant_id: claims.tenant_id, batch_id: id, asked: r.ask.length, ai: got.length }, 'import ai values');
+        if (got.length) {
+          await withUser(claims, (q) => q('select public.import_decide_values($1, $2)', [id, JSON.stringify(got)]));
+          r = await read();
+          if (typeof r === 'string') return reply.code(409).send({ error: 'changed' });
+        }
+      } catch (e) {
+        if (e instanceof AiError) return reply.code(AI_STATUS[e.code]).send({ error: e.code });
+        throw e;
+      }
+    }
+    const { stored, found } = r;
+    return { values: stored.map((s): Value => ({ ...s, candidates: found.get(key(s)) ?? [] })) };
   });
 
   // Story 10.1: one tiny model call that proves the gateway end to end (key, entitlement, cap, ai_call row with
