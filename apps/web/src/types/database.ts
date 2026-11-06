@@ -473,14 +473,14 @@ isOneToOne: false
                   ]
                 },"import_batch": {
                   Row: {
-                    "columns": (string)[],"committed_at": string | null,"committed_by": string | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"expires_at": string,"file_name": string,"file_sha256": string,"file_size": number,"header_row": number,"id": string,"mapping": Json | null,"mapping_template_id": string | null,"outcome": Json | null,"row_count": number,"sheet_name": string,"sheet_names": (string)[],"status": string,"summary": Json | null,"tenant_id": string,"undone_at": string | null,"undone_by": string | null,"updated_at": string,"updated_by": string | null,"warnings": NonNullable<Json>
+                    "columns": (string)[],"committed_at": string | null,"committed_by": string | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"expires_at": string,"file_name": string,"file_sha256": string,"file_size": number,"header_row": number,"id": string,"mapping": Json | null,"mapping_template_id": string | null,"outcome": Json | null,"row_count": number,"sheet_name": string,"sheet_names": (string)[],"status": string,"summary": Json | null,"tenant_id": string,"undone_at": string | null,"undone_by": string | null,"updated_at": string,"updated_by": string | null,"value_suggestions": Json | null,"warnings": NonNullable<Json>
                   }
                   ComputedFields: never
                   Insert: {
-                    "columns": (string)[],"committed_at"?: string | null,"committed_by"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"expires_at"?: string,"file_name": string,"file_sha256": string,"file_size": number,"header_row": number,"id"?: string,"mapping"?: Json | null,"mapping_template_id"?: string | null,"outcome"?: Json | null,"row_count": number,"sheet_name": string,"sheet_names": (string)[],"status"?: string,"summary"?: Json | null,"tenant_id": string,"undone_at"?: string | null,"undone_by"?: string | null,"updated_at"?: string,"updated_by"?: string | null,"warnings"?: NonNullable<Json>
+                    "columns": (string)[],"committed_at"?: string | null,"committed_by"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"expires_at"?: string,"file_name": string,"file_sha256": string,"file_size": number,"header_row": number,"id"?: string,"mapping"?: Json | null,"mapping_template_id"?: string | null,"outcome"?: Json | null,"row_count": number,"sheet_name": string,"sheet_names": (string)[],"status"?: string,"summary"?: Json | null,"tenant_id": string,"undone_at"?: string | null,"undone_by"?: string | null,"updated_at"?: string,"updated_by"?: string | null,"value_suggestions"?: Json | null,"warnings"?: NonNullable<Json>
                   }
                   Update: {
-                    "columns"?: (string)[],"committed_at"?: string | null,"committed_by"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"expires_at"?: string,"file_name"?: string,"file_sha256"?: string,"file_size"?: number,"header_row"?: number,"id"?: string,"mapping"?: Json | null,"mapping_template_id"?: string | null,"outcome"?: Json | null,"row_count"?: number,"sheet_name"?: string,"sheet_names"?: (string)[],"status"?: string,"summary"?: Json | null,"tenant_id"?: string,"undone_at"?: string | null,"undone_by"?: string | null,"updated_at"?: string,"updated_by"?: string | null,"warnings"?: NonNullable<Json>
+                    "columns"?: (string)[],"committed_at"?: string | null,"committed_by"?: string | null,"created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"expires_at"?: string,"file_name"?: string,"file_sha256"?: string,"file_size"?: number,"header_row"?: number,"id"?: string,"mapping"?: Json | null,"mapping_template_id"?: string | null,"outcome"?: Json | null,"row_count"?: number,"sheet_name"?: string,"sheet_names"?: (string)[],"status"?: string,"summary"?: Json | null,"tenant_id"?: string,"undone_at"?: string | null,"undone_by"?: string | null,"updated_at"?: string,"updated_by"?: string | null,"value_suggestions"?: Json | null,"warnings"?: NonNullable<Json>
                   }
                   Relationships: [
                     {
@@ -1689,6 +1689,9 @@ isOneToOne: false
                            },
 "import_commit":
 { Args: { "p_batch_id": string }; Returns: Json
+                           },
+"import_decide_values":
+{ Args: { "p_batch_id": string,"p_decisions": Json }; Returns: Json
                            },
 "import_save_mapping":
 { Args: { "p_batch_id": string,"p_mapping": Json,"p_template_id"?: string }; Returns: undefined

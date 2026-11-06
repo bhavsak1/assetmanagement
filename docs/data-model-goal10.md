@@ -247,6 +247,14 @@ times over and stops a runaway Sonnet tenant. Repeat imports with a saved templa
   Categories, then validate again". Creating a category or location is `category_config.manage` or
   `location_hierarchy.manage` and a structure decision; a person makes it on the normal screen.
 - Dates and numbers stay deterministic (8.4). An ambiguous date like `03/04/24` cannot be resolved by a model either.
+- As built (10.4): own route `POST /imports/:id/ai-values` on a validated batch (outside any transaction, like
+  10.3). Columns are `category`, `location`, `vendor` (OEM and O&M share one lookup in 8.4) and `status`. Up to 50
+  distinct values per call, each at most 80 characters; candidates go to the model by index, never by id, and the
+  model answers `candidate: -1` for none. `import_decide_values` is **security definer** (not invoker as planned):
+  users have no update on `import_batch` (8.2), so it checks by hand what the select policies would (record live,
+  active, in a domain the caller may view). The service stores its picks there as `suggested`; values already
+  stored are not sent again. A decision (accept or reject) sets the batch back to `mapped` and the screen re-runs
+  validation. Edit is a choice among the same candidates; the user's own choice keeps no confidence.
 
 ### 4.3 Fuzzy duplicates (10.5, no model)
 

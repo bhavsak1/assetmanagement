@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { actError, aiError, applyTemplate, mergeAi, codeName, columnLetter, commitWill, errorRows, messageText, normalise, saveError, templateOf, uploadError, type Target } from './Import'
+import { actError, aiError, decision, applyTemplate, mergeAi, codeName, columnLetter, commitWill, errorRows, messageText, normalise, saveError, templateOf, uploadError, type Target } from './Import'
 import { t } from './i18n'
 import { crc32, sheetXlsx } from './xlsx'
 
@@ -39,6 +39,13 @@ describe('import page helpers', () => {
       .toEqual(['name/rules', 'category/ai', 'ignore/user', 'ignore/rules', 'ignore/rules'])
     expect(aiError('ai_cap_reached')).toBe(t.import.mapping.aiErrors.ai_cap_reached)
     expect([aiError('ai_not_licensed'), aiError('ai_off'), aiError('ai_no_right'), aiError()]).toEqual([undefined, undefined, undefined, undefined])
+  })
+
+  it('10.4: accepting the AI pick keeps its confidence and reason; another candidate is the user choice', () => {
+    const v = { column: 'vendor', raw: 'Siemens Ind.', target_id: 'v1', confidence: 0.92, reason: 'name_variant', status: 'suggested',
+      candidates: [{ id: 'v1', label: 'Siemens India' }, { id: 'v2', label: 'Sigma' }] } as const
+    expect(decision({ ...v, candidates: [...v.candidates] }, 'v1', 'accepted')).toEqual({ column: 'vendor', raw: 'Siemens Ind.', target_id: 'v1', status: 'accepted', confidence: 0.92, reason: 'name_variant' })
+    expect(decision({ ...v, candidates: [...v.candidates] }, 'v2', 'accepted')).toEqual({ column: 'vendor', raw: 'Siemens Ind.', target_id: 'v2', status: 'accepted', confidence: undefined, reason: undefined })
   })
 
   it('maps save errors to messages', () => {
