@@ -469,7 +469,8 @@ export function compile(input: unknown, catalog: Catalog, refIds: string[][] = [
 
   const select: string[] = [];
   const columns: Column[] = [];
-  const add = (sql: string, col: Column) => { select.push(`${sql} as c${select.length}`); columns.push(col); };
+  // 10.7: dates go out as 'YYYY-MM-DD' text; pg would make a JS Date at the server's local midnight (a day off east of UTC).
+  const add = (sql: string, col: Column) => { select.push(`${col.type === 'date' ? `(${sql})::text` : sql} as c${select.length}`); columns.push(col); };
   const order: string[] = [];
   const dir = (d?: string) => (d === 'desc' ? 'desc nulls last' : 'asc nulls last');
   let group = '';
