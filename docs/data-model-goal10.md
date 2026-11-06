@@ -286,6 +286,11 @@ times over and stops a runaway Sonnet tenant. Repeat imports with a saved templa
 | F4 | Which rows | a every row with a name, also rows with a tag; b only rows without a tag | **a** | Low |
 | F5 | Exact `tag_exists` (8.4) | a leave as is (an error that says a tag is taken, even if the caller cannot see that asset; it must, or the commit fails on the unique key); b change it | **a** | — |
 
+Owner accepted F1-F5 (6 Nov 2026). As built: the distinct keys get a temp trigram index, so the planner drives the
+join from the smaller side (assets or keys). A probe per key into `asset_search_trgm` alone took 5 s for 20,000 keys.
+`pg_trgm.similarity_threshold` is set with `set_config(..., true)` (a function `SET` of it needs superuser), and the
+0.6 is also checked with `similarity()`, so the result does not depend on that setting.
+
 ### 4.4 AI-suggested marks after commit
 
 The mark lives in the import: the batch keeps which mapping and which values came from AI, with confidence, and the

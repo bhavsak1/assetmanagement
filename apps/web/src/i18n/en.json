@@ -1488,6 +1488,7 @@
         "tag_needs_category_code": "The tag pattern needs a category code. Add one to the category or type a tag.",
         "tag_needs_location_code": "The tag pattern needs a location code. Set a location with a code or type a tag.",
         "possible_duplicate": "An asset with this serial number and manufacturer may already exist.",
+        "similar_asset": "A similar asset already exists: {tag}.",
         "warranty_incomplete": "Give both warranty start and end, or neither.",
         "warranty_dates": "Warranty end is before the start.",
         "warranty_vendor": "A warranty needs an OEM or O&M vendor on the row.",

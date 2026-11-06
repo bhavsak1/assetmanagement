@@ -60,8 +60,9 @@ describe('import page helpers', () => {
     expect(messageText({ col: 3, code: 'date_format', params: { format: 'dd-MM-yyyy' } }, catalog))
       .toBe('Not a date. Use an Excel date, YYYY-MM-DD or dd-MM-yyyy.')
     expect(messageText({ code: 'some_new_code' }, catalog)).toBe('some_new_code')
+    expect(messageText({ col: 0, code: 'similar_asset', params: { tag: 'AC-105' } }, catalog)).toBe('A similar asset already exists: AC-105.')
     // Every code import_validate can write has words.
-    expect(Object.keys(t.import.check.codes)).toHaveLength(25)
+    expect(Object.keys(t.import.check.codes)).toHaveLength(26)
   })
 
   it('says what commit would do with each row (8.5)', () => {
