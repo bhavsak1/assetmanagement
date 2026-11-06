@@ -208,3 +208,14 @@ test('dates come back as YYYY-MM-DD text, whatever the server time zone', async 
   assert.match(rows[0]![4]!, /^\d{4}-\d{2}-\d{2}$/);
   assert.ok(Math.abs(Date.parse(rows[0]![4]!) - Date.parse(due)) <= 86400e3, rows[0]![4]); // tenant today may differ from UTC by a day
 });
+
+test('a plant named "Plant 1 · Pune (Chakan)" resolves from the word "Pune" (the staging demo names)', async () => {
+  const name = `Plant 9 · Kharadi${s} (East)`;
+  const id = (await admin.query('insert into public.location (tenant_id, name) values ($1, $2) returning id', [TENANT_A, name])).rows[0].id;
+  answer = { query: { subject: 'asset', filters: [{ field: 'location', op: 'in_place', value: `kharadi${s}` }] } };
+  const r = (await ask(ADMIN_A, 'assets at Kharadi')).json();
+  assert.deepEqual(r.resolved, [{ filter: 0, value: `kharadi${s}`, match: { id, label: name } }]);
+  answer = { query: { subject: 'asset', filters: [{ field: 'location', op: 'in_place', value: `${s}_` }] } };
+  assert.ok((await ask(ADMIN_A, 'a LIKE wildcard')).json().needs_choice, '_ is a literal, not a wildcard');
+  await admin.query('update public.location set deleted_at = now() where id = $1', [id]);
+});
