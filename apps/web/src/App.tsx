@@ -476,7 +476,7 @@ export function App() {
         <Route path="/locations" element={<LocationsPage tenantId={tenantId ?? ''} canManage={can('location_hierarchy', 'manage')} can={can} />} />
         <Route
           path="/settings"
-          element={<SettingsPage tenantId={tenantId ?? ''} canView={can('tenant_settings', 'view')} canManage={can('tenant_settings', 'manage')} />}
+          element={<SettingsPage tenantId={tenantId ?? ''} canView={can('tenant_settings', 'view')} canManage={can('tenant_settings', 'manage')} canViewAi={can('ai_usage', 'view')} />}
         />
         <Route path="/notifications" element={<NotificationsPage tenantId={tenantId ?? ''} userId={userId ?? ''} />} />
         <Route path="/security" element={<SecurityPage tenantId={tenantId ?? ''} canView={can('users_security', 'view')} canManage={can('users_security', 'manage')} canViewKeys={can('api_keys', 'view')} canManageKeys={can('api_keys', 'manage')} />} />

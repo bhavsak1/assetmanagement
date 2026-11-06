@@ -1610,6 +1610,9 @@ isOneToOne: false
             "activate_change_set":
 { Args: { "p_change_set_id": string }; Returns: undefined
                            },
+"ai_usage":
+{ Args: Record<PropertyKey, never>; Returns: Json
+                           },
 "allowed_asset_statuses":
 { Args: { "p_asset_id": string }; Returns: string[]
                            },
