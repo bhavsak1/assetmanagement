@@ -5,7 +5,33 @@ export type Database = {
   
   "public": {
           Tables: {
-            "asset": {
+            "ai_call": {
+                  Row: {
+                    "cache_read_tokens": number | null,"cost_micro_usd": number | null,"created_at": string,"error_code": string | null,"est_micro_usd": number,"feature": string,"finished_at": string | null,"id": string,"input_tokens": number | null,"latency_ms": number | null,"model": string | null,"outcome": string | null,"output": Json | null,"output_tokens": number | null,"provider": string | null,"request": Json | null,"status": string,"subject_id": string | null,"tenant_id": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "cache_read_tokens"?: number | null,"cost_micro_usd"?: number | null,"created_at"?: string,"error_code"?: string | null,"est_micro_usd": number,"feature": string,"finished_at"?: string | null,"id"?: string,"input_tokens"?: number | null,"latency_ms"?: number | null,"model"?: string | null,"outcome"?: string | null,"output"?: Json | null,"output_tokens"?: number | null,"provider"?: string | null,"request"?: Json | null,"status"?: string,"subject_id"?: string | null,"tenant_id": string,"user_id": string
+                  }
+                  Update: {
+                    "cache_read_tokens"?: number | null,"cost_micro_usd"?: number | null,"created_at"?: string,"error_code"?: string | null,"est_micro_usd"?: number,"feature"?: string,"finished_at"?: string | null,"id"?: string,"input_tokens"?: number | null,"latency_ms"?: number | null,"model"?: string | null,"outcome"?: string | null,"output"?: Json | null,"output_tokens"?: number | null,"provider"?: string | null,"request"?: Json | null,"status"?: string,"subject_id"?: string | null,"tenant_id"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ai_call_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ai_call_tenant_id_user_id_fkey"
+      columns: ["tenant_id","user_id"]
+isOneToOne: false
+      referencedRelation: "tenant_membership"
+      referencedColumns: ["tenant_id","user_id"]
+    }
+                  ]
+                },"asset": {
                   Row: {
                     "category_id": string,"coverage_state": string,"coverage_state_until": string | null,"created_at": string,"created_by": string | null,"criticality": string | null,"custom_values": NonNullable<Json>,"deleted_at": string | null,"id": string,"in_service_date": string | null,"location_changed_at": string | null,"location_id": string | null,"location_reason": string | null,"manufacturer": string | null,"model": string | null,"name": string,"oem_vendor_id": string | null,"om_vendor_id": string | null,"parent_asset_id": string | null,"purchase_currency": string | null,"purchase_date": string | null,"purchase_value": number | null,"quantity": number,"serial_number": string | null,"status": string,"status_changed_at": string | null,"status_id": string,"status_reason": string | null,"tag": string,"tenant_id": string,"updated_at": string,"updated_by": string | null
                   }

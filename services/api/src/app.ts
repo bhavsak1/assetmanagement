@@ -1,6 +1,7 @@
 import cors from '@fastify/cors';
 import swagger from '@fastify/swagger';
 import Fastify, { type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
+import { AiError, type CallModel } from './ai.ts';
 import type { Verify } from './auth.ts';
 import type { createDb } from './db.ts';
 import type { JobsVerify } from './email.ts';
@@ -20,14 +21,19 @@ type Deps = {
   maxParses?: number;
   // 9.1: off (no route) unless configured.
   jobs?: { verify: JobsVerify; email: () => Promise<{ sent: number; failed: number; failures: string[] }> };
+  // 10.1: the AI gateway. Without it every AI route answers ai_off.
+  callModel?: CallModel;
 };
+
+// 10.1: gateway refusal codes to HTTP. The body carries the code for the web app's i18n text.
+const AI_STATUS = { ai_off: 503, ai_not_licensed: 403, ai_no_right: 403, ai_cap_reached: 429, ai_rate_limited: 429, ai_failed: 502 } as const;
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const MAX_FILE = 10 * 2 ** 20; // I2
 const ACTION_TIMEOUT = '280s';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function buildApp({ verify, withUser, withKey, logger = false, corsOrigins = [], maxParses = 3, jobs }: Deps) {
+export function buildApp({ verify, withUser, withKey, logger = false, corsOrigins = [], maxParses = 3, jobs, callModel }: Deps) {
   // 9.2: refuse unknown fields (Fastify's default strips them, so a PATCH of status would silently do nothing).
   const app = Fastify({ logger, ajv: { customOptions: { removeAdditional: false } } });
 
@@ -157,6 +163,27 @@ export function buildApp({ verify, withUser, withKey, logger = false, corsOrigin
       }
     });
   }
+
+  // Story 10.1: one tiny model call that proves the gateway end to end (key, entitlement, cap, ai_call row with
+  // cost). For ai_usage.view holders only; it is not a feature. Costs well under a tenth of a US cent.
+  app.post('/ai/check', async (req, reply) => {
+    const claims = await claimsOf(req, reply);
+    if (!claims) return reply;
+    if (!callModel) return reply.code(503).send({ error: 'ai_off' });
+    try {
+      const { output, ai_call_id } = await callModel<{ ok: boolean }>({
+        claims, feature: 'check', maxTokens: 200,
+        system: 'You are a health check. Answer with the JSON object {"ok": true}.',
+        input: 'Health check.',
+        schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false },
+      });
+      req.log.info({ user_id: claims.sub, tenant_id: claims.tenant_id, ai_call_id }, 'ai check');
+      return { ok: output.ok, ai_call_id };
+    } catch (e) {
+      if (e instanceof AiError) return reply.code(AI_STATUS[e.code]).send({ error: e.code });
+      throw e;
+    }
+  });
 
   // Story 9.1: the daily email summary, called by Cloud Scheduler with a Google OIDC token. Outside /v1.
   if (jobs) {
