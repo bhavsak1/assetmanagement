@@ -6,6 +6,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { Ajv } from 'ajv';
 import { cost, MODEL, providersFromEnv, type Feature } from '../src/ai.ts';
+import { aiChecked, type AiOutput, type Target } from '../src/mapping.ts';
 
 type Case = { name: string; feature: Feature; system: string; input: string; schema: Record<string, unknown>; expect: unknown };
 const dir = new URL('./cases/', import.meta.url);
@@ -16,6 +17,17 @@ const cases: Case[] = readdirSync(dir).filter((f) => f.endsWith('.json'))
 const providers = providersFromEnv();
 if (!providers.length) throw new Error('Set ANTHROPIC_API_KEY and/or VERTEX_PROJECT to run the eval.');
 const ajv = new Ajv({ strict: false });
+
+// import_map (10.3): confidence varies run to run, so score what the user would see after the code checks:
+// expect is { column: target } for every column that should get a suggestion; the rest must get none.
+function asShown(c: Case, out: unknown): unknown {
+  if (c.feature !== 'import_map') return out;
+  const input = JSON.parse(c.input) as { fields: { key: string }[]; columns: { column: number }[] };
+  const open = input.columns.map((x) => x.column);
+  const catalog = input.fields.map((f) => ({ target: f.key }) as Target);
+  const checked = aiChecked(out as AiOutput, open, catalog, Array.from({ length: Math.max(...open) + 1 }, () => undefined));
+  return Object.fromEntries(checked.flatMap((s, i) => (s ? [[String(i), s.target]] : [])));
+}
 
 for (const p of providers) {
   const score = new Map<string, { pass: number; total: number; micro: number }>();
@@ -29,7 +41,7 @@ for (const p of providers) {
       const r = await p.call({ model, system: c.system, input: c.input, schema: c.schema, maxTokens: 4000 });
       s.micro += cost(model, r.usage);
       const out: unknown = JSON.parse(r.text);
-      if (ajv.validate(c.schema, out) && isDeepStrictEqual(out, c.expect)) { s.pass++; verdict = 'pass'; }
+      if (ajv.validate(c.schema, out) && isDeepStrictEqual(asShown(c, out), c.expect)) { s.pass++; verdict = 'pass'; }
     } catch (e) {
       verdict = `FAIL (${(e as Error).name})`;
     }

@@ -6,10 +6,10 @@ import type { Verify } from './auth.ts';
 import type { createDb } from './db.ts';
 import type { JobsVerify } from './email.ts';
 import { HEADER_SCAN, stageXlsx } from './imports.ts';
-import { templateLists, templateXlsx, type Target } from './mapping.ts';
+import { aiMapper, loadChain, matchTemplate, rulesMapper, suggestMapping, templateLists, templateXlsx, type Target } from './mapping.ts';
 import { mcp, type RouteSchemas } from './mcp.ts';
 import { v1 } from './v1.ts';
-import { ImportError } from './xlsx.ts';
+import { ImportError, type Cell } from './xlsx.ts';
 
 type Deps = {
   verify: Verify;
@@ -163,6 +163,39 @@ export function buildApp({ verify, withUser, withKey, logger = false, corsOrigin
       }
     });
   }
+
+  // Story 10.3: AI column mapping for a staged batch (data-model-goal10.md §4.1). The chain runs again with the
+  // AI mapper last; nothing is stored. The user confirms through import_save_mapping, as for rules (M4). A saved
+  // template, or no column left without a target, means no model call. Reads in one short transaction; the model
+  // call runs outside it (the gateway's own rule, §2.2).
+  app.post<{ Params: { id: string } }>('/imports/:id/ai-mapping', async (req, reply) => {
+    const claims = await claimsOf(req, reply);
+    if (!claims) return reply;
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ error: 'not_found' });
+    const read = await withUser(claims, async (q) => {
+      const batch = (await q<{ columns: string[]; status: string; mapping_template_id: string | null }>(
+        'select columns, status, mapping_template_id from public.import_batch where id = $1', [req.params.id])).rows[0];
+      if (!batch) return undefined;
+      const samples = (await q<{ cells: Cell[] }>(
+        'select cells from public.import_row where batch_id = $1 order by row_number limit 20', [req.params.id])).rows.map((r) => r.cells);
+      return { batch, samples, ...await loadChain(q) };
+    });
+    if (!read || !read.catalog.length) return reply.code(404).send({ error: 'not_found' }); // RLS: not theirs, or no excel_import
+    const { batch, samples, catalog, templates } = read;
+    if (batch.status !== 'staged') return reply.code(409).send({ error: 'changed' });
+    if (batch.mapping_template_id || matchTemplate(batch.columns, templates)) return { mapping: null };
+    if (!callModel) return reply.code(503).send({ error: 'ai_off' });
+    try {
+      const mapping = await suggestMapping({ columns: batch.columns, samples, catalog },
+        [rulesMapper, aiMapper(callModel, claims, req.params.id)]);
+      req.log.info({ user_id: claims.sub, tenant_id: claims.tenant_id, batch_id: req.params.id,
+        ai: mapping.filter((m) => m.source === 'ai').length }, 'import ai mapping');
+      return { mapping };
+    } catch (e) {
+      if (e instanceof AiError) return reply.code(AI_STATUS[e.code]).send({ error: e.code });
+      throw e;
+    }
+  });
 
   // Story 10.1: one tiny model call that proves the gateway end to end (key, entitlement, cap, ai_call row with
   // cost). For ai_usage.view holders only; it is not a feature. Costs well under a tenth of a US cent.
