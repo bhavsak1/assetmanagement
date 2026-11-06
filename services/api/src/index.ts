@@ -1,3 +1,4 @@
+import { createGateway, providersFromEnv } from './ai.ts';
 import { buildApp } from './app.ts';
 import { createVerifier } from './auth.ts';
 import { createDb, createJobsDb } from './db.ts';
@@ -18,11 +19,14 @@ if (jobsDb) {
   const appUrl = env('APP_URL');
   jobs = { verify: createJobsVerifier(env('JOBS_AUDIENCE'), env('JOBS_INVOKER')), email: () => runEmailJob(jobsDb.query, send, appUrl) };
 }
+// Story 10.1: AI is off unless AI_ENABLED=true (the kill switch) and a provider is configured.
+const callModel = createGateway({ withUser: db.withUser, providers: providersFromEnv(), enabled: process.env.AI_ENABLED === 'true' });
 const app = buildApp({
   verify: createVerifier(env('SUPABASE_URL')),
   withUser: db.withUser,
   withKey: db.withKey,
   jobs,
+  callModel,
   corsOrigins: (process.env.CORS_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
   // JSON lines on stdout; Cloud Logging reads `severity`. Pino logs no headers, so no token in logs.
   logger: { messageKey: 'message', formatters: { level: (label) => ({ severity: label.toUpperCase() }) } },

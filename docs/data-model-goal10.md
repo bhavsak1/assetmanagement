@@ -76,7 +76,8 @@ callModel({ claims, feature, system, input, schema, model }) -> { output, ai_cal
 
 - Only `ai.ts` imports a model SDK (an ESLint `no-restricted-imports` rule enforces it). Every feature calls
   `callModel`; none calls a provider.
-- `feature` is one of `import_map`, `import_values`, `insights`, `assist` (data, a text column; new features add a
+- `feature` is one of `import_map`, `import_values`, `insights`, `assist` (10.1 adds `check`, the `POST /ai/check`
+  probe for `ai_usage.view`) (data, a text column; new features add a
   value, not a code path in SQL).
 - `schema` is a JSON Schema. The provider is asked for structured output (`output_config.format`), and the answer is
   checked again with Ajv. A failing answer is an error, never "best effort".
@@ -146,7 +147,8 @@ OQ-11's lean is "per-tenant monthly cap, unit to decide". This design uses the l
 the log keeps tokens and cost, so any customer-facing unit (questions, rows, credits) can be computed later.
 
 - The add-on stays the existing `ai_addon` row. Its `limit_value` becomes the **monthly cap in US cents of provider
-  cost**; `null` means the platform default `AI_DEFAULT_CAP_CENTS` (lean 500, so $5 a month). No new column, no
+  cost**; `null` means 500, so $5 a month (built in 10.1 as a constant in `ai_begin`, not an env var: the service cannot
+  widen the cap). No new column, no
   new table. The provisioning script sets it, as today (service role, a system job).
 - Month = calendar month in UTC (D4 has the tenant-time-zone option).
 - Rate limit per user: 20 calls a minute (constant in `ai_begin`, like the `/v1` 120 a minute).
@@ -444,7 +446,7 @@ Save = today's path (RLS insert, transfer_asset, change_asset_status), audited a
 3. **Budget:** a GCP budget alert covering Vertex and Cloud Run.
 4. **Entitlement:** the provisioning script sets `ai_addon` (and its cap) per pilot tenant. Staging demo tenant: on.
 5. New env vars (added to `.env.example` in 10.1, values only in Secret Manager): `ANTHROPIC_API_KEY`, `AI_ENABLED`,
-   `AI_DEFAULT_CAP_CENTS`, `VERTEX_PROJECT`, `VERTEX_REGION`.
+   `VERTEX_PROJECT`, `VERTEX_REGION`.
 
 ---
 
