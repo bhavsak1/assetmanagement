@@ -6,6 +6,7 @@ import type { Verify } from './auth.ts';
 import type { createDb } from './db.ts';
 import type { JobsVerify } from './email.ts';
 import { HEADER_SCAN, stageXlsx } from './imports.ts';
+import { allowed, loadCatalog, loadRights, publicCatalog, QueryError, run } from './insights.ts';
 import { aiMapper, loadChain, matchTemplate, rulesMapper, suggestMapping, templateLists, templateXlsx, type Target } from './mapping.ts';
 import { mcp, type RouteSchemas } from './mcp.ts';
 import { askModel, candidates, key, openValues, type Stored, type Value } from './values.ts';
@@ -257,6 +258,38 @@ export function buildApp({ verify, withUser, withKey, logger = false, corsOrigin
       return { ok: output.ok, ai_call_id };
     } catch (e) {
       if (e instanceof AiError) return reply.code(AI_STATUS[e.code]).send({ error: e.code });
+      throw e;
+    }
+  });
+
+  // Story 10.6 (data-model-goal10.md §5): the user's own catalog, and a structured query run under their rights.
+  // No model call and no AI metering: 10.7 chip edits and 10.8 widgets re-run here. Q9: insights_query.ask and
+  // a live ai_addon, else 403. A refused query is 422 before any SQL exists.
+  app.get('/insights/catalog', async (req, reply) => {
+    const claims = await claimsOf(req, reply);
+    if (!claims) return reply;
+    const out = await withUser(claims, async (q) => {
+      const rights = await loadRights(q);
+      return await allowed(q, rights) ? publicCatalog(await loadCatalog(q, rights)) : null;
+    });
+    if (!out) return reply.code(403).send({ error: 'forbidden' });
+    return { subjects: out };
+  });
+
+  app.post<{ Body: unknown }>('/insights/run', async (req, reply) => {
+    const claims = await claimsOf(req, reply);
+    if (!claims) return reply;
+    try {
+      const out = await withUser(claims, async (q) => {
+        const rights = await loadRights(q);
+        return await allowed(q, rights) ? run(q, req.body, await loadCatalog(q, rights)) : null;
+      });
+      if (!out) return reply.code(403).send({ error: 'forbidden' });
+      req.log.info({ user_id: claims.sub, tenant_id: claims.tenant_id, rows: 'rows' in out ? out.rows.length : null }, 'insights run');
+      return out;
+    } catch (e) {
+      if (e instanceof QueryError) return reply.code(422).send({ error: e.code, at: e.at });
+      if ((e as { code?: string }).code === '57014') return reply.code(504).send({ error: 'timeout' });
       throw e;
     }
   });

@@ -357,6 +357,26 @@ A catalog in `services/api/src/insights.ts`, built **per request for this user**
   gets `422` on `sum(purchase_value)` and a forged run returns nulls; a Pune-scoped user never sees Mumbai rows;
   cross-tenant; SQL text never contains a value.
 
+#### 5.3.1 Design at build (10.6, owner answers 6 Nov 2026)
+
+Built in `services/api/src/insights.ts` with routes `GET /insights/catalog` and `POST /insights/run` in `app.ts`. No migration.
+
+| # | Decision | Answer |
+|---|---|---|
+| Q1 | Query shape | §5.2 plus `fields` (max 20) for row lists. With `measures` or `group_by`, the output is the groups then the measures. `is_empty` takes `true` or `false` |
+| Q2 | Catalog home | a fixed map in code; custom fields from `field_definition` under RLS, minus `hidden_field_keys`. No catalog table |
+| Q3 | Subjects (owner changed) | six: asset, obligation, coverage, service record, vendor, location. Joins fixed per subject. Asset `added_on` and `last_changed` (§11.2) |
+| Q3b | Asset coverage dates | `warranty_end`, `amc_end`: the latest end among live linked contracts through `coverage_view` (needs `coverage_contract.view`); `coverage_state` as an enum |
+| Q4 | Fields | the field map in `insights.ts`; listed in the 10.6 PR |
+| Q5 | Field domains | three layers: catalog leaves it out, compiler `422 field_not_allowed`, secure view nulls. A field may need several domains |
+| Q6 | Limits | `limit` 1 to 1,000 (default 100); 10 filters, 2 group_by, 5 measures, 3 sorts, 50 values per list, strings 200 chars; read-only transaction, `statement_timeout` 5 s (`504 timeout`) |
+| Q7 | Reference values | resolved in 10.6 among rows the user can see: an id, exact name or code, then `pg_trgm` 0.4; none or several matches return `needs_choice`; `in_place` for any location reference (subtree) |
+| Q8 | Money and custom values | money measures group by currency; custom number, date and boolean values use `pg_input_is_valid` safe casts |
+| Q9 | Gate | `insights_query.ask` and a live `ai_addon`, else `403`. The compiler itself has no gate |
+
+Found at build: custom fields reach the catalog only for `category_config.view` holders, because `field_definition` RLS
+needs it (same as the asset form today). Category is not a subject; it is a reference field on assets.
+
 ### 5.4 Ask Assetly and the Insights screen (10.7)
 
 ```
