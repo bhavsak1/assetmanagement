@@ -376,7 +376,7 @@ export type Resolved = { ids: string[][]; resolved: { filter: number; value: str
   needs_choice: { filter: number; value: string; options: Option[] }[] };
 
 // Text values of ref filters to ids among rows this user can see (Q7): an id, an exact name or code, then
-// pg_trgm at 0.4. One match is used; none or several come back as needs_choice for the user. No model call.
+// a name containing the text, then pg_trgm at 0.4. One match is used; none or several come back as needs_choice for the user. No model call.
 export async function resolveRefs(q: Query, query: InsightQuery, catalog: Catalog): Promise<Resolved> {
   const out: Resolved = { ids: [], resolved: [], needs_choice: [] };
   const fields = catalog[query.subject]!.fields;
@@ -392,6 +392,11 @@ export async function resolveRefs(q: Query, query: InsightQuery, catalog: Catalo
       } else {
         found = (await q<Option>(`select id, label from (${src}) s where lower(label) = lower($1) or lower(code) = lower($1)
           order by label limit 6`, [value])).rows;
+        // 10.7: a word inside a longer name ("Pune" in "Plant 1 · Pune (Chakan)") scores under 0.4 by trigram.
+        if (!found.length) {
+          found = (await q<Option>(`select id, label from (${src}) s where label ilike $1 order by label limit 6`,
+            [`%${likeEscape(value)}%`])).rows;
+        }
         if (!found.length) {
           found = (await q<Option>(`select id, label from (${src}) s where extensions.similarity(label, $1) >= 0.4
             order by extensions.similarity(label, $1) desc, label limit 6`, [value])).rows;
@@ -469,7 +474,8 @@ export function compile(input: unknown, catalog: Catalog, refIds: string[][] = [
 
   const select: string[] = [];
   const columns: Column[] = [];
-  const add = (sql: string, col: Column) => { select.push(`${sql} as c${select.length}`); columns.push(col); };
+  // 10.7: dates go out as 'YYYY-MM-DD' text; pg would make a JS Date at the server's local midnight (a day off east of UTC).
+  const add = (sql: string, col: Column) => { select.push(`${col.type === 'date' ? `(${sql})::text` : sql} as c${select.length}`); columns.push(col); };
   const order: string[] = [];
   const dir = (d?: string) => (d === 'desc' ? 'desc nulls last' : 'asc nulls last');
   let group = '';

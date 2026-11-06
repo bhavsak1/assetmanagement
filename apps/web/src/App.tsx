@@ -9,6 +9,7 @@ import { CategoriesPage } from './Categories'
 import { CoveragePage } from './Coverage'
 import { DashboardPage } from './Dashboard'
 import { ImportPage } from './Import'
+import { InsightsPage } from './Insights'
 import { LocationsPage } from './Locations'
 import { MaintenancePage } from './Maintenance'
 import { NotificationBell, NotificationsPage } from './Notifications'
@@ -18,7 +19,6 @@ import { VendorsPage } from './Vendors'
 import { t } from './i18n'
 import { supabase } from './supabase'
 
-type PageKey = keyof typeof t.pages
 type Company = { id: string; name: string; status: string }
 
 // Where to go after sign-in: only a path in this app. '//host' and '/\host' leave the origin, and browsers drop
@@ -85,18 +85,9 @@ const navGroups = [
   { group: 'admin', items: ['security', 'settings'] },
 ] as const
 
-function EmptyPage({ page }: { page: PageKey }) {
-  return (
-    <>
-      <title>{`${t.pages[page]} · ${t.app.name}`}</title>
-      <h1>{t.pages[page]}</h1>
-      <p className="muted">{t.pages.empty}</p>
-    </>
-  )
-}
-
-function Shell({ companies, tenantId, canImport }: { companies: Company[]; tenantId: string; canImport: boolean }) {
-  // Ask Assetly and the Intelligence group show only with the AI add-on (CLAUDE.md §11).
+function Shell({ companies, tenantId, canImport, canAsk }: { companies: Company[]; tenantId: string; canImport: boolean; canAsk: boolean }) {
+  const navigate = useNavigate()
+  // Ask Assetly and the Intelligence group show only with the AI add-on (CLAUDE.md §11) and, from 10.7, insights_query.ask.
   const [ai, setAi] = useState<{ tenantId: string; on: boolean }>()
   useEffect(() => {
     let live = true
@@ -105,7 +96,7 @@ function Shell({ companies, tenantId, canImport }: { companies: Company[]; tenan
       live = false
     }
   }, [tenantId])
-  const aiOn = ai?.tenantId === tenantId && ai.on
+  const aiOn = ai?.tenantId === tenantId && ai.on && canAsk
 
   return (
     <div className="app">
@@ -128,7 +119,7 @@ function Shell({ companies, tenantId, canImport }: { companies: Company[]; tenan
       <div className="main">
         <header className="topbar">
           <input className="search" type="search" placeholder={t.topbar.search} aria-label={t.topbar.search} />
-          {aiOn && <button className="btn" type="button">{t.topbar.askAssetly}</button>}
+          {aiOn && <button className="btn" type="button" onClick={() => void navigate('/insights')}>{t.topbar.askAssetly}</button>}
           <div className="spacer" />
           {companies.length > 1 ? (
             <select
@@ -436,7 +427,7 @@ export function App() {
 
   let signedIn = null
   if (session && companies) {
-    if (tenantId) signedIn = <Shell companies={companies} tenantId={tenantId} canImport={can('excel_import', 'run') || can('excel_import', 'review')} />
+    if (tenantId) signedIn = <Shell companies={companies} tenantId={tenantId} canImport={can('excel_import', 'run') || can('excel_import', 'review')} canAsk={can('insights_query', 'ask')} />
     else if (companies.length === 0) signedIn = <NoAccess />
     else signedIn = <ChooseCompany companies={companies} failed={pickFailed} onPick={pick} />
   }
@@ -449,11 +440,7 @@ export function App() {
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       {/* The target page survives sign-in, and the company pick too (it renders in place) [3.6b]. */}
       <Route element={session ? signedIn : <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />}>
-        {navGroups.flatMap(({ items }) =>
-          items
-            .filter((key) => key !== 'dashboard' && key !== 'assets' && key !== 'maintenance' && key !== 'categories' && key !== 'locations' && key !== 'settings' && key !== 'vendors' && key !== 'coverage' && key !== 'security' && key !== 'import')
-            .map((key) => <Route key={key} path={`/${key}`} element={<EmptyPage page={key} />} />),
-        )}
+        <Route path="/insights" element={<InsightsPage />} />
         <Route path="/dashboard" element={<DashboardPage tenantId={tenantId ?? ''} can={can} />} />
         <Route
           path="/assets"

@@ -8,13 +8,22 @@ import { Ajv } from 'ajv';
 import { cost, MODEL, providersFromEnv, type Feature } from '../src/ai.ts';
 import { aiChecked, type AiOutput, type Target } from '../src/mapping.ts';
 import { aiChecked as valuesChecked, type AiOutput as ValuesOutput } from '../src/values.ts';
+import { ASK_SCHEMA, askInput, askSystem, shape, type AskOutput } from '../src/ask.ts';
+import { buildCatalog, publicCatalog } from '../src/insights.ts';
 
-type Case = { name: string; feature: Feature; system: string; input: string; schema: Record<string, unknown>; expect: unknown };
+type Case = { name: string; feature: Feature; system: string; input: string; schema: Record<string, unknown>; expect: unknown;
+  question?: string };
+// insights (10.7): a case holds only the question; the prompt is the route's, over a catalog with every view domain.
+const EVAL_RIGHTS = ['asset_core', 'asset_financials', 'category_config', 'location_hierarchy', 'vendor_core',
+  'coverage_contract', 'coverage_values', 'obligation', 'service_record', 'service_values'].map((d) => `${d}.view`);
+const insightsSystem = askSystem(publicCatalog(buildCatalog(new Set(EVAL_RIGHTS), [])), new Date().toISOString().slice(0, 10));
 const dir = new URL('./cases/', import.meta.url);
 const only = process.argv[2];
 const cases: Case[] = readdirSync(dir).filter((f) => f.endsWith('.json'))
   .flatMap((f) => JSON.parse(readFileSync(new URL(f, dir), 'utf8')) as Case[])
-  .filter((c) => !only || c.feature === only);
+  .filter((c) => !only || c.feature === only)
+  .map((c) => (c.question === undefined ? c : { ...c, system: insightsSystem, input: askInput(c.question), schema: ASK_SCHEMA,
+    expect: (c.expect as { cannot_answer?: true }).cannot_answer ? c.expect : shape({ query: c.expect }) }));
 const providers = providersFromEnv();
 if (!providers.length) throw new Error('Set ANTHROPIC_API_KEY and/or VERTEX_PROJECT to run the eval.');
 const ajv = new Ajv({ strict: false });
@@ -22,7 +31,9 @@ const ajv = new Ajv({ strict: false });
 // import_map (10.3): confidence varies run to run, so score what the user would see after the code checks:
 // expect is { column: target } for every column that should get a suggestion; the rest must get none.
 // import_values (10.4): expect is { value: candidate index } for every value that should get a pick.
+// insights (10.7): expect is shape() of the right answer (subject, filters by field, group_by, measures).
 function asShown(c: Case, out: unknown): unknown {
+  if (c.feature === 'insights') return shape(out as AskOutput);
   if (c.feature === 'import_values') {
     const { values } = JSON.parse(c.input) as { values: { field: 'vendor'; text: string; candidates: { candidate: number; name: string }[] }[] };
     const ask = values.map((v) => ({ column: v.field, raw: v.text, candidates: v.candidates.map((x) => ({ id: String(x.candidate), label: x.name })) }));

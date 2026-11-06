@@ -1123,3 +1123,49 @@ a.kpi:focus-visible {
 tr.unread .row-link {
   font-weight: var(--weight-semibold);
 }
+
+/* Insights (10.7): question box, "I understood this as" chips, inline filter editor. Screens: Insights. */
+.ask {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+  margin-top: var(--space-6);
+}
+
+.ask .field {
+  flex: 1;
+  margin: 0;
+}
+
+.understood,
+.filter-editor {
+  margin-top: var(--space-6);
+}
+
+.filter-editor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-end;
+}
+
+.filter-editor .field,
+.field.inline {
+  margin: 0;
+}
+
+.field.inline {
+  flex-direction: row;
+  align-items: center;
+}
+
+.understood .actions,
+.filter-editor .actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.choice {
+  margin-top: var(--space-5);
+}

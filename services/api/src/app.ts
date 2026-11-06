@@ -2,6 +2,7 @@ import cors from '@fastify/cors';
 import swagger from '@fastify/swagger';
 import Fastify, { type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import { AiError, type CallModel } from './ai.ts';
+import { ASK_SCHEMA, askInput, askSystem, QUESTION_MAX, salvage, type AskOutput } from './ask.ts';
 import type { Verify } from './auth.ts';
 import type { createDb } from './db.ts';
 import type { JobsVerify } from './email.ts';
@@ -292,6 +293,67 @@ export function buildApp({ verify, withUser, withKey, logger = false, corsOrigin
       if ((e as { code?: string }).code === '57014') return reply.code(504).send({ error: 'timeout' });
       throw e;
     }
+  });
+
+  // Story 10.7 (data-model-goal10.md §5.4): a question to one structured query through the gateway, then the 10.6
+  // run under the user's rights. The model sees the user's catalog, never rows. Its output is only the query JSON,
+  // checked by code; nothing it says runs anything. A refusal or failure leaves the chip editor (/insights/run).
+  app.post<{ Body: { question?: unknown } }>('/insights/ask', async (req, reply) => {
+    const claims = await claimsOf(req, reply);
+    if (!claims) return reply;
+    const question = typeof req.body?.question === 'string' ? req.body.question.trim() : '';
+    if (!question || question.length > QUESTION_MAX) return reply.code(422).send({ error: 'bad_question' });
+    const read = await withUser(claims, async (q) => {
+      const rights = await loadRights(q);
+      if (!await allowed(q, rights)) return null;
+      const today = (await q<{ d: string }>('select private.tenant_today()::text as d')).rows[0]!.d;
+      return { today, catalog: publicCatalog(await loadCatalog(q, rights)) };
+    });
+    if (!read) return reply.code(403).send({ error: 'forbidden' });
+    if (!callModel) return reply.code(503).send({ error: 'ai_off' });
+    let output: AskOutput, aiCallId: string;
+    try {
+      ({ output, ai_call_id: aiCallId } = await callModel<AskOutput>({ claims, feature: 'insights', maxTokens: 2000,
+        system: askSystem(read.catalog, read.today), input: askInput(question), schema: ASK_SCHEMA }));
+    } catch (e) {
+      if (e instanceof AiError) return reply.code(AI_STATUS[e.code]).send({ error: e.code });
+      throw e;
+    }
+    // D7.5: kept in ai_call.output for 90 days; the model's words are never shown.
+    if (!output.query) return { ai_call_id: aiCallId, cannot_answer: true };
+    try {
+      const out = await withUser(claims, async (q) => {
+        const rights = await loadRights(q);
+        const catalog = await loadCatalog(q, rights);
+        try {
+          return { query: output.query, ...await run(q, output.query, catalog) };
+        } catch (e) {
+          if (e instanceof QueryError) return { query: salvage(output.query, catalog), error: e.code };
+          throw e;
+        }
+      });
+      if ('rows' in out) await withUser(claims, (q) => q('select private.ai_set_outcome($1, $2)', [aiCallId, 'ran']));
+      req.log.info({ user_id: claims.sub, tenant_id: claims.tenant_id, ai_call_id: aiCallId, rows: 'rows' in out ? out.rows.length : null }, 'insights ask');
+      return { ai_call_id: aiCallId, ...out };
+    } catch (e) {
+      if ((e as { code?: string }).code === '57014') return reply.code(504).send({ error: 'timeout', ai_call_id: aiCallId, query: output.query });
+      throw e;
+    }
+  });
+
+  // 10.7: what the user did with an answer (§6.4): ran it after picking a choice, or edited a chip.
+  app.post<{ Body: { ai_call_id?: unknown; outcome?: unknown } }>('/insights/outcome', async (req, reply) => {
+    const claims = await claimsOf(req, reply);
+    if (!claims) return reply;
+    const { ai_call_id: id, outcome } = req.body ?? {};
+    if (typeof id !== 'string' || !UUID.test(id) || (outcome !== 'ran' && outcome !== 'edited')) return reply.code(422).send({ error: 'bad_outcome' });
+    try {
+      await withUser(claims, (q) => q('select private.ai_set_outcome($1, $2)', [id, outcome]));
+    } catch (e) {
+      if ((e as { code?: string }).code === 'P0002') return reply.code(404).send({ error: 'not_found' });
+      throw e;
+    }
+    return reply.code(204).send();
   });
 
   // Story 9.1: the daily email summary, called by Cloud Scheduler with a Google OIDC token. Outside /v1.

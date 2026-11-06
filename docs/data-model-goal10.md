@@ -396,6 +396,26 @@ question --> POST /insights/ask --> callModel(feature 'insights', system: rules 
   fallback.
 - No answer in sentences in v1. A model-written summary of numbers can be wrong; the table cannot.
 
+#### 5.4.1 Design at build (10.7, owner accepted every lean, 6 Nov 2026)
+
+Built in `services/api/src/ask.ts`, routes `POST /insights/ask` and `POST /insights/outcome` in `app.ts`, and the
+web page `apps/web/src/Insights.tsx`. No migration: 10.1 already keeps the question and output 90 days (D6).
+
+| # | Decision | Answer |
+|---|---|---|
+| D7.1 | Prompt | system: fixed rules, the tenant's today and the user's `publicCatalog` (custom-field labels are admin-written data); user turn: `{"question"}` only, at most 500 characters. No rows, no record names |
+| D7.2 | Output | `{query}` or `{cannot_answer: {missing}}`. The provider gets `QUERY_SCHEMA` without length and range limits; the full schema and `check()` run after it. A refused query keeps the parts that pass (`salvage`) for the chip editor |
+| D7.3 | Answer shown as | a table always; one measure with no group-by also as number cards (one per currency). No chart |
+| D7.4 | Question text, 90 days | `ai_call.request` and `output`, nulled by `ai_housekeeping` (10.1). No new table |
+| D7.5 | Unanswered questions | `ai_call.output` holds `cannot_answer.missing`; queryable by SQL. The model's words are never shown |
+| D7.6 | Follow-ups | none: one question, one query; refine with the chips |
+| D7.7 | Placement | `/insights` in Intelligence; the top-bar button navigates there and focuses the box. Both also need `insights_query.ask` |
+| D7.8 | Labels | subjects, fields, ops and enum options in `en.json` by key; custom fields keep their catalog label |
+
+Found at build: `pg` turned `date` columns into a JS `Date` at the server's local midnight, so dates now leave the
+compiler as `YYYY-MM-DD` text. Reference values also match a name that contains the text ("Pune" finds
+"Plant 1 · Pune (Chakan)", which scores 0.26 by trigram), before the trigram step.
+
 ### 5.5 Saved widgets (10.8, "Could")
 
 `insight_widget` tenant table (1.4 pattern, domain `insights_widget`: `save` for own, `share` for the tenant), holding
