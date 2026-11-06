@@ -225,6 +225,10 @@ times over and stops a runaway Sonnet tenant. Repeat imports with a saved templa
 - Storage: the existing `import_batch.mapping` entries get `source: 'ai'` and a new `confidence`. Nothing else. The
   Mapping step shows an "AI-suggested" tag with the confidence (screens file, Import review, "Column mapping" box).
   The user confirms with the existing `import_save_mapping`. "Save as template" stays, so the next file skips AI.
+- As built (10.3): the AI mapper runs in its own route, `POST /imports/:id/ai-mapping`, not inside the upload, because
+  the upload is one transaction and a model call never runs inside one (§2.2). The Mapping step calls it once for a
+  staged batch; it returns the suggestions and stores nothing. `import_save_mapping` keeps `confidence` (0 to 1, `ai`
+  entries only). A tenant without the add-on gets a silent refusal; cap, rate limit and failure show one line.
 
 ### 4.2 Value matching (10.4)
 

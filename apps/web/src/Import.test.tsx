@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { actError, applyTemplate, codeName, columnLetter, commitWill, errorRows, messageText, normalise, saveError, templateOf, uploadError, type Target } from './Import'
+import { actError, aiError, applyTemplate, mergeAi, codeName, columnLetter, commitWill, errorRows, messageText, normalise, saveError, templateOf, uploadError, type Target } from './Import'
 import { t } from './i18n'
 import { crc32, sheetXlsx } from './xlsx'
 
@@ -27,6 +27,18 @@ describe('import page helpers', () => {
     expect(applyTemplate(['GRP', 'asset-name', 'Cost'], { ...tpl.targets, cost: 'purchase_value' }, catalog).map((e) => e.target))
       .toEqual(['category', 'name', 'ignore'])
     expect(normalise('O&M Vendor')).toBe('oandmvendor')
+  })
+
+  it('10.3: AI targets fill only rule-unmapped columns with a free field; refusals without a fix stay silent', () => {
+    const cur = [{ target: 'name', source: 'rules' }, { target: 'ignore', source: 'rules' }, { target: 'ignore', source: 'user' },
+      { target: 'ignore', source: 'rules' }, { target: 'ignore', source: 'rules' }] as const
+    const ai = [{ target: 'name', source: 'rules' }, { target: 'category', source: 'ai', confidence: 0.9 },
+      { target: 'location', source: 'ai', confidence: 0.8 }, { target: 'name', source: 'ai', confidence: 0.7 },
+      { target: 'ignore', source: 'rules' }] as const
+    expect(mergeAi([...cur], [...ai]).map((e) => `${e.target}/${e.source}`))
+      .toEqual(['name/rules', 'category/ai', 'ignore/user', 'ignore/rules', 'ignore/rules'])
+    expect(aiError('ai_cap_reached')).toBe(t.import.mapping.aiErrors.ai_cap_reached)
+    expect([aiError('ai_not_licensed'), aiError('ai_off'), aiError('ai_no_right'), aiError()]).toEqual([undefined, undefined, undefined, undefined])
   })
 
   it('maps save errors to messages', () => {

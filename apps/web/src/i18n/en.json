@@ -1356,6 +1356,15 @@
         "stale": "This upload can no longer be changed, or a field is not available to you. Reload the page.",
         "nameTaken": "A template with this name exists. Pick another name.",
         "generic": "Could not save. Try again."
+      },
+      "aiSuggested": "AI-suggested {percent}%",
+      "aiAsking": "Looking for AI suggestions for the unmapped columns…",
+      "aiDone": "AI suggested a field for {n} columns. Check each one before you save.",
+      "aiTemplateHint": "Save this mapping as a template to skip AI next time.",
+      "aiErrors": {
+        "ai_cap_reached": "The AI limit for this month is reached. Map the remaining columns by hand.",
+        "ai_rate_limited": "Too many AI requests just now. Map the remaining columns by hand, or reload in a minute.",
+        "ai_failed": "AI suggestions are not available right now. Map the remaining columns by hand."
       }
     },
     "review": {

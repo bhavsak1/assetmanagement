@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import type { Json, Tables } from './types/database'
@@ -7,8 +7,8 @@ import { sheetXlsx, type XlsxCell } from './xlsx'
 type Batch = Pick<Tables<'import_batch'>, 'id' | 'file_name' | 'sheet_name' | 'sheet_names' | 'header_row' | 'columns' | 'row_count' | 'warnings' | 'status' | 'created_at' | 'mapping' | 'mapping_template_id' | 'summary' | 'outcome'>
 export type Target = { target: string; label: string; kind: string; required: boolean; category_id: string | null }
 type Template = Pick<Tables<'import_mapping_template'>, 'id' | 'name' | 'headers' | 'targets'>
-// source: how the target was chosen; 'user' once the person changes it here.
-export type Entry = { target: string; source: 'template' | 'rules' | 'ai' | 'user' }
+// source: how the target was chosen; 'user' once the person changes it here. confidence: AI entries only (10.3).
+export type Entry = { target: string; source: 'template' | 'rules' | 'ai' | 'user'; confidence?: number }
 type Warning = { code: keyof typeof t.import.warnings; row?: number; column: number }
 type Upload = { state: 'idle' } | { state: 'sending'; percent: number } | { state: 'reading' } | { state: 'failed'; error: string }
 
@@ -39,6 +39,29 @@ export function applyTemplate(columns: string[], targets: Record<string, string>
     used.add(target)
     return { target, source: 'template' }
   })
+}
+
+// 10.3: AI targets go only to columns still "not mapped" by the rules, and only to a field not taken meanwhile.
+export function mergeAi(current: Entry[], ai: Entry[]): Entry[] {
+  const taken = new Set(current.map((e) => e.target))
+  return current.map((e, i) => {
+    const a = ai[i]
+    if (a?.source !== 'ai' || e.source !== 'rules' || e.target !== 'ignore' || taken.has(a.target)) return e
+    taken.add(a.target)
+    return a
+  })
+}
+
+// 10.3: a refusal the user can act on gets a line; no add-on, no right or AI off stay silent (no AI shown).
+export function aiError(code?: string): string | undefined {
+  const e = t.import.mapping.aiErrors
+  return code && code in e ? e[code as keyof typeof e] : undefined
+}
+
+async function aiMapping(batchId: string): Promise<{ mapping?: Entry[] | null; error?: string }> {
+  const token = (await supabase.auth.getSession()).data.session?.access_token ?? ''
+  const r = await fetch(`${import.meta.env.VITE_API_URL}/imports/${batchId}/ai-mapping`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => null)
+  return ((await r?.json().catch(() => ({}))) ?? {}) as { mapping?: Entry[] | null; error?: string }
 }
 
 export function saveError(message: string): string {
@@ -177,6 +200,8 @@ function tagOf(e: Entry) {
   const m = t.import.mapping
   if (e.source === 'user') return <span className="tag">{m.changed}</span>
   if (e.target === 'ignore') return <span className="tag">{m.notMapped}</span>
+  // Screens file, Import review: the confidence tag is green from 90%, amber below.
+  if (e.source === 'ai') return <span className={`tag ${(e.confidence ?? 0) >= 0.9 ? 'ok' : 'warn'}`}>{m.aiSuggested.replace('{percent}', String(Math.round((e.confidence ?? 0) * 100)))}</span>
   return <span className="tag ok">{e.source === 'template' ? m.fromTemplate : m.matched}</span>
 }
 
@@ -196,7 +221,26 @@ function MappingStep({ tenantId, batch, catalog, sample, canRun, onSaved, onHead
   const [headerRow, setHeaderRow] = useState(batch.header_row)
   const [name, setName] = useState('')
   const [msg, setMsg] = useState<{ ok: boolean; text: string }>()
+  const [ai, setAi] = useState<{ state: 'asking' } | { state: 'done'; n: number } | { state: 'failed'; text: string }>()
   const m = t.import.mapping
+
+  // 10.3: once per staged batch, the service runs the chain again with the AI mapper last. It decides (add-on,
+  // right, cap, saved template, unmapped columns). Nothing is stored until the user saves. The ref, not a live
+  // flag, keeps it to one call under StrictMode's double effect.
+  const asked = useRef(false)
+  const askAi = canRun && batch.status === 'staged' && !batch.mapping_template_id
+    && mapping.some((e) => e.source === 'rules' && e.target === 'ignore')
+  useEffect(() => {
+    if (!askAi || asked.current) return
+    asked.current = true
+    setAi({ state: 'asking' })
+    void aiMapping(batch.id).then(({ mapping: got, error }) => {
+      const n = got?.filter((e) => e.source === 'ai').length ?? 0
+      const text = aiError(error)
+      setAi(text ? { state: 'failed', text } : n ? { state: 'done', n } : undefined)
+      if (got && n) setMapping((cur) => mergeAi(cur, got))
+    })
+  }, [askAi, batch.id])
 
   useEffect(() => {
     let live = true
@@ -317,6 +361,9 @@ function MappingStep({ tenantId, batch, catalog, sample, canRun, onSaved, onHead
           </tbody>
         </table>
       </div>
+      {ai?.state === 'asking' && <p role="status" className="muted">{m.aiAsking}</p>}
+      {ai?.state === 'done' && <p role="status" className="hint">{m.aiDone.replace('{n}', String(ai.n))} {m.aiTemplateHint}</p>}
+      {ai?.state === 'failed' && <p role="status" className="hint">{ai.text}</p>}
       {missing.length > 0 && <p className="hint">{m.missing.replace('{fields}', missing.map((f) => f.label).join(', '))}</p>}
       {msg && (
         <p className={msg.ok ? 'save-ok' : 'field-error'} role={msg.ok ? 'status' : 'alert'}>
