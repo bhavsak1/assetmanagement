@@ -202,11 +202,105 @@ function TagPatternCard({ initial, canManage }: { initial: string; canManage: bo
   )
 }
 
+// Shape of public.ai_usage() (migration 10_2_ai_usage). It returns jsonb, so the generated type is Json.
+export type AiUsage = {
+  cap_micro_usd: number
+  spent_micro_usd: number
+  features: { feature: string; calls: number; spent_micro_usd: number }[]
+  calls: { id: string; created_at: string; user_name: string | null; feature: string; status: string; input_tokens: number | null; output_tokens: number | null; cost_micro_usd: number }[]
+}
+
+const usd = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 6 })
+export const microUsd = (micro: number) => usd.format(micro / 1e6)
+const statusTone: Record<string, string> = { ok: 'ok', started: 'warn', error: 'error', lost: 'error' }
+
+function AiUsageTab({ usage, timeZone }: { usage: AiUsage; timeZone?: string }) {
+  const a = t.settings.ai
+  const label = (map: Record<string, string>, key: string) => map[key] ?? key
+  const when = (iso: string) => new Date(iso).toLocaleString(undefined, { timeZone, dateStyle: 'medium', timeStyle: 'short' })
+  const share = Math.min(1, usage.spent_micro_usd / usage.cap_micro_usd)
+  return (
+    <div className="stack">
+      <section className="card">
+        <h2>{a.spend}</h2>
+        <p>
+          <strong>{a.ofCap.replace('{spent}', microUsd(usage.spent_micro_usd)).replace('{cap}', microUsd(usage.cap_micro_usd))}</strong>
+        </p>
+        <span className="bar" role="meter" aria-label={a.spend} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(share * 100)}>
+          <i style={{ width: `${share * 100}%` }} />
+        </span>
+        <p className="muted hint">{a.capHint}</p>
+      </section>
+      <section className="card">
+        <h2>{a.perFeature}</h2>
+        {usage.features.length === 0 ? (
+          <p className="muted">{a.none}</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>{a.feature}</th>
+                <th>{a.calls}</th>
+                <th>{a.cost}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {usage.features.map((f) => (
+                <tr key={f.feature}>
+                  <td>{label(a.features, f.feature)}</td>
+                  <td>{f.calls.toLocaleString()}</td>
+                  <td>{microUsd(f.spent_micro_usd)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+      <section className="card">
+        <h2>{a.last}</h2>
+        {usage.calls.length === 0 ? (
+          <p className="muted">{a.none}</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>{a.when}</th>
+                <th>{a.who}</th>
+                <th>{a.feature}</th>
+                <th>{a.status}</th>
+                <th>{a.tokens}</th>
+                <th>{a.cost}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {usage.calls.map((c) => (
+                <tr key={c.id}>
+                  <td>{when(c.created_at)}</td>
+                  <td>{c.user_name ?? '—'}</td>
+                  <td>{label(a.features, c.feature)}</td>
+                  <td>
+                    <span className={`tag ${statusTone[c.status] ?? ''}`}>{label(a.statuses, c.status)}</span>
+                  </td>
+                  <td>{c.input_tokens == null ? '—' : `${c.input_tokens.toLocaleString()} / ${(c.output_tokens ?? 0).toLocaleString()}`}</td>
+                  <td>{microUsd(c.cost_micro_usd)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+    </div>
+  )
+}
+
 // The current value stays pickable even if this browser's list does not have it.
 const withValue = (list: string[], value: string) => (list.includes(value) ? list : [value, ...list])
 
-export function SettingsPage({ tenantId, canView, canManage }: { tenantId: string; canView: boolean; canManage: boolean }) {
+export function SettingsPage({ tenantId, canView, canManage, canViewAi = false }: { tenantId: string; canView: boolean; canManage: boolean; canViewAi?: boolean }) {
   const [settings, setSettings] = useState<Settings>()
+  const [tab, setTab] = useState<'general' | 'ai'>('general')
+  // null from ai_usage() means no right or no AI add-on: no tab (10.2).
+  const [usage, setUsage] = useState<AiUsage | null>(null)
   const [error, setError] = useState<string>()
   const [saveError, setSaveError] = useState<string>()
   const [saved, setSaved] = useState(false)
@@ -228,6 +322,18 @@ export function SettingsPage({ tenantId, canView, canManage }: { tenantId: strin
       live = false
     }
   }, [tenantId, canView])
+
+  useEffect(() => {
+    if (!canViewAi) return
+    let live = true
+    void supabase.rpc('ai_usage').then(({ data }) => {
+      if (live) setUsage(data as AiUsage | null)
+    })
+    return () => {
+      live = false
+    }
+  }, [tenantId, canViewAi])
+  const shown = usage && canViewAi ? tab : 'general'
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -277,13 +383,23 @@ export function SettingsPage({ tenantId, canView, canManage }: { tenantId: strin
           <span className="muted">{t.settings.subtitle}</span>
         </div>
       </div>
-      {!canView && <p className="muted">{t.settings.noAccess}</p>}
+      {usage && canViewAi && (
+        <div className="tabs" role="tablist">
+          {(['general', 'ai'] as const).map((k) => (
+            <button key={k} type="button" role="tab" aria-selected={shown === k} className={shown === k ? 'on' : ''} onClick={() => setTab(k)}>
+              {t.settings.tabs[k]}
+            </button>
+          ))}
+        </div>
+      )}
+      {shown === 'ai' && usage && <AiUsageTab usage={usage} timeZone={settings?.time_zone} />}
+      {shown === 'general' && !canView && <p className="muted">{t.settings.noAccess}</p>}
       {error && (
         <p className="login-error" role="alert">
           {error}
         </p>
       )}
-      {s && (
+      {shown === 'general' && s && (
         // key: remount the uncontrolled inputs when the saved values come back.
         // onChange: an edit after saving makes the "saved" message stale.
         <form key={JSON.stringify(s)} className="stack" onSubmit={submit} onChange={() => setSaved(false)}>
@@ -379,7 +495,7 @@ export function SettingsPage({ tenantId, canView, canManage }: { tenantId: strin
         </form>
       )}
       {/* Own form and Save: a different action (set_asset_tag_pattern), and not a remount on the other save. */}
-      {s && <TagPatternCard initial={s.asset_tag_pattern} canManage={canManage} />}
+      {shown === 'general' && s && <TagPatternCard initial={s.asset_tag_pattern} canManage={canManage} />}
     </>
   )
 }

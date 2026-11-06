@@ -336,6 +336,30 @@
         "noPermission": "You do not have permission to change settings.",
         "generic": "Could not get a sample tag. Try again."
       }
+    },
+    "tabs": { "general": "General", "ai": "AI usage" },
+    "ai": {
+      "spend": "Spend this month",
+      "ofCap": "{spent} of {cap}",
+      "capHint": "Provider cost in US dollars, calendar month in UTC. A call still running counts at its estimate. To change the cap, contact Assetly.",
+      "perFeature": "Calls per feature this month",
+      "last": "Last 50 calls",
+      "when": "When",
+      "who": "User",
+      "feature": "Feature",
+      "status": "Status",
+      "tokens": "Tokens in / out",
+      "calls": "Calls",
+      "cost": "Cost",
+      "none": "No AI calls yet.",
+      "features": {
+        "import_map": "Import mapping",
+        "import_values": "Import values",
+        "insights": "Insights",
+        "assist": "Ask Assetly",
+        "check": "Connection check"
+      },
+      "statuses": { "started": "Running", "ok": "OK", "error": "Error", "lost": "Lost" }
     }
   },
   "vendors": {

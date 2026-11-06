@@ -179,3 +179,34 @@ test('view only: tag pattern read-only, no chips, no save, sample still shown', 
   expect(button(t.settings.tag.save)).toBeUndefined()
   expect(container.textContent).toContain(t.settings.tag.sample)
 })
+
+const usage = {
+  cap_micro_usd: 5_000_000,
+  spent_micro_usd: 5200,
+  features: [{ feature: 'insights', calls: 2, spent_micro_usd: 5200 }],
+  calls: [{ id: 'c1', created_at: '2026-11-06T10:00:00Z', user_name: 'Asha', feature: 'insights', status: 'ok', input_tokens: 1000, output_tokens: 50, cost_micro_usd: 200 }],
+}
+const aiRpc = (data: unknown) => (name: string) => (name === 'ai_usage' ? { data, error: null } : { data: null, error: null })
+const aiTab = () => [...container.querySelectorAll('[role="tab"]')].find((b) => b.textContent === t.settings.tabs.ai) as HTMLButtonElement | undefined
+
+test('AI usage tab: spend against the cap, per feature, last calls', async () => {
+  db.rpc.mockImplementation(aiRpc(usage))
+  await act(async () => root.render(<SettingsPage tenantId="ta" canView canManage={false} canViewAi />))
+  await act(async () => aiTab()!.click())
+  expect(container.textContent).toContain('$0.0052 of $5.00')
+  expect(container.querySelector('[role="meter"]')!.getAttribute('aria-valuenow')).toBe('0')
+  expect(container.textContent).toContain('Asha')
+  expect(container.textContent).toContain(t.settings.ai.features.insights)
+  expect(container.textContent).toContain('1,000 / 50')
+  expect(container.querySelector('form')).toBeNull()
+})
+
+test('AI usage tab hides without the right or without the add-on', async () => {
+  db.rpc.mockImplementation(aiRpc(usage))
+  await render(true, false)
+  expect(aiTab()).toBeUndefined()
+  expect(db.rpc).not.toHaveBeenCalledWith('ai_usage')
+  db.rpc.mockImplementation(aiRpc(null))
+  await act(async () => root.render(<SettingsPage tenantId="ta" canView canManage={false} canViewAi />))
+  expect(aiTab()).toBeUndefined()
+})
