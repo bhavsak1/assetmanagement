@@ -400,7 +400,7 @@ type Show = 'attention' | 'error' | 'warning' | 'ok' | 'all'
 const PAGE = 50
 const READ = 1000 // PostgREST max_rows
 // Same list as import_validate: these never make a row an error.
-const WARNINGS = ['currency_defaulted', 'possible_duplicate']
+const WARNINGS = ['currency_defaulted', 'possible_duplicate', 'similar_asset']
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 // One message in words. Messages hold a code and fixed params, never cell text (8.4 §15.5).

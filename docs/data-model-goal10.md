@@ -264,6 +264,33 @@ times over and stops a runaway Sonnet tenant. Repeat imports with a saved templa
 - It is in Goal 10 because the knowledge base lists dedupe under smart import. It works without the add-on, so it
   could move to Goal 8 follow-ups (D8).
 
+#### 4.3.1 Design at build (10.5)
+
+- One new step in `import_validate` (new migration `10_5_similar_asset`, `create or replace` of the 10.4 body plus
+  the step). No new table, column, extension or index: `pg_trgm` and the GIN index `asset_search_trgm`
+  (tenant, name, tag, serial) exist since 3.2.
+- Per distinct (name, location, serial) of the batch, one probe of live assets in the tenant with
+  `name % row name` (index), then the rule below. The best match by name similarity gives the message
+  `{code: 'similar_asset', col: name, params: {tag}}`. Warning only: the row still commits.
+- The function is security definer, so the probe repeats the `asset_select` checks by hand: `asset_core.view` and
+  view scope (`scope_all`, `scope_locations`, `scope_categories`, `scope_mixed_ids`). A user who cannot see an asset
+  gets no warning about it and never its tag.
+- Not gated by the AI add-on. No model call.
+- Screen: the Import review table shows the new warning like `possible_duplicate`, with the tag in the text.
+
+| # | Choice | Options | Lean | Cost to reverse |
+|---|---|---|---|---|
+| F1 | Rule | a name similarity ≥ 0.6 **and** (same location **or** serial similarity ≥ 0.6, both serials given); b name alone; c name and location only | **a** | Low (one function) |
+| F2 | Threshold tenants see | a fixed 0.6 in the function; b tenant setting | **a** | Low |
+| F3 | What the warning reveals | a the tag of the one best match, only among assets the caller may view (asset_select checks); b a count only; c no visibility check (like `tag_exists` today) | **a** | Low, but security: owner review |
+| F4 | Which rows | a every row with a name, also rows with a tag; b only rows without a tag | **a** | Low |
+| F5 | Exact `tag_exists` (8.4) | a leave as is (an error that says a tag is taken, even if the caller cannot see that asset; it must, or the commit fails on the unique key); b change it | **a** | — |
+
+Owner accepted F1-F5 (6 Nov 2026). As built: the distinct keys get a temp trigram index, so the planner drives the
+join from the smaller side (assets or keys). A probe per key into `asset_search_trgm` alone took 5 s for 20,000 keys.
+`pg_trgm.similarity_threshold` is set with `set_config(..., true)` (a function `SET` of it needs superuser), and the
+0.6 is also checked with `similarity()`, so the result does not depend on that setting.
+
 ### 4.4 AI-suggested marks after commit
 
 The mark lives in the import: the batch keeps which mapping and which values came from AI, with confidence, and the
