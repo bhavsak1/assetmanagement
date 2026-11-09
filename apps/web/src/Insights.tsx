@@ -2,11 +2,14 @@
 // POST /insights/ask; the chips are drawn by this code from the returned query, never from model text. Editing a
 // chip re-runs through POST /insights/run with no model call, so the chip editor is also the manual path when the
 // AI is off, refused or at its cap. The service enforces every right; this screen only shows what comes back.
+// Story 10.8 (§5.5.1): a saved widget is a name and this query only. Opening one re-runs it through /insights/run
+// under the viewer's own rights, so a shared widget never shows more than the viewer may see. No cache.
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useLocation } from 'react-router'
 import { t } from './i18n'
 import { toCsv } from './Security'
 import { supabase } from './supabase'
+import type { Json } from './types/database'
 
 const v = t.insights
 
@@ -23,6 +26,7 @@ export type Query = {
   limit?: number
 }
 type Column = { key: string; label: string; type: string }
+type Widget = { id: string; name: string; query: Query; shared: boolean; created_by: string | null }
 type Option = { id: string; label: string }
 type Choice = { filter: number; value: string; options: Option[] }
 type Reply = {
@@ -182,7 +186,7 @@ function FilterEditor({ subject, fields, filter, onApply, onCancel }: { subject:
   )
 }
 
-export function InsightsPage() {
+export function InsightsPage({ tenantId = '', canSave = false, canShare = false }: { tenantId?: string; canSave?: boolean; canShare?: boolean }) {
   const location = useLocation()
   const box = useRef<HTMLTextAreaElement>(null)
   const [catalog, setCatalog] = useState<Subject[]>()
@@ -196,6 +200,7 @@ export function InsightsPage() {
   const [choices, setChoices] = useState<Choice[]>([])
   const [labels, setLabels] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState<number | 'new' | null>(null)
+  const [widgets, setWidgets] = useState<{ me?: string; list: Widget[] }>()
 
   useEffect(() => {
     let live = true
@@ -275,6 +280,36 @@ export function InsightsPage() {
     void run({ ...query, filters }, 'ran')
   }
 
+  // Names and query JSON only; nothing runs until a widget is opened (W6).
+  async function loadWidgets() {
+    const me = (await supabase.auth.getSession()).data.session?.user.id
+    const { data, error } = await supabase.from('insight_widget').select('id, name, query, shared, created_by').is('deleted_at', null).order('name')
+    if (error) setMsg('failed')
+    // query is jsonb the service checks again on every run; here it is only passed back.
+    setWidgets({ me, list: (data ?? []) as unknown as Widget[] })
+  }
+
+  async function saveWidget() {
+    const name = window.prompt(v.widgets.namePrompt)?.trim()
+    if (!name || !query) return
+    const { error } = await supabase.from('insight_widget').insert({ tenant_id: tenantId, name, query: query as unknown as NonNullable<Json> })
+    setMsg(error ? (error.code === '23505' ? 'widget_name_taken' : error.code === '54000' ? 'widget_limit' : 'failed') : 'widget_saved')
+    if (widgets) void loadWidgets()
+  }
+
+  async function changeWidget(w: Widget, change: { shared?: boolean; deleted_at?: string }) {
+    if (change.deleted_at && !window.confirm(fill(v.widgets.removeConfirm, { name: w.name }))) return
+    const { data, error } = await supabase.from('insight_widget').update(change).eq('id', w.id).select('id')
+    if (error || !data?.length) setMsg('failed')
+    void loadWidgets()
+  }
+
+  function openWidget(w: Widget) {
+    setFromAi(false)
+    setCall(undefined)
+    void run(w.query)
+  }
+
   const subject = catalog?.find((s) => s.key === query?.subject)
   const drop = <K extends 'filters' | 'group_by' | 'measures' | 'sort'>(k: K, i: number) => {
     if (!query) return
@@ -303,7 +338,36 @@ export function InsightsPage() {
           <h1>{t.pages.insights}</h1>
           <span className="muted">{v.subtitle}</span>
         </div>
+        <div className="spacer" />
+        <button className="btn" type="button" aria-expanded={!!widgets} onClick={() => (widgets ? setWidgets(undefined) : void loadWidgets())}>{v.widgets.title}</button>
       </div>
+
+      {widgets && (
+        <section className="card widgets" aria-label={v.widgets.title}>
+          <h2>{v.widgets.title}</h2>
+          {widgets.list.length === 0 ? (
+            <p className="muted">{v.widgets.empty}</p>
+          ) : (
+            <ul>
+              {widgets.list.map((w) => {
+                const own = w.created_by === widgets.me
+                return (
+                  <li key={w.id}>
+                    <button type="button" className="btn-link" onClick={() => openWidget(w)}>{w.name}</button>
+                    {w.shared && <span className="tag">{v.widgets.shared}</span>}
+                    {own && (canShare || w.shared) && (
+                      <button type="button" className="btn" onClick={() => void changeWidget(w, { shared: !w.shared })}>{w.shared ? v.widgets.unshare : v.widgets.share}</button>
+                    )}
+                    {own && (
+                      <button type="button" className="btn" aria-label={fill(v.remove, { label: w.name })} onClick={() => void changeWidget(w, { deleted_at: new Date().toISOString() })}>{v.widgets.remove}</button>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
+      )}
 
       <form className="card ask" onSubmit={(e) => void ask(e)}>
         <label className="field">
@@ -401,6 +465,7 @@ export function InsightsPage() {
           <div className="page-head">
             <span className="muted">{fill(v.rows, { n: result.rows.length })}</span>
             <div className="spacer" />
+            {canSave && <button className="btn" type="button" onClick={() => void saveWidget()}>{v.widgets.save}</button>}
             <button className="btn" type="button" disabled={!result.rows.length} onClick={download}>{v.export}</button>
           </div>
           {result.rows.length === 0 ? (

@@ -579,6 +579,38 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"insight_widget": {
+                  Row: {
+                    "created_at": string,"created_by": string | null,"deleted_at": string | null,"id": string,"name": string,"query": NonNullable<Json>,"shared": boolean,"tenant_id": string,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"id"?: string,"name": string,"query": NonNullable<Json>,"shared"?: boolean,"tenant_id": string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "created_at"?: string,"created_by"?: string | null,"deleted_at"?: string | null,"id"?: string,"name"?: string,"query"?: NonNullable<Json>,"shared"?: boolean,"tenant_id"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "insight_widget_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "insight_widget_tenant_id_fkey"
+      columns: ["tenant_id"]
+isOneToOne: false
+      referencedRelation: "tenant"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "insight_widget_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "user_profile"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"location": {
                   Row: {
                     "active": boolean,"code": string | null,"created_at": string,"created_by": string | null,"deleted_at": string | null,"id": string,"location_type": string | null,"name": string,"parent_id": string | null,"tenant_id": string,"updated_at": string,"updated_by": string | null

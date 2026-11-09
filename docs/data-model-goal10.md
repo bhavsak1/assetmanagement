@@ -423,6 +423,25 @@ the name and the structured query; it re-runs through `/insights/run` with the v
 widget never shows more than the viewer may see. Shown on the Insights "Saved widgets" tab. Cut first under scope
 pressure (CLAUDE.md §10.1). The weekly digest (KB F29) is not in Goal 10.
 
+#### 5.5.1 Design at build (10.8, owner accepted every lean, 9 Nov 2026)
+
+Built in migration `10_8_insight_widget` and the web page `apps/web/src/Insights.tsx`. No service change: widgets re-run
+through the 10.6 `POST /insights/run`, whose compiler checks the query against the viewer's catalog on every run.
+
+| # | Decision | Answer |
+|---|---|---|
+| W1 | Table | `insight_widget`: std columns, `name` (1 to 80, unique per owner among live rows), `query jsonb` (an object, at most 8 KB), `shared boolean`. No SQL, no rows, no cached result |
+| W2 | Rights | read: own rows with `insights_widget.save`, or `shared` rows with `insights_query.ask`. Write: the owner only, with `save`; a shared live widget also needs `share` (unsharing and removing do not) |
+| W3 | Where | the Insights "Saved widgets" panel only; not on the 5.4 dashboard |
+| W4 | Add-on | needed: `/insights/run` keeps its `insights_query.ask` and live `ai_addon` gate. Saved rows stay when the add-on lapses |
+| W5 | Lost field domain | the run is refused (`422 field_not_allowed`, "This query uses a field you cannot see"); the widget is kept and works again when the right returns |
+| W6 | Refresh, caching | none: a widget runs when opened; the list loads names only |
+| W7 | Limits | 25 live widgets per owner (trigger, `54000`); no tenant cap |
+| W8 | Removal | the owner only, a soft delete |
+| W9 | Owner | `created_by` (default `auth.uid()`; insert and update check it equals the caller) |
+
+Starter grants are unchanged since 1.6: Tenant Admin and Plant Manager save and share, Planner saves.
+
 ---
 
 ## 6. Security points

@@ -1524,6 +1524,17 @@
     "rows": "{n} rows",
     "noRows": "No rows match.",
     "footer": "Results respect your permissions. You only see data your role allows.",
+    "widgets": {
+      "title": "Saved widgets",
+      "save": "Save as widget",
+      "namePrompt": "Name this widget",
+      "empty": "No saved widgets yet. Run a query and choose Save as widget.",
+      "shared": "Shared",
+      "share": "Share with company",
+      "unshare": "Stop sharing",
+      "remove": "Remove",
+      "removeConfirm": "Remove the widget “{name}”?"
+    },
     "yes": "Yes",
     "no": "No",
     "empty": "empty",
@@ -1688,7 +1699,10 @@
       "bad_value": "A filter value is not valid. Check the filters.",
       "bad_op": "A filter condition does not fit its field.",
       "bad_query": "This query cannot run. Check the filters.",
-      "subject_not_allowed": "You cannot see this kind of record."
+      "subject_not_allowed": "You cannot see this kind of record.",
+      "widget_saved": "Widget saved. Find it under Saved widgets.",
+      "widget_name_taken": "You already have a widget with this name.",
+      "widget_limit": "You have 25 widgets, the most allowed. Remove one first."
     }
   }
 }
