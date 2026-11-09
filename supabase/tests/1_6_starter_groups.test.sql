@@ -191,6 +191,10 @@ from public.asset where name in ('a-row', 'b-row');
 insert into public.ai_call (tenant_id, user_id, feature, est_micro_usd)
 select id, ('00000000-0000-0000-0000-0000000' || right(id::text, 1) || '0001')::uuid, 'check', 0
 from public.tenant where id in ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b');
+-- 10.8: one shared widget per tenant, by its tenant admin.
+insert into public.insight_widget (tenant_id, name, query, shared, created_by)
+select id, 'row', '{"subject":"asset"}', true, ('00000000-0000-0000-0000-0000000' || right(id::text, 1) || '0001')::uuid
+from public.tenant where id in ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b');
 select is(array(select name from tenant_table where pg_temp.count_rows(name, $$tenant_id = '00000000-0000-0000-0000-00000000000b'$$) = 0 order by 1),
           '{}', 'every public tenant_id table holds tenant B rows to hide');
 -- One test per tenant A user, each acting as that user over every table. Plain queries, so RLS decides.

@@ -281,3 +281,31 @@ test('cross-tenant: tenant A rows only, and a tenant B id resolves to nothing', 
   assert.deepEqual(tenants, [{ tenant_id: TENANT_A }]);
   await admin.query('update public.location set deleted_at = now() where id = $1', [bLocation]);
 });
+
+// Story 10.8: a saved widget is only query JSON. Each viewer re-runs it through /insights/run under their own rights.
+test('saved widget: a shared widget shows each viewer only their own allowed rows, re-checked on every run', async () => {
+  const ours = { field: 'tag', op: 'contains', value: `IN-${s}` };
+  const saved = await as(ADMIN_A, async (q) => (await q<{ id: string }>(`insert into public.insight_widget (tenant_id, name, query, shared)
+    values ($1, $2, $3, true), ($1, $4, $5, true) returning id`, [TENANT_A,
+    `Places ${s}`, { subject: 'asset', filters: [ours], fields: ['tag', 'location'], sort: [{ field: 'tag' }] },
+    `Value ${s}`, { subject: 'asset', filters: [ours], fields: ['tag', 'purchase_value'] }])).rows.map((r) => r.id));
+  const widget = (sub: string, id: string) => as(sub, async (q) =>
+    (await q<{ query: object }>('select query from public.insight_widget where id = $1', [id])).rows[0]?.query);
+  const rerun = async (sub: string, id: string) => runQ(sub, (await widget(sub, id))!);
+
+  assert.equal((await rerun(ADMIN_A, saved[0]!)).json().rows.length, 5, 'owner sees all five');
+  const pune = await rerun(scoped, saved[0]!);
+  assert.deepEqual(pune.json().rows.map((x: unknown[]) => x[2]), [`Pune ${s}`, `Pune ${s}`, `Line 1 ${s}`], 'scoped viewer: Pune only');
+  assert.equal(await widget(TECH_A, saved[0]!), undefined, 'no insights_query.ask: the widget is not visible');
+
+  // W5: a field the viewer cannot see is refused, never shown; it comes back with the domain, and goes again without it.
+  const value = async () => { const r = await rerun(scoped, saved[1]!); return [r.statusCode, r.json().error]; };
+  assert.deepEqual(await value(), [422, 'field_not_allowed']);
+  await admin.query('select tests.grant($1, $2, $3, $4)', [TENANT_A, scoped, 'asset_financials', ['view']]);
+  assert.deepEqual(await value(), [200, undefined]);
+  await admin.query(`delete from public.group_domain_policy p using public.domain_operation o, public.security_domain d
+    where o.id = p.domain_operation_id and d.id = o.security_domain_id and d.code = 'asset_financials' and p.tenant_id = $1
+      and p.security_group_id in (select security_group_id from public.user_group_assignment where user_id = $2)`, [TENANT_A, scoped]);
+  assert.deepEqual(await value(), [422, 'field_not_allowed']);
+  await admin.query('update public.insight_widget set deleted_at = now() where id = any ($1::uuid[])', [saved]);
+});

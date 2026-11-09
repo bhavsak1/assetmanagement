@@ -6,7 +6,23 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { t } from './i18n'
 import { cell, columnLabel, filterText, InsightsPage, message, parseValue, type Query } from './Insights'
 
-vi.mock('./supabase', () => ({ supabase: { auth: { getSession: async () => ({ data: { session: { access_token: 'tok' } } }) } } }))
+// 10.8: insight_widget reads and writes go to Supabase under RLS; this fake records them.
+const db = vi.hoisted(() => ({ rows: [] as Record<string, unknown>[], writes: [] as { op: string; body: unknown; id?: unknown }[] }))
+vi.mock('./supabase', () => {
+  const chain = (op: string, body?: unknown) => {
+    const q = {
+      select: () => q, is: () => q, order: () => q,
+      eq: (_: string, id: unknown) => { db.writes.at(-1)!.id = id; return q },
+      then: (ok: (r: unknown) => void) => ok(op === 'select' ? { data: db.rows, error: null } : { data: [{ id: 'w' }], error: null }),
+    }
+    if (op !== 'select') db.writes.push({ op, body })
+    return q
+  }
+  return { supabase: {
+    auth: { getSession: async () => ({ data: { session: { access_token: 'tok', user: { id: 'me' } } } }) },
+    from: () => ({ select: () => chain('select'), insert: (b: unknown) => chain('insert', b), update: (b: unknown) => chain('update', b) }),
+  } }
+})
 
 const v = t.insights
 const catalog = [{ key: 'asset', label: 'Assets', fields: [
@@ -144,4 +160,48 @@ test('no access: the service says forbidden and the page says so', async () => {
   await open()
   expect(container.querySelector('[role="alert"]')!.textContent).toBe(v.messages.forbidden)
   expect(container.querySelector('.understood')).toBeNull()
+})
+
+test('saved widgets: save the current query, open one to re-run it, share and remove only your own', async () => {
+  db.rows = [
+    { id: 'w1', name: 'Pune AMC', query: pune, shared: false, created_by: 'me' },
+    { id: 'w2', name: 'Team view', query: { subject: 'asset' }, shared: true, created_by: 'someone' },
+  ]
+  db.writes = []
+  await act(async () => root.render(<MemoryRouter><InsightsPage tenantId="t1" canSave canShare /></MemoryRouter>))
+  replies['/insights/ask'] = [{ status: 200, body: { ai_call_id: 'c1', query: pune, columns, rows, resolved: [] } }]
+  await ask('Pune AMC')
+  vi.stubGlobal('prompt', () => ' Pune AMC 2 ')
+  await act(async () => button(v.widgets.save).click())
+  expect(db.writes[0]).toEqual({ op: 'insert', body: { tenant_id: 't1', name: 'Pune AMC 2', query: pune } })
+  expect(container.querySelector('[role="alert"]')!.textContent).toBe(v.messages.widget_saved)
+
+  await act(async () => button(v.widgets.title).click())
+  const items = [...container.querySelectorAll('.widgets li')]
+  expect(items.map((li) => li.querySelector('.btn-link')!.textContent)).toEqual(['Pune AMC', 'Team view'])
+  expect(items[1]!.textContent).toContain(v.widgets.shared)
+  expect(items[1]!.querySelectorAll('.btn')).toHaveLength(0) // not ours: open only
+
+  // Opening re-runs the stored query through /insights/run (no model call); a field the viewer lost is refused.
+  replies['/insights/run'] = [{ status: 422, body: { error: 'field_not_allowed', at: 'fields/0' } }]
+  await act(async () => button('Team view').click())
+  expect(calls.at(-1)).toEqual({ path: '/insights/run', body: { subject: 'asset' } })
+  expect(calls.filter((c) => c.path === '/insights/ask')).toHaveLength(1)
+  expect(container.querySelector('[role="alert"]')!.textContent).toBe(v.messages.field_not_allowed)
+  expect(container.querySelector('tbody')).toBeNull()
+
+  await act(async () => button(v.widgets.share).click())
+  expect(db.writes.at(-1)).toEqual({ op: 'update', body: { shared: true }, id: 'w1' })
+  vi.stubGlobal('confirm', () => true)
+  await act(async () => button('Remove Pune AMC').click())
+  expect(db.writes.at(-1)).toMatchObject({ op: 'update', id: 'w1' })
+  expect((db.writes.at(-1)!.body as { deleted_at: string }).deleted_at).toBeTruthy()
+})
+
+test('saved widgets: no save right, no Save as widget button', async () => {
+  await open()
+  replies['/insights/ask'] = [{ status: 200, body: { ai_call_id: 'c1', query: pune, columns, rows, resolved: [] } }]
+  await ask('Pune AMC')
+  expect(button(v.widgets.save)).toBeUndefined()
+  expect(button(v.export)).toBeDefined()
 })
