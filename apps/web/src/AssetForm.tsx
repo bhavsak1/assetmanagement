@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
+import { AiMark, AiMarks, ConfirmDialog, fill, outcome, useDiscardOnLeave, useDraft, type Line } from './AiDraft'
 import { t } from './i18n'
 import { loadStatuses, statusName, type Status } from './Assets'
 import { addDays, termDates, termStep, TermFields, WarrantyLine, type TermChange } from './Coverage'
@@ -165,6 +166,13 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
   const [extended, setExtended] = useState(false)
   const [w, setW] = useState(termDates())
   const [x, setX] = useState(termDates())
+  // 10.9: a chat draft prefills the form; Save then asks to confirm first (AiDraft.tsx).
+  const draft = useDraft(['create_asset', 'update_asset'], assetId)
+  const [aiKeys, setAiKeys] = useState(() => new Set(Object.keys(draft?.values ?? {})))
+  const [confirm, setConfirm] = useState<{ title: string; lines: Line[]; run: () => Promise<void> }>()
+  const loaded = useRef<Record<string, string>>({})
+  const saved = useRef(false)
+  useDiscardOnLeave(draft, saved)
 
   useEffect(() => {
     let live = true
@@ -193,7 +201,7 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
       setAsset(row)
       setParentTag(parent ?? '')
       const stored = (row?.custom_values ?? {}) as Record<string, Json>
-      setValues({
+      loaded.current = {
         name: row?.name ?? '',
         tag: row?.tag ?? '',
         category_id: row?.category_id ?? '',
@@ -212,12 +220,13 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
         purchase_value: row?.purchase_value == null ? '' : String(row.purchase_value),
         purchase_currency: row?.purchase_currency ?? ten?.currency_code ?? '',
         ...Object.fromEntries(Object.entries(stored).map(([k, v]) => [`custom.${k}`, asText(v)])),
-      })
+      }
+      setValues({ ...loaded.current, ...draft?.values })
     })
     return () => {
       live = false
     }
-  }, [tenantId, assetId])
+  }, [tenantId, assetId, draft])
 
   // The category's status set (inherited), narrowed to the insert statuses (data-model-goal3 §3, §18.2).
   // The first Active one is preselected; a choice the new category does not offer is replaced.
@@ -295,6 +304,7 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
 
   function set(name: string, value: string) {
     setValues((v) => ({ ...v, [name]: value }))
+    setAiKeys((k) => (k.has(name) ? new Set([...k].filter((x) => x !== name)) : k))
     setErrors((er) => Object.fromEntries(Object.entries(er).filter(([k]) => k !== name)))
     if (name === 'purchase_date' || name === 'in_service_date') {
       const next = { ...values, [name]: value }
@@ -325,6 +335,7 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
         return setErrors({ parent: e.parentNotFound })
       }
     }
+    setSaving(false)
     // Empty means generated (insert) or unchanged (update), so it is left out.
     const tag = canTag ? text('tag')?.toUpperCase() : undefined
     const row = {
@@ -353,15 +364,64 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
       status_id: values.status_id ?? '',
       // tag may be left out: the assign_asset_tag trigger fills it (A1).
     }
-    const { error } = assetId
-      ? await supabase.from('asset').update(row).eq('id', assetId)
-      : lines.length
-        ? // The same insert payload plus the lines, in one transaction (4.5).
-          await supabase.rpc('create_asset_with_warranty', { p_asset: insert, p_coverages: lines })
-        : await supabase.from('asset').insert(insert as TablesInsert<'asset'>)
-    setSaving(false)
-    if (error) return setErrors((lines.length && warrantyError(error)) || fieldErrors(error))
-    void navigate('/assets')
+    const save = async () => {
+      setConfirm(undefined)
+      setSaving(true)
+      const { error } = assetId
+        ? await supabase.from('asset').update(row).eq('id', assetId)
+        : lines.length
+          ? // The same insert payload plus the lines, in one transaction (4.5).
+            await supabase.rpc('create_asset_with_warranty', { p_asset: insert, p_coverages: lines })
+          : await supabase.from('asset').insert(insert as TablesInsert<'asset'>)
+      setSaving(false)
+      if (error) return setErrors((lines.length && warrantyError(error)) || fieldErrors(error))
+      if (draft) {
+        saved.current = true
+        void outcome(draft.ai_call_id, 'saved')
+      }
+      void navigate('/assets')
+    }
+    if (!draft) return save()
+    // 10.9: nothing is written until the user confirms what will be created or changed.
+    setConfirm({ title: editing ? fill(t.aiDraft.updateTitle, { tag: asset?.tag ?? '' }) : t.aiDraft.createTitle, lines: confirmLines(lines), run: save })
+  }
+
+  // The fields this save writes, as the user sees them: every filled field on create, old → new on an edit.
+  function confirmLines(lines: WarrantyLineIn[]): Line[] {
+    if (!values) return []
+    const names: Record<string, string> = {
+      name: t.assetForm.name, tag: t.assetForm.tag, category_id: t.assetForm.category, location_id: t.assetForm.location,
+      status_id: t.assetForm.status, quantity: t.assetForm.quantity, parent: t.assetForm.parent, criticality: t.assetForm.criticality,
+      ...Object.fromEntries([...textFields, 'in_service_date', 'purchase_date', 'purchase_value'].map((k) => [k, t.settings.assetFields[k as keyof typeof t.settings.assetFields]])),
+      purchase_currency: t.assetForm.currency, oem_vendor_id: t.assetForm.oemVendor, om_vendor_id: t.assetForm.omVendor,
+      ...Object.fromEntries(line.map((f) => [`custom.${f.key}`, f.label])),
+    }
+    if (!canTag) delete names.tag
+    if (!canMoney) {
+      delete names.purchase_value
+      delete names.purchase_currency
+    }
+    if (!values.purchase_value?.trim()) delete names.purchase_currency
+    if (editing) delete names.location_id
+    const shown = (k: string, v = ''): string => {
+      if (!v) return ''
+      if (k === 'category_id') return categories.find((c) => c.id === v)?.name ?? v
+      if (k === 'location_id') return places.find((p) => p.id === v)?.name ?? v
+      if (k === 'status_id') return statusName(statuses, v)
+      if (k.endsWith('_vendor_id')) return vendors.find((x) => x.id === v)?.name ?? v
+      const f = line.find((x) => `custom.${x.key}` === k)
+      if (f?.type === 'boolean') return v === 'true' ? t.categories.yes : t.categories.no
+      if (f?.type === 'list') return (Array.isArray(f.options) ? (f.options as Option[]) : []).find((o) => o.code === v)?.label ?? v
+      return v.trim()
+    }
+    const out = Object.entries(names).flatMap(([k, label]): Line[] => {
+      const to = shown(k, values[k])
+      if (!editing) return to ? [{ label, to }] : []
+      const from = shown(k, loaded.current[k])
+      return from === to ? [] : [{ label, from, to }]
+    })
+    for (const l of lines) out.push({ label: l.coverage_type === 'warranty' ? t.assetForm.warranty : t.assetForm.extended, to: `${l.start_date} – ${l.end_date}` })
+    return out
   }
 
   const label = (name: string, text: string) => (required.has(name) ? `${text} *` : text)
@@ -427,7 +487,21 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
           {errors['']}
         </p>
       )}
+      {draft && <p className="banner">{t.aiDraft.formBanner}</p>}
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.title}
+          lines={confirm.lines}
+          busy={saving}
+          onConfirm={() => void confirm.run()}
+          onCancel={() => {
+            setConfirm(undefined)
+            if (draft) void outcome(draft.ai_call_id, 'discarded')
+          }}
+        />
+      )}
       {values && canSave && (
+        <AiMarks.Provider value={{ keys: aiKeys, notes: draft?.notes ?? {} }}>
         <form className="stack" onSubmit={(ev) => void submit(ev)} noValidate>
           <fieldset className="card">
             <h2>{t.assetForm.details}</h2>
@@ -562,6 +636,7 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
             </button>
           </div>
         </form>
+        </AiMarks.Provider>
       )}
     </>
   )
@@ -572,6 +647,7 @@ function Labeled({ name, text, hint, error, children }: { name: string; text: st
     <label className="field" data-field={name}>
       {text}
       {children}
+      <AiMark name={name} />
       {hint && <span className="muted hint">{hint}</span>}
       {error}
     </label>

@@ -3,8 +3,9 @@ import swagger from '@fastify/swagger';
 import Fastify, { type FastifyReply, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import { AiError, type CallModel } from './ai.ts';
 import { ASK_SCHEMA, askInput, askSystem, QUESTION_MAX, salvage, type AskOutput } from './ask.ts';
+import { assistInput, assistSchema, assistSystem, checkDraft, loadOffer, MESSAGE_MAX, type AssistOutput } from './assist.ts';
 import type { Verify } from './auth.ts';
-import type { createDb } from './db.ts';
+import type { Claims, createDb } from './db.ts';
 import type { JobsVerify } from './email.ts';
 import { HEADER_SCAN, stageXlsx } from './imports.ts';
 import { allowed, loadCatalog, loadRights, publicCatalog, QueryError, run } from './insights.ts';
@@ -321,32 +322,76 @@ export function buildApp({ verify, withUser, withKey, logger = false, corsOrigin
     }
     // D7.5: kept in ai_call.output for 90 days; the model's words are never shown.
     if (!output.query) return { ai_call_id: aiCallId, cannot_answer: true };
+    return runAsked(req, reply, claims, aiCallId, output.query, 'insights ask');
+  });
+
+  // 10.7, 10.9: run a model's query under the user's rights; a refused one keeps the parts that pass (D7.2).
+  async function runAsked(req: FastifyRequest, reply: FastifyReply, claims: Claims, aiCallId: string, query: unknown, msg: string, extra: object = {}) {
     try {
       const out = await withUser(claims, async (q) => {
         const rights = await loadRights(q);
         const catalog = await loadCatalog(q, rights);
         try {
-          return { query: output.query, ...await run(q, output.query, catalog) };
+          return { query, ...await run(q, query, catalog) };
         } catch (e) {
-          if (e instanceof QueryError) return { query: salvage(output.query, catalog), error: e.code };
+          if (e instanceof QueryError) return { query: salvage(query, catalog), error: e.code };
           throw e;
         }
       });
       if ('rows' in out) await withUser(claims, (q) => q('select private.ai_set_outcome($1, $2)', [aiCallId, 'ran']));
-      req.log.info({ user_id: claims.sub, tenant_id: claims.tenant_id, ai_call_id: aiCallId, rows: 'rows' in out ? out.rows.length : null }, 'insights ask');
-      return { ai_call_id: aiCallId, ...out };
+      req.log.info({ user_id: claims.sub, tenant_id: claims.tenant_id, ai_call_id: aiCallId, rows: 'rows' in out ? out.rows.length : null }, msg);
+      return { ...extra, ai_call_id: aiCallId, ...out };
     } catch (e) {
-      if ((e as { code?: string }).code === '57014') return reply.code(504).send({ error: 'timeout', ai_call_id: aiCallId, query: output.query });
+      if ((e as { code?: string }).code === '57014') return reply.code(504).send({ ...extra, error: 'timeout', ai_call_id: aiCallId, query });
       throw e;
     }
+  }
+
+  // Story 10.9 (data-model-goal10.md §7, A1 to A9): one message to a search or a draft through the gateway
+  // (feature assist). The model is offered only the intents and fields the user may do; code checks the draft and
+  // resolves names among records the user can see. Nothing is written here: the web opens the user's own form,
+  // asks for confirmation and saves through the normal path under RLS.
+  app.post<{ Body: { message?: unknown } }>('/ai/assist', async (req, reply) => {
+    const claims = await claimsOf(req, reply);
+    if (!claims) return reply;
+    const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+    if (!message || message.length > MESSAGE_MAX) return reply.code(422).send({ error: 'bad_question' });
+    const read = await withUser(claims, async (q) => {
+      const rights = await loadRights(q);
+      if (!await allowed(q, rights)) return null;
+      const today = (await q<{ d: string }>('select private.tenant_today()::text as d')).rows[0]!.d;
+      return { today, catalog: publicCatalog(await loadCatalog(q, rights)), offer: await loadOffer(q, rights) };
+    });
+    if (!read) return reply.code(403).send({ error: 'forbidden' });
+    if (!callModel) return reply.code(503).send({ error: 'ai_off' });
+    let output: AssistOutput, aiCallId: string;
+    try {
+      ({ output, ai_call_id: aiCallId } = await callModel<AssistOutput>({ claims, feature: 'assist', maxTokens: 2000,
+        system: assistSystem(read.offer, read.catalog, read.today), input: assistInput(message), schema: assistSchema(read.offer) }));
+    } catch (e) {
+      if (e instanceof AiError) return reply.code(AI_STATUS[e.code]).send({ error: e.code });
+      throw e;
+    }
+    if (output.intent === 'search') {
+      if (!output.query) return { ai_call_id: aiCallId, intent: 'unsupported' };
+      return runAsked(req, reply, claims, aiCallId, output.query, 'assist search', { intent: 'search' });
+    }
+    // Rights are read again for the check: the offer in the prompt is not trusted to be current.
+    const draft = await withUser(claims, async (q) => {
+      await q('set transaction read only');
+      return checkDraft(q, output, await loadOffer(q, await loadRights(q)));
+    });
+    req.log.info({ user_id: claims.sub, tenant_id: claims.tenant_id, ai_call_id: aiCallId, intent: draft.intent }, 'assist draft');
+    return { ai_call_id: aiCallId, ...draft };
   });
 
-  // 10.7: what the user did with an answer (§6.4): ran it after picking a choice, or edited a chip.
+  // 10.7, 10.9: what the user did with an answer (§6.4): ran it after picking a choice, edited a chip, or saved or
+  // discarded a chat draft after the confirm step.
   app.post<{ Body: { ai_call_id?: unknown; outcome?: unknown } }>('/insights/outcome', async (req, reply) => {
     const claims = await claimsOf(req, reply);
     if (!claims) return reply;
     const { ai_call_id: id, outcome } = req.body ?? {};
-    if (typeof id !== 'string' || !UUID.test(id) || (outcome !== 'ran' && outcome !== 'edited')) return reply.code(422).send({ error: 'bad_outcome' });
+    if (typeof id !== 'string' || !UUID.test(id) || !['ran', 'edited', 'saved', 'discarded'].includes(outcome as string)) return reply.code(422).send({ error: 'bad_outcome' });
     try {
       await withUser(claims, (q) => q('select private.ai_set_outcome($1, $2)', [id, outcome]));
     } catch (e) {

@@ -24,7 +24,7 @@ vi.mock('./supabase', () => {
     const r = db.results[fn]
     return Promise.resolve(typeof r === 'function' ? (r as (a: unknown) => unknown)(args) : (r ?? { data: [], error: null }))
   }
-  return { supabase: { from: chain, rpc } }
+  return { supabase: { from: chain, rpc, auth: { getSession: async () => ({ data: { session: null } }) } } }
 })
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -300,4 +300,42 @@ test('4.1b overview: vendor names link to the Vendors screen, inactive marked; H
   root = createRoot(container)
   await render(['asset_core.view'])
   expect(container.querySelector('a[href^="/vendors"]')).toBeNull()
+})
+
+// 10.9: a chat draft opens the Transfer dialog prefilled; Transfer shows the confirm step; only Confirm runs it.
+test('10.9 AI transfer: prefilled, tagged, nothing runs until Confirm; Cancel goes back with nothing run', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => ({ status: 204, json: async () => ({}) })))
+  db.results.location = { data: [{ id: 'l1', parent_id: null, name: 'Plant 1', active: true }, { id: 'l2', parent_id: 'l1', name: 'Bay 3', active: true },
+    { id: 'l4', parent_id: null, name: 'Plant 2 · Nashik', active: true }], error: null }
+  const draft = { ai_call_id: 'call-9', intent: 'transfer_asset', asset: { id: 'a1', label: 'PNE-0412 · CNC Lathe 04' },
+    values: { location_id: 'l4', reason: 'overhaul' }, notes: { location_id: { text: 'Plant 2 Nashik' } } }
+  const can = (domain: string, op: string) => ['asset_core.view', 'asset_lifecycle.execute'].includes(`${domain}.${op}`)
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={[{ pathname: '/assets/a1', state: { draft } }]}>
+        <Routes>
+          <Route path="/assets/:assetId" element={<AssetDetailPage can={can} />} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  )
+  const dialog = () => container.querySelector('[role="dialog"]')!
+  expect(container.querySelector<HTMLSelectElement>('[name="choice"]')!.value).toBe('l4')
+  expect(container.querySelector<HTMLTextAreaElement>('[name="reason"]')!.value).toBe('overhaul')
+  expect(dialog().textContent).toContain(t.aiDraft.tag)
+  expect(dialog().textContent).toContain('From “Plant 2 Nashik”')
+  await submit()
+  expect(db.rpc.some((r) => r.fn === 'transfer_asset')).toBe(false)
+  expect(dialog().textContent).toContain(t.aiDraft.transferTitle.replace('{tag}', 'PNE-0412'))
+  expect(dialog().textContent).toContain('Bay 3 → Plant 2 · Nashik')
+  const inDialog = (text: string) => [...dialog().querySelectorAll('button')].find((b) => b.textContent === text)!
+  await act(async () => inDialog(t.aiDraft.cancel).click())
+  expect(db.rpc.some((r) => r.fn === 'transfer_asset')).toBe(false)
+  expect(container.querySelector<HTMLSelectElement>('[name="choice"]')!.value).toBe('l4')
+  await submit()
+  await act(async () => inDialog(t.aiDraft.confirm).click())
+  expect(db.rpc.filter((r) => r.fn === 'transfer_asset')).toEqual([{ fn: 'transfer_asset', args: { p_asset_id: 'a1', p_to_location_id: 'l4', p_reason: 'overhaul' } }])
+  const sent = vi.mocked(fetch).mock.calls.map(([, init]) => JSON.parse(String((init as RequestInit).body)) as { outcome: string })
+  expect(sent).toEqual([{ ai_call_id: 'call-9', outcome: 'discarded' }, { ai_call_id: 'call-9', outcome: 'saved' }])
+  vi.unstubAllGlobals()
 })

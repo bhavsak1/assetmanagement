@@ -375,6 +375,24 @@ export type Option = { id: string; label: string };
 export type Resolved = { ids: string[][]; resolved: { filter: number; value: string; match: Option }[];
   needs_choice: { filter: number; value: string; options: Option[] }[] };
 
+// One text value to at most 6 rows of `src` (id, label, code) this user can see: an id, an exact name or code,
+// then a name containing the text, then pg_trgm at 0.4. Also used by 10.9 chat drafts.
+export async function matchRef(q: Query, src: string, value: string): Promise<Option[]> {
+  if (UUID.test(value)) return (await q<Option>(`select id, label from (${src}) s where id = $1`, [value])).rows;
+  let found = (await q<Option>(`select id, label from (${src}) s where lower(label) = lower($1) or lower(code) = lower($1)
+    order by label limit 6`, [value])).rows;
+  // 10.7: a word inside a longer name ("Pune" in "Plant 1 · Pune (Chakan)") scores under 0.4 by trigram.
+  if (!found.length) {
+    found = (await q<Option>(`select id, label from (${src}) s where label ilike $1 order by label limit 6`,
+      [`%${likeEscape(value)}%`])).rows;
+  }
+  if (!found.length) {
+    found = (await q<Option>(`select id, label from (${src}) s where extensions.similarity(label, $1) >= 0.4
+      order by extensions.similarity(label, $1) desc, label limit 6`, [value])).rows;
+  }
+  return found;
+}
+
 // Text values of ref filters to ids among rows this user can see (Q7): an id, an exact name or code, then
 // a name containing the text, then pg_trgm at 0.4. One match is used; none or several come back as needs_choice for the user. No model call.
 export async function resolveRefs(q: Query, query: InsightQuery, catalog: Catalog): Promise<Resolved> {
@@ -385,23 +403,7 @@ export async function resolveRefs(q: Query, query: InsightQuery, catalog: Catalo
     if (f.type !== 'ref' || flt.op === 'is_empty') continue;
     out.ids[i] = [];
     for (const value of (Array.isArray(flt.value) ? flt.value : [flt.value]) as string[]) {
-      const src = REF_SQL[f.ref!];
-      let found: Option[];
-      if (UUID.test(value)) {
-        found = (await q<Option>(`select id, label from (${src}) s where id = $1`, [value])).rows;
-      } else {
-        found = (await q<Option>(`select id, label from (${src}) s where lower(label) = lower($1) or lower(code) = lower($1)
-          order by label limit 6`, [value])).rows;
-        // 10.7: a word inside a longer name ("Pune" in "Plant 1 · Pune (Chakan)") scores under 0.4 by trigram.
-        if (!found.length) {
-          found = (await q<Option>(`select id, label from (${src}) s where label ilike $1 order by label limit 6`,
-            [`%${likeEscape(value)}%`])).rows;
-        }
-        if (!found.length) {
-          found = (await q<Option>(`select id, label from (${src}) s where extensions.similarity(label, $1) >= 0.4
-            order by extensions.similarity(label, $1) desc, label limit 6`, [value])).rows;
-        }
-      }
+      const found = await matchRef(q, REF_SQL[f.ref!], value);
       if (found.length === 1) {
         out.ids[i]!.push(found[0]!.id);
         out.resolved.push({ filter: i, value, match: found[0]! });

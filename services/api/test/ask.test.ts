@@ -196,7 +196,7 @@ test('outcome: own call only; edited is recorded', async () => {
   const mark = (sub: string, payload: object) =>
     app.inject({ method: 'POST', url: '/insights/outcome', payload, headers: { authorization: bearer(sub) } });
   assert.equal((await mark(PLANNER_A, { ai_call_id: id, outcome: 'edited' })).statusCode, 404, 'another user\'s call');
-  assert.equal((await mark(ADMIN_A, { ai_call_id: id, outcome: 'saved' })).statusCode, 422);
+  assert.equal((await mark(ADMIN_A, { ai_call_id: id, outcome: 'written' })).statusCode, 422);
   assert.equal((await mark(ADMIN_A, { ai_call_id: id, outcome: 'edited' })).statusCode, 204);
   assert.equal((await admin.query('select outcome from public.ai_call where id = $1', [id])).rows[0].outcome, 'edited');
 });

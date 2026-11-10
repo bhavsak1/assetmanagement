@@ -531,6 +531,29 @@ Save = today's path (RLS insert, transfer_asset, change_asset_status), audited a
 
 **Lean: a.** Cost to reverse: low (no schema).
 
+### 7.4 Design at build (10.9, owner accepted A1 to A9 and added a confirm step, 10 Nov 2026)
+
+Built in `services/api/src/assist.ts`, route `POST /ai/assist` in `app.ts`, the web `AiDraft.tsx` (draft state, "AI-suggested" tags,
+confirm dialog) used by `AssetForm.tsx` and `AssetDetail.tsx`, and the Ask Assetly box in `Insights.tsx`. No migration: 10.1
+already has feature `assist` (right `insights_query.ask`), `request` and `output` kept 90 days, and the `saved` and `discarded`
+outcomes.
+
+| # | Decision | Answer |
+|---|---|---|
+| A1 | Actions in v1 | search, create asset, edit asset, transfer, change status. Change status never offers `disposed` (Retire stays manual). Service records later |
+| A2 | Output | `{intent, query?, asset?, values?: [{field, value}], missing?}`. The provider schema lists only the intents the user may do; code drops an unknown field or a value of the wrong type, and refuses an intent not offered |
+| A3 | Names | 10.7 steps (id, exact name or code, contains, trigram 0.4) over active records the user can see. One match prefills; none or several leave the field empty with a hint (up to 5 names). The asset must match exactly one; else Insights lists up to 5 to pick |
+| A4 | Where | create `/assets/new`; edit `/assets/:id/edit`; transfer and status `/assets/:id` with the dialog open. Draft in router state, never the URL |
+| A5 | Storage | `ai_call.request` and `output`, 90 days (D6). Outcome `saved` after a confirmed save, `discarded` on the confirm Cancel or leaving. No new table |
+| A6 | Action or question | one call, one schema; the model picks the intent. The box calls `/ai/assist`; `/insights/ask` stays for the 10.7 evals |
+| A7 | Marks | "AI-suggested" on each prefilled field until the user edits it; no confidence % (one draft, no calibrated score). A matched name shows the user's text. CLAUDE.md §11 "source and confidence" is out of date for chat drafts |
+| A8 | Location on edit | never; "move" is a transfer draft |
+| A9 | AI off, cap, failure | the 10.7 codes and messages; the manual forms do not change |
+| A10 | Confirm (owner) | on a form or dialog opened by a draft, Save first shows a dialog naming the action and listing what will be written (old → new on an edit). Only Confirm runs today's save; Cancel returns to the form. Forms opened by hand are unchanged |
+
+Found at build: a provider answer with an intent the user lacks fails the schema in the gateway (`bad_output`, the user sees
+`ai_failed`); `checkDraft` refuses it again behind the schema.
+
 ---
 
 ## 8. Owner steps outside git (I never handle keys)
