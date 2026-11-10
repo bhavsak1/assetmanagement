@@ -5,7 +5,8 @@
 // Story 10.8 (§5.5.1): a saved widget is a name and this query only. Opening one re-runs it through /insights/run
 // under the viewer's own rights, so a shared widget never shows more than the viewer may see. No cache.
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { useLocation } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
+import { draftPath, type Draft } from './AiDraft'
 import { t } from './i18n'
 import { toCsv } from './Security'
 import { supabase } from './supabase'
@@ -38,6 +39,8 @@ type Reply = {
   needs_choice?: Choice[]
   resolved?: { filter: number; value: string; match: Option }[]
   cannot_answer?: boolean
+  intent?: string // 10.9: /ai/assist; a draft carries the Draft fields too
+  values?: Record<string, string>
 }
 
 async function api(path: string, body?: unknown): Promise<{ status: number; json: Reply & { subjects?: Subject[] } }> {
@@ -201,6 +204,9 @@ export function InsightsPage({ tenantId = '', canSave = false, canShare = false 
   const [labels, setLabels] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState<number | 'new' | null>(null)
   const [widgets, setWidgets] = useState<{ me?: string; list: Widget[] }>()
+  // 10.9: a draft whose asset matched none or several; the user picks one, then its form opens.
+  const [picks, setPicks] = useState<Draft>()
+  const navigate = useNavigate()
 
   useEffect(() => {
     let live = true
@@ -230,7 +236,9 @@ export function InsightsPage({ tenantId = '', canSave = false, canShare = false 
     setBusy(true)
     setMsg(undefined)
     setEditing(null)
-    const r = await api('/insights/ask', { question })
+    setPicks(undefined)
+    // 10.9 (A6): one box for questions and actions. A search answers here; an action opens the user's own form.
+    const r = await api('/ai/assist', { message: question })
     setBusy(false)
     if (r.status !== 200) {
       setMsg(r.json.error ?? 'failed')
@@ -238,13 +246,13 @@ export function InsightsPage({ tenantId = '', canSave = false, canShare = false 
       return
     }
     setCall(r.json.ai_call_id ? { id: r.json.ai_call_id, edited: false } : undefined)
-    if (r.json.cannot_answer) {
-      setMsg('cannot_answer')
-      setQuery(null)
-      setFromAi(false)
+    if (r.json.intent !== 'search') {
       setResult(undefined)
       setChoices([])
-      return
+      if (r.json.intent === 'unsupported' || !r.json.values) return setMsg('unsupported')
+      const d = r.json as unknown as Draft
+      if (d.intent === 'create_asset' || d.asset) return void navigate(draftPath(d, d.asset?.id ?? ''), { state: { draft: d } })
+      return setPicks(d)
     }
     setQuery(r.json.query ?? null)
     setFromAi(true)
@@ -378,6 +386,18 @@ export function InsightsPage({ tenantId = '', canSave = false, canShare = false 
       </form>
 
       {msg && <p className="banner" role="alert">{message(msg)}</p>}
+      {picks && (
+        <div className="card choice" role="group" aria-label={fill(v.messages.pickAsset, { text: picks.asset_text ?? '' })}>
+          <p role={picks.asset_choices?.length ? undefined : 'alert'}>
+            {fill(picks.asset_choices?.length ? v.messages.pickAsset : v.messages.noAsset, { text: picks.asset_text ?? '' })}
+          </p>
+          <div className="chips">
+            {picks.asset_choices?.map((o) => (
+              <button key={o.id} type="button" className="btn" onClick={() => void navigate(draftPath(picks, o.id), { state: { draft: { ...picks, asset: o } } })}>{o.label}</button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {catalog && (
         <section className="card understood" aria-label={fromAi ? v.understood : v.manual}>

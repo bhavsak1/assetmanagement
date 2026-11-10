@@ -1702,7 +1702,27 @@
       "subject_not_allowed": "You cannot see this kind of record.",
       "widget_saved": "Widget saved. Find it under Saved widgets.",
       "widget_name_taken": "You already have a widget with this name.",
-      "widget_limit": "You have 25 widgets, the most allowed. Remove one first."
+      "widget_limit": "You have 25 widgets, the most allowed. Remove one first.",
+      "unsupported": "Assetly cannot do that from a message yet. Use the screens instead, or ask a question about your data.",
+      "noAsset": "No asset matches “{text}”. Check the tag and try again.",
+      "pickAsset": "Which asset did you mean by “{text}”?"
     }
+  },
+  "aiDraft": {
+    "tag": "AI-suggested",
+    "matched": "From “{text}”",
+    "notFound": "No match for “{text}”. Pick one yourself.",
+    "several": "“{text}” matches {options}. Pick one yourself.",
+    "formBanner": "Assetly filled in this form from your message. Check each field. Nothing is saved until you press Save and then Confirm.",
+    "dialogBanner": "Assetly filled this in from your message. Check it. Nothing changes until you confirm.",
+    "check": "Check what will be saved. Nothing is written until you press Confirm.",
+    "createTitle": "Create this asset?",
+    "updateTitle": "Save these changes to {tag}?",
+    "transferTitle": "Transfer {tag}?",
+    "statusTitle": "Change the status of {tag}?",
+    "change": "{from} → {to}",
+    "empty": "(empty)",
+    "confirm": "Confirm",
+    "cancel": "Cancel"
   }
 }

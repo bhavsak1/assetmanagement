@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
 import { AttachmentsTab } from './Attachments'
 import { CoverageCard, CoverageTab } from './Coverage'
@@ -6,6 +6,7 @@ import { lineFields } from './AssetForm'
 import { ObligationsCard, ObligationsTab } from './Obligations'
 import { ServiceHistoryTab } from './Service'
 import { loadStatuses, statusName, StatusTag, type Status } from './Assets'
+import { AiMark, AiMarks, ConfirmDialog, fill, outcome, useDiscardOnLeave, useDraft, type Draft, type Line } from './AiDraft'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import { buildTree, lineage } from './tree'
@@ -105,7 +106,12 @@ export function AssetDetailPage({ can }: { can: Can }) {
   // Change status offers what the database allows now (allowed_asset_statuses, 3.7).
   const [targets, setTargets] = useState<string[]>([])
   const [tab, setTab] = useState<'overview' | 'coverage' | 'obligations' | 'service' | 'attachments' | 'audit'>('overview')
-  const [dialog, setDialog] = useState<'transfer' | 'retire' | 'status'>()
+  // 10.9: a chat draft opens its dialog prefilled; the dialog asks to confirm before it runs (AiDraft.tsx).
+  const draft = useDraft(['transfer_asset', 'change_status'], assetId)
+  const [dialog, setDialog] = useState<'transfer' | 'retire' | 'status' | undefined>(draft && (draft.intent === 'transfer_asset' ? 'transfer' : 'status'))
+  const saved = useRef(false) // saved or discarded: the outcome is settled
+  useDiscardOnLeave(draft, saved)
+  const [aiLive, setAiLive] = useState(!!draft)
   // Bumped after an action: reloads the asset and the Audit tab.
   const [version, setVersion] = useState(0)
 
@@ -181,11 +187,30 @@ export function AssetDetailPage({ can }: { can: Can }) {
   const live = asset.status !== 'disposed'
   const tag = asset.tag ?? ''
   const id = asset.id ?? assetId
-  const close = () => setDialog(undefined)
+  const close = () => {
+    setDialog(undefined)
+    setAiLive(false)
+    if (draft && !saved.current) {
+      saved.current = true
+      void outcome(draft.ai_call_id, 'discarded')
+    }
+  }
   const done = () => {
     close()
     setVersion((v) => v + 1)
   }
+  // The draft only for the dialog it was made for, and once: a later dialog opened by hand is plain.
+  const ai = (kind: 'transfer' | 'status', title: string, lines: (choice: string, reason: string) => Line[]) =>
+    draft && aiLive && dialog === kind ? {
+      draft, title, lines,
+      onSaved: () => {
+        saved.current = true
+        void outcome(draft.ai_call_id, 'saved')
+      },
+      onCancel: () => void outcome(draft.ai_call_id, 'discarded'),
+    } : undefined
+  const placeName = (id?: string | null) => places.find((p) => p.id === id)?.name ?? ''
+  const reasonLine = (reason: string): Line[] => (reason.trim() ? [{ label: a.reason, to: reason.trim() }] : [])
 
   return (
     <>
@@ -327,8 +352,10 @@ export function AssetDetailPage({ can }: { can: Can }) {
       ) : (
         <AuditTab key={`${asset.id}-${version}`} assetId={asset.id ?? assetId} timeZone={timeZone} label={label} show={show} onTags={(m) => setTags((x) => ({ ...x, ...m }))} known={tags} />
       )}
-      {dialog === 'transfer' && (
+      {dialog === 'transfer' && live && can('asset_lifecycle', 'execute') && (
         <ActionDialog
+          ai={ai('transfer', fill(t.aiDraft.transferTitle, { tag }), (to, reason) => [{ label: a.to, from: placeName(asset.location_id), to: placeName(to) }, ...reasonLine(reason)])}
+          choiceKey="location_id"
           title={a.transferTitle.replace('{tag}', tag)}
           hint={a.transferHint}
           submit={a.transfer}
@@ -349,8 +376,10 @@ export function AssetDetailPage({ can }: { can: Can }) {
           onDone={done}
         />
       )}
-      {dialog === 'status' && (
+      {dialog === 'status' && targets.length > 0 && (
         <ActionDialog
+          ai={ai('status', fill(t.aiDraft.statusTitle, { tag }), (to, reason) => [{ label: a.newStatus, from: statusName(statuses, asset.status_id ?? ''), to: statusName(statuses, to) }, ...reasonLine(reason)])}
+          choiceKey="status_id"
           title={a.statusTitle.replace('{tag}', tag)}
           submit={a.changeStatus}
           choices={{ label: a.newStatus, placeholder: a.chooseStatus, options: targets.map((s) => ({ value: s, text: statusName(statuses, s) })) }}
@@ -372,27 +401,63 @@ function ActionDialog(props: {
   run: (choice: string, reason: string) => PromiseLike<{ error: { code?: string; message?: string } | null }>
   onClose: () => void
   onDone: () => void
+  // 10.9: prefilled from a chat draft; Submit then shows the confirm step, and only Confirm runs.
+  ai?: { draft: Draft; title: string; lines: (choice: string, reason: string) => Line[]; onSaved: () => void; onCancel: () => void }
+  choiceKey?: string
 }) {
-  const { choices } = props
-  const [choice, setChoice] = useState('')
-  const [reason, setReason] = useState('')
+  const { choices, ai } = props
+  const start = ai && props.choiceKey ? ai.draft.values[props.choiceKey] ?? '' : ''
+  // A drafted choice the dialog does not offer (inactive, the current place, not allowed now) stays empty.
+  const [choice, setChoice] = useState(choices?.options.some((o) => o.value === start && !o.off) ? start : '')
+  const [reason, setReason] = useState(ai?.draft.values.reason ?? '')
+  const [aiKeys, setAiKeys] = useState(() => new Set([...(choice ? ['choice'] : []), ...(reason ? ['reason'] : [])]))
+  const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
+  const note = ai && props.choiceKey ? ai.draft.notes[props.choiceKey] : undefined
+  const edit = (k: string) => setAiKeys((s) => (s.has(k) ? new Set([...s].filter((x) => x !== k)) : s))
 
-  async function send(ev: FormEvent) {
-    ev.preventDefault()
+  async function go() {
     setBusy(true)
     const { error } = await props.run(choice, reason)
     setBusy(false)
-    if (error) setError(actionError(error))
-    else props.onDone()
+    setConfirming(false)
+    if (error) return setError(actionError(error))
+    ai?.onSaved()
+    props.onDone()
+  }
+
+  function send(ev: FormEvent) {
+    ev.preventDefault()
+    if (ai) {
+      setError(undefined)
+      return setConfirming(true)
+    }
+    void go()
+  }
+
+  if (ai && confirming) {
+    return (
+      <ConfirmDialog
+        title={ai.title}
+        lines={ai.lines(choice, reason)}
+        busy={busy}
+        onConfirm={() => void go()}
+        onCancel={() => {
+          setConfirming(false)
+          ai.onCancel()
+        }}
+      />
+    )
   }
 
   return (
+    <AiMarks.Provider value={{ keys: aiKeys, notes: note ? { choice: note } : {} }}>
     <div className="overlay" onKeyDown={(ev) => ev.key === 'Escape' && props.onClose()}>
-      <form className="card dialog" role="dialog" aria-modal="true" aria-labelledby="action-title" onSubmit={(ev) => void send(ev)} noValidate>
+      <form className="card dialog" role="dialog" aria-modal="true" aria-labelledby="action-title" onSubmit={send} noValidate>
         <h2 id="action-title">{props.title}</h2>
         {props.hint && <p className="muted">{props.hint}</p>}
+        {ai && <p className="banner">{t.aiDraft.dialogBanner}</p>}
         {error && (
           <p className="login-error" role="alert">
             {error}
@@ -401,7 +466,10 @@ function ActionDialog(props: {
         {choices && (
           <label className="field">
             {choices.label}
-            <select name="choice" value={choice} autoFocus onChange={(ev) => setChoice(ev.target.value)}>
+            <select name="choice" value={choice} autoFocus onChange={(ev) => {
+              setChoice(ev.target.value)
+              edit('choice')
+            }}>
               <option value="">{choices.placeholder}</option>
               {choices.options.map((o) => (
                 <option key={o.value} value={o.value} disabled={o.off}>
@@ -409,11 +477,16 @@ function ActionDialog(props: {
                 </option>
               ))}
             </select>
+            <AiMark name="choice" />
           </label>
         )}
         <label className="field">
           {a.reason}
-          <textarea name="reason" rows={3} value={reason} autoFocus={!choices} onChange={(ev) => setReason(ev.target.value)} />
+          <textarea name="reason" rows={3} value={reason} autoFocus={!choices} onChange={(ev) => {
+            setReason(ev.target.value)
+            edit('reason')
+          }} />
+          <AiMark name="reason" />
         </label>
         <div className="page-head">
           <div className="spacer" />
@@ -426,6 +499,7 @@ function ActionDialog(props: {
         </div>
       </form>
     </div>
+    </AiMarks.Provider>
   )
 }
 

@@ -96,7 +96,7 @@ const RULES = [
   'For update_asset, transfer_asset and change_status also give "asset": the asset tag or name as the user wrote it.',
   'A ref field takes the name as the user wrote it (for example "Plant 2 Nashik"). An enum takes one of its options.',
   'Dates are YYYY-MM-DD. Numbers are plain numbers. "Move" or "transfer" an asset is transfer_asset; "mark" or "set the status" is change_status.',
-  'If no intent fits the message, give intent "unsupported".',
+  'If no intent fits the message, give intent "unsupported" with "missing": a few short words for what is missing.',
 ].join(' ');
 
 export function assistSystem(o: Offer, catalog: ReturnType<typeof publicCatalog>, today: string): string {
@@ -117,10 +117,12 @@ export function assistSchema(o: Offer) {
       asset: { type: 'string' },
       values: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['field', 'value'],
         properties: { field: { type: 'string' }, value: { anyOf: SCALAR } } } },
+      // D7.5 kept: what users ask for that no intent covers stays in ai_call.output (90 days); never shown.
+      missing: { type: 'array', items: { type: 'string' } },
     },
   };
 }
-export type AssistOutput = { intent: string; query?: unknown; asset?: string; values?: { field: string; value: unknown }[] };
+export type AssistOutput = { intent: string; query?: unknown; asset?: string; values?: { field: string; value: unknown }[]; missing?: string[] };
 
 // A checked value as form text, or undefined when it is not one of the field's type (dropped, never guessed).
 const DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;

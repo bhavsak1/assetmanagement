@@ -32,7 +32,7 @@ vi.mock('./supabase', () => {
     db.rpcs.push([fn, args])
     return Promise.resolve(db.results[fn] ?? { data: [], error: null })
   }
-  return { supabase: { from: chain, rpc } }
+  return { supabase: { from: chain, rpc, auth: { getSession: async () => ({ data: { session: null } }) } } }
 })
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -396,4 +396,81 @@ test('4.5 edit: the current warranty line with a link, no warranty inputs', asyn
   expect(fieldEl('warranty')?.querySelector('a')?.getAttribute('href')).toBe('/coverage?id=k1')
   expect(container.querySelector('[name="w.term"]')).toBeNull()
   expect(container.textContent).not.toContain(t.assetForm.addWarranty)
+})
+
+// 10.9: a chat draft opens this form prefilled; Save asks to confirm first, and only Confirm writes.
+async function renderDraft(path: string, route: string, draft: object, canDo: (d: string, o: string) => boolean) {
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={[{ pathname: path, state: { draft } }]}>
+        <Routes>
+          <Route path={route} element={<AssetFormPage tenantId="ta" can={canDo} />} />
+          <Route path="/assets" element={<p>list</p>} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  )
+}
+const outcomes = () => vi.mocked(fetch).mock.calls.map(([, init]) => JSON.parse(String((init as RequestInit).body)) as { outcome: string })
+const confirmButton = (text: string) => [...container.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((b) => b.textContent === text)!
+const kirloskar = {
+  ai_call_id: 'call-1', intent: 'create_asset',
+  values: { name: 'Kirloskar compressor', manufacturer: 'Kirloskar', serial_number: 'KC-4471', location_id: 'l1', category_id: 'c3' },
+  notes: { location_id: { text: 'Plant 2 Nashik' }, oem_vendor_id: { text: 'Kirlosker', options: [] } },
+}
+
+test('10.9 review point: an AI-prefilled save writes nothing until Confirm; Cancel writes nothing', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => ({ status: 204, json: async () => ({}) })))
+  await renderDraft('/assets/new', '/assets/new', kirloskar, createOnly)
+  expect(valueOf('name')).toBe('Kirloskar compressor')
+  expect(valueOf('location_id')).toBe('l1')
+  expect(fieldEl('serial_number')?.textContent).toContain(t.aiDraft.tag)
+  expect(fieldEl('model')?.textContent).not.toContain(t.aiDraft.tag)
+  expect(fieldEl('location_id')?.textContent).toContain('From “Plant 2 Nashik”')
+  expect(fieldEl('oem_vendor_id')?.textContent).toContain('No match for “Kirlosker”')
+  expect(container.textContent).toContain(t.aiDraft.formBanner)
+  await type('serial_number', 'KC-4472')
+  expect(fieldEl('serial_number')?.textContent).not.toContain(t.aiDraft.tag)
+
+  await submit()
+  expect(db.writes).toEqual([])
+  const dialog = container.querySelector('[role="dialog"]')!
+  expect(dialog.textContent).toContain(t.aiDraft.createTitle)
+  expect(dialog.textContent).toContain('Kirloskar compressor')
+  expect(dialog.textContent).toContain('KC-4472')
+  expect(dialog.textContent).toContain('Pune')
+  await act(async () => confirmButton(t.aiDraft.cancel).click())
+  expect(container.querySelector('[role="dialog"]')).toBeNull()
+  expect(db.writes).toEqual([])
+  expect(outcomes()).toEqual([{ ai_call_id: 'call-1', outcome: 'discarded' }])
+
+  await submit()
+  await act(async () => confirmButton(t.aiDraft.confirm).click())
+  expect(db.writes).toHaveLength(1)
+  expect(db.writes[0]).toMatchObject({ name: 'Kirloskar compressor', serial_number: 'KC-4472', location_id: 'l1', category_id: 'c3' })
+  expect(container.textContent).toBe('list')
+  expect(outcomes().at(-1)).toEqual({ ai_call_id: 'call-1', outcome: 'saved' })
+  vi.unstubAllGlobals()
+})
+
+test('10.9 edit draft: the confirm step lists old → new; the form opened by hand saves at once', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => ({ status: 204, json: async () => ({}) })))
+  const draft = { ai_call_id: 'call-2', intent: 'update_asset', asset: { id: 'a1', label: 'AST-00001 · Lathe 04' }, values: { model: 'GA-37' }, notes: {} }
+  await renderDraft('/assets/a1/edit', '/assets/:assetId/edit', draft, can)
+  await submit()
+  expect(db.writes).toEqual([])
+  const rows = [...container.querySelectorAll('[role="dialog"] tr')].map((r) => r.textContent)
+  expect(rows).toEqual([`${t.settings.assetFields.model}${t.aiDraft.empty} → GA-37`])
+  await act(async () => confirmButton(t.aiDraft.confirm).click())
+  expect(db.writes[0]).toMatchObject({ model: 'GA-37' })
+  vi.unstubAllGlobals()
+})
+
+test('10.9 a draft for another asset is ignored: the plain form, no AI tags, no confirm', async () => {
+  const draft = { ai_call_id: 'call-3', intent: 'update_asset', asset: { id: 'other', label: 'X' }, values: { model: 'GA-37' }, notes: {} }
+  await renderDraft('/assets/a1/edit', '/assets/:assetId/edit', draft, can)
+  expect(valueOf('model')).toBe('')
+  expect(container.textContent).not.toContain(t.aiDraft.tag)
+  await submit()
+  expect(db.writes).toHaveLength(1)
 })

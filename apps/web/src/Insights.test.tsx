@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { t } from './i18n'
 import { cell, columnLabel, filterText, InsightsPage, message, parseValue, type Query } from './Insights'
@@ -75,7 +75,7 @@ beforeEach(() => {
   calls = []
   replies = { '/insights/catalog': [{ status: 200, body: { subjects: catalog } }] }
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
-    const path = url.replace(/^.*?(\/insights)/, '$1')
+    const path = url.replace(/^.*?(\/insights|\/ai)/, '$1')
     calls.push({ path, body: init?.body ? JSON.parse(String(init.body)) : undefined })
     const r = replies[path]?.shift() ?? { status: 204, body: {} }
     return { status: r.status, json: async () => r.body }
@@ -103,9 +103,9 @@ const button = (text: string) => [...container.querySelectorAll('button')].find(
 test('review point: the question gives the chips and the rows; removing a chip re-runs without the model', async () => {
   await open()
   expect(document.activeElement).toBe(container.querySelector('textarea'))
-  replies['/insights/ask'] = [{ status: 200, body: { ai_call_id: 'c1', query: pune, columns, rows, resolved: [] } }]
+  replies['/ai/assist'] = [{ status: 200, body: { ai_call_id: 'c1', intent: 'search', query: pune, columns, rows, resolved: [] } }]
   await ask('Which assets at the Pune plant have AMC expiring in the next 60 days?')
-  expect(calls.find((c) => c.path === '/insights/ask')!.body).toEqual({ question: 'Which assets at the Pune plant have AMC expiring in the next 60 days?' })
+  expect(calls.find((c) => c.path === '/ai/assist')!.body).toEqual({ message: 'Which assets at the Pune plant have AMC expiring in the next 60 days?' })
   expect(container.textContent).toContain(v.understood)
   expect(container.textContent).toContain('Location: in (and below) Pune')
   expect(container.textContent).toContain('AMC end: within the next 60 days')
@@ -115,7 +115,7 @@ test('review point: the question gives the chips and the rows; removing a chip r
 
   replies['/insights/run'] = [{ status: 200, body: { columns, rows: rows.slice(0, 1), resolved: [] } }]
   await act(async () => button(`Remove ${'AMC end: within the next 60 days'}`).click())
-  expect(calls.filter((c) => c.path === '/insights/ask')).toHaveLength(1)
+  expect(calls.filter((c) => c.path === '/ai/assist')).toHaveLength(1)
   expect(calls.find((c) => c.path === '/insights/run')!.body).toEqual({ ...pune, filters: [pune.filters![0]] })
   expect(calls.find((c) => c.path === '/insights/outcome')!.body).toEqual({ ai_call_id: 'c1', outcome: 'edited' })
   expect(container.querySelectorAll('tbody tr')).toHaveLength(1)
@@ -123,7 +123,7 @@ test('review point: the question gives the chips and the rows; removing a chip r
 
 test('at the cap the message shows and the chip editor still runs queries', async () => {
   await open()
-  replies['/insights/ask'] = [{ status: 429, body: { error: 'ai_cap_reached' } }]
+  replies['/ai/assist'] = [{ status: 429, body: { error: 'ai_cap_reached' } }]
   await ask('anything')
   expect(container.querySelector('[role="alert"]')!.textContent).toBe(v.messages.ai_cap_reached)
   expect(container.textContent).toContain(v.manual)
@@ -138,11 +138,11 @@ test('at the cap the message shows and the chip editor still runs queries', asyn
   expect(calls.some((c) => c.path === '/insights/outcome')).toBe(false)
 })
 
-test('several matches: the user picks one, which runs with its id; cannot_answer shows our text only', async () => {
+test('several matches: the user picks one, which runs with its id; unsupported shows our text only', async () => {
   await open()
   const options = [{ id: 'p1', label: 'Pune plant 1' }, { id: 'p2', label: 'Pune plant 2' }]
-  replies['/insights/ask'] = [{ status: 200, body: { ai_call_id: 'c2', query: pune, needs_choice: [{ filter: 0, value: 'Pune', options }], resolved: [] } },
-    { status: 200, body: { ai_call_id: 'c3', cannot_answer: true } }]
+  replies['/ai/assist'] = [{ status: 200, body: { ai_call_id: 'c2', intent: 'search', query: pune, needs_choice: [{ filter: 0, value: 'Pune', options }], resolved: [] } },
+    { status: 200, body: { ai_call_id: 'c3', intent: 'unsupported' } }]
   await ask('Pune AMC')
   expect(container.textContent).toContain('Which “Pune” did you mean?')
   replies['/insights/run'] = [{ status: 200, body: { columns, rows, resolved: [] } }]
@@ -152,7 +152,7 @@ test('several matches: the user picks one, which runs with its id; cannot_answer
   expect(container.textContent).toContain('Location: in (and below) Pune plant 2')
 
   await ask('weather tomorrow?')
-  expect(container.querySelector('[role="alert"]')!.textContent).toBe(v.messages.cannot_answer)
+  expect(container.querySelector('[role="alert"]')!.textContent).toBe(v.messages.unsupported)
 })
 
 test('no access: the service says forbidden and the page says so', async () => {
@@ -169,7 +169,7 @@ test('saved widgets: save the current query, open one to re-run it, share and re
   ]
   db.writes = []
   await act(async () => root.render(<MemoryRouter><InsightsPage tenantId="t1" canSave canShare /></MemoryRouter>))
-  replies['/insights/ask'] = [{ status: 200, body: { ai_call_id: 'c1', query: pune, columns, rows, resolved: [] } }]
+  replies['/ai/assist'] = [{ status: 200, body: { ai_call_id: 'c1', intent: 'search', query: pune, columns, rows, resolved: [] } }]
   await ask('Pune AMC')
   vi.stubGlobal('prompt', () => ' Pune AMC 2 ')
   await act(async () => button(v.widgets.save).click())
@@ -186,7 +186,7 @@ test('saved widgets: save the current query, open one to re-run it, share and re
   replies['/insights/run'] = [{ status: 422, body: { error: 'field_not_allowed', at: 'fields/0' } }]
   await act(async () => button('Team view').click())
   expect(calls.at(-1)).toEqual({ path: '/insights/run', body: { subject: 'asset' } })
-  expect(calls.filter((c) => c.path === '/insights/ask')).toHaveLength(1)
+  expect(calls.filter((c) => c.path === '/ai/assist')).toHaveLength(1)
   expect(container.querySelector('[role="alert"]')!.textContent).toBe(v.messages.field_not_allowed)
   expect(container.querySelector('tbody')).toBeNull()
 
@@ -200,8 +200,34 @@ test('saved widgets: save the current query, open one to re-run it, share and re
 
 test('saved widgets: no save right, no Save as widget button', async () => {
   await open()
-  replies['/insights/ask'] = [{ status: 200, body: { ai_call_id: 'c1', query: pune, columns, rows, resolved: [] } }]
+  replies['/ai/assist'] = [{ status: 200, body: { ai_call_id: 'c1', intent: 'search', query: pune, columns, rows, resolved: [] } }]
   await ask('Pune AMC')
   expect(button(v.widgets.save)).toBeUndefined()
   expect(button(v.export)).toBeDefined()
+})
+
+// 10.9: an action reply opens the user's own form with the draft in router state; nothing is written here.
+function Shown() {
+  const l = useLocation()
+  return <p>{`${l.pathname} ${JSON.stringify((l.state as { draft?: { asset?: { id: string } } } | null)?.draft?.asset ?? null)}`}</p>
+}
+test('10.9 an action opens the form; several assets are picked first; none says so', async () => {
+  await act(async () => root.render(
+    <MemoryRouter initialEntries={['/insights']}>
+      <Routes>
+        <Route path="/insights" element={<InsightsPage />} />
+        <Route path="*" element={<Shown />} />
+      </Routes>
+    </MemoryRouter>,
+  ))
+  const draft = { ai_call_id: 'c9', intent: 'update_asset', asset_text: 'PNE', values: { model: 'GA-37' }, notes: {},
+    asset_choices: [{ id: 'a1', label: 'PNE-0188 · Pump' }, { id: 'a2', label: 'PNE-0412 · Lathe' }] }
+  replies['/ai/assist'] = [{ status: 200, body: { ...draft, asset_choices: [] } }, { status: 200, body: draft }]
+  await ask('set the model of PNE to GA-37')
+  expect(container.querySelector('[role="alert"]')!.textContent).toBe('No asset matches “PNE”. Check the tag and try again.')
+  await ask('set the model of PNE to GA-37')
+  expect(container.textContent).toContain('Which asset did you mean by “PNE”?')
+  await act(async () => button('PNE-0412 · Lathe').click())
+  expect(container.textContent).toBe('/assets/a2/edit {"id":"a2","label":"PNE-0412 · Lathe"}')
+  expect(calls.some((c) => c.path === '/insights/run')).toBe(false)
 })
