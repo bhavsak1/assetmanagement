@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import { AttachmentsTab, checkFile, TYPES, uploadAttachment } from './Attachments'
 import { addDays, showDate, tenantToday, useTenant } from './Coverage'
 import { showMoney } from './format'
+import { useDialog } from './Dialog'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import type { Database, Tables } from './types/database'
@@ -195,6 +196,7 @@ export function CompletionForm({ obligation, row, can, onDone, onCancel }: { obl
 export function ServiceHistoryTab({ tenantId, assetId, can }: { tenantId: string; assetId: string; can: Can }) {
   const tenant = useTenant()
   const [rows, setRows] = useState<HistoryRow[]>()
+  const { dialog, confirm } = useDialog()
   // The record whose files are open (5.2b).
   const [files, setFiles] = useState<string>()
   const [types, setTypes] = useState<Record<string, string>>({})
@@ -226,7 +228,7 @@ export function ServiceHistoryTab({ tenantId, assetId, can }: { tenantId: string
     setReload((n) => n + 1)
   }
   async function undo(r: HistoryRow) {
-    if (!window.confirm(s.undoConfirm.replace('{name}', r.obligation_name ?? '').replace('{date}', showDate(r.done_on, tenant)))) return
+    if (!(await confirm({ title: s.undoConfirm.replace('{name}', r.obligation_name ?? '').replace('{date}', showDate(r.done_on, tenant)), ok: s.undo, danger: true }))) return
     const { error } = await supabase.rpc('undo_completion', { p_service_record_id: r.id ?? '' })
     if (error) return setError(serviceError(error))
     done()
@@ -234,6 +236,7 @@ export function ServiceHistoryTab({ tenantId, assetId, can }: { tenantId: string
 
   return (
     <div className="stack detail">
+      {dialog}
       {error && (
         <p className="login-error" role="alert">
           {error}

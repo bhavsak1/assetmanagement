@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { daysBetween, groups, tenantToday, useTenant } from './Coverage'
 import { showNumber } from './format'
+import { useDialog } from './Dialog'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import { buildTree, placeName, placeTitle } from './tree'
@@ -137,6 +138,7 @@ const isSort = (v: string): v is Sort => v === 'name' || v === 'tag' || v === 'u
 
 export function AssetsPage({ tenantId, canSaveViews, canCreate, canCoverage }: { tenantId: string; canSaveViews: boolean; canCreate: boolean; canCoverage: boolean }) {
   const [params] = useSearchParams()
+  const { dialog, confirm, ask } = useDialog()
   const [filters, setFilters] = useState<Filters>(() => urlFilters(params))
   // Filter panel (4.4): closed by default, remembered per browser. A phone never reopens it as a sheet on load.
   const [open, setOpen] = useState(() => readOpen() && !isPhone())
@@ -270,7 +272,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate, canCoverage }: {
   }
 
   async function saveView() {
-    const name = window.prompt(t.assets.views.namePrompt)?.trim()
+    const name = await ask({ title: t.assets.views.save, label: t.assets.views.namePrompt, ok: t.assets.views.save })
     if (!name) return
     const { data, error } = await supabase
       .from('saved_view')
@@ -283,7 +285,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate, canCoverage }: {
 
   async function deleteView() {
     const v = views.find((x) => x.id === viewId)
-    if (!v || !window.confirm(t.assets.views.deleteConfirm.replace('{name}', v.name))) return
+    if (!v || !(await confirm({ title: t.assets.views.deleteConfirm.replace('{name}', v.name), ok: t.assets.views.delete, danger: true }))) return
     const { data, error } = await supabase.from('saved_view').update({ deleted_at: new Date().toISOString() }).eq('id', v.id).select('id')
     setError(error || !data?.length ? t.assets.views.saveError : undefined)
     setViewId('')
@@ -352,6 +354,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate, canCoverage }: {
   return (
     <>
       <title>{`${t.pages.assets} · ${t.app.name}`}</title>
+      {dialog}
       <div className="page-head">
         <div>
           <h1>{t.pages.assets}</h1>

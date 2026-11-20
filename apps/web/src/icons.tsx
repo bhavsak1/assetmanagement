@@ -75,7 +75,8 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   back: <path d="m12 19-7-7 7-7M19 12H5" />,
-  check: <path d="M20 6 9 17l-5-5" />
+  check: <path d="M20 6 9 17l-5-5" />,
+  down: <path d="m6 9 6 6 6-6" />
 }
 
 // Decorative: the link or button next to it carries the name.

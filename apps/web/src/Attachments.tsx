@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { showDateTime, type Fmt } from './format'
+import { useDialog } from './Dialog'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import type { Database, TablesInsert } from './types/database'
@@ -71,6 +72,7 @@ export async function uploadAttachment(tenantId: string, entity: Entity, entityI
 
 export function AttachmentsTab({ tenantId, entity = 'asset', entityId, can, tenant }: { tenantId: string; entity?: Entity; entityId: string; can: Can; tenant?: Fmt }) {
   const [rows, setRows] = useState<Attachment[]>()
+  const { dialog, confirm } = useDialog()
   const [error, setError] = useState<string>()
   const [progress, setProgress] = useState<number>()
   const [version, setVersion] = useState(0)
@@ -123,7 +125,7 @@ export function AttachmentsTab({ tenantId, entity = 'asset', entityId, can, tena
   }
 
   async function remove(r: Attachment) {
-    if (!window.confirm(x.deleteConfirm.replace('{name}', r.file_name))) return
+    if (!(await confirm({ title: x.deleteConfirm.replace('{name}', r.file_name), ok: x.delete, danger: true }))) return
     const { error } = await supabase.from(entity === 'asset' ? 'asset_attachment' : 'service_record_attachment').update({ deleted_at: new Date().toISOString() }).eq('id', r.id)
     if (error) setError(x.deleteError)
     setVersion((v) => v + 1)
@@ -133,6 +135,7 @@ export function AttachmentsTab({ tenantId, entity = 'asset', entityId, can, tena
   const when = (iso: string) => showDateTime(iso, tenant)
   return (
     <div className="stack detail">
+      {dialog}
       {error && (
         <p className="login-error" role="alert">
           {error}

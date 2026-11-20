@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
 import { AttachmentsTab } from './Attachments'
-import { CoverageCard, CoverageTab } from './Coverage'
+import { bestLine, CoverageCard, CoverageTab, StatusTag as CoverageState } from './Coverage'
+import { Overlay } from './Dialog'
+import { Icon } from './icons'
 import { lineFields } from './AssetForm'
-import { ObligationsCard, ObligationsTab } from './Obligations'
+import { ObligationsCard, ObligationsTab, StateTag } from './Obligations'
 import { ServiceHistoryTab } from './Service'
 import { loadStatuses, statusName, StatusTag, type Status } from './Assets'
-import { AiMark, AiMarks, ConfirmDialog, fill, outcome, useDiscardOnLeave, useDraft, type Draft, type Line } from './AiDraft'
-import { showDate, showDateTime, showMoney, showNumber, type Fmt } from './format'
+import { AiMark, AiMarks, ConfirmCard, fill, outcome, useDiscardOnLeave, useDraft, type Draft, type Line } from './AiDraft'
+import { showDate, showDateTime, showMoney, showNumber, tenantToday, type Fmt } from './format'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import { buildTree, lineage } from './tree'
@@ -77,6 +79,20 @@ export function historyTitle(row: History): string {
 export function moreCursor(rows: History[]): { p_before: string; p_before_id: string } | undefined {
   const last = rows[PAGE - 1]
   return rows.length > PAGE && last ? { p_before: last.occurred_at, p_before_id: last.id } : undefined
+}
+
+// 11.3: a tab shows only when the user may open it; Overview and Audit always.
+const tabDomain = { coverage: 'coverage_contract', obligations: 'obligation', service: 'service_record', attachments: 'asset_attachment' } as const
+const allTabs = ['overview', 'coverage', 'obligations', 'service', 'attachments', 'audit'] as const
+export const visibleTabs = (can: Can) => allTabs.filter((k) => !(k in tabDomain) || can(tabDomain[k as keyof typeof tabDomain], 'view'))
+
+type Obligation = Tables<'obligation'>
+type CoverageLine = Database['public']['Functions']['asset_coverage']['Returns'][number]
+// 11.3 summary: the next due (active obligations only), the last done of any, and the best coverage line.
+export function summary(obligations: Obligation[], lines: CoverageLine[]) {
+  const next = obligations.filter((o) => o.is_active).sort((x, y) => x.next_due_date.localeCompare(y.next_due_date))[0]
+  const last = obligations.map((o) => o.last_done_date).filter((x): x is string => !!x).sort().at(-1)
+  return { next, last, best: bestLine(lines) }
 }
 
 const statusLabel = (s: string) => (t.assets.statuses as Record<string, string>)[s] ?? s
@@ -187,8 +203,8 @@ export function AssetDetailPage({ can }: { can: Can }) {
   const label = (key: string) => (key.startsWith('custom.') ? (fieldOf(key.slice(7))?.label ?? key.slice(7)) : (labels[key] ?? key))
   const money = !seeMoney ? <Hidden /> : asset.purchase_value == null ? '—' : showMoney(asset.purchase_value, asset.purchase_currency, tenant)
   const parentTag = asset.parent_asset_id ? tags[asset.parent_asset_id] : undefined
-  const tabs = ['overview', 'coverage', 'obligations', 'service', 'bom', 'attachments', 'audit'] as const
   const live = asset.status !== 'disposed'
+  const lifecycle = live && can('asset_lifecycle', 'execute')
   const tag = asset.tag ?? ''
   const id = asset.id ?? assetId
   const close = () => {
@@ -233,25 +249,29 @@ export function AssetDetailPage({ can }: { can: Can }) {
           </h1>
         </div>
         <div className="spacer" />
-        {can('asset_core', 'view') && (
-          <Link className="btn" to={`/assets/${asset.id}/label`}>
-            {d.label.button}
-          </Link>
-        )}
-        {live && can('asset_lifecycle', 'execute') && (
-          <>
-            <button className="btn" type="button" onClick={() => setDialog('transfer')}>
-              {a.transfer}
-            </button>
-            <button className="btn" type="button" onClick={() => setDialog('retire')}>
-              {a.retire}
-            </button>
-          </>
-        )}
-        {targets.length > 0 && (
-          <button className="btn" type="button" onClick={() => setDialog('status')}>
-            {a.changeStatus}
-          </button>
+        {(can('asset_core', 'view') || lifecycle || targets.length > 0) && (
+          <More>
+            {can('asset_core', 'view') && (
+              <Link className="menu-item" to={`/assets/${asset.id}/label`}>
+                {d.label.button}
+              </Link>
+            )}
+            {lifecycle && (
+              <button className="menu-item" type="button" onClick={() => setDialog('transfer')}>
+                {a.transfer}
+              </button>
+            )}
+            {targets.length > 0 && (
+              <button className="menu-item" type="button" onClick={() => setDialog('status')}>
+                {a.changeStatus}
+              </button>
+            )}
+            {lifecycle && (
+              <button className="menu-item danger" type="button" onClick={() => setDialog('retire')}>
+                {a.retire}
+              </button>
+            )}
+          </More>
         )}
         {can('asset_core', 'update') && (
           <Link className="btn btn-main" to={`/assets/${asset.id}/edit`}>
@@ -259,18 +279,13 @@ export function AssetDetailPage({ can }: { can: Can }) {
           </Link>
         )}
       </div>
+      <Summary key={version} assetId={id} can={can} tenant={tenant} />
       <div className="tabs" role="tablist">
-        {tabs.map((k) =>
-          k === 'overview' || k === 'audit' || (k === 'coverage' && can('coverage_contract', 'view')) || (k === 'obligations' && can('obligation', 'view')) || (k === 'service' && can('service_record', 'view')) || (k === 'attachments' && can('asset_attachment', 'view')) ? (
-            <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
-              {d.tabs[k]}
-            </button>
-          ) : (
-            <button key={k} type="button" role="tab" disabled title={d.laterHint}>
-              {d.tabs[k]}
-            </button>
-          ),
-        )}
+        {visibleTabs(can).map((k) => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
+            {d.tabs[k]}
+          </button>
+        ))}
       </div>
       {tab === 'overview' ? (
         <div className="stack detail">
@@ -372,6 +387,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
       )}
       {dialog === 'retire' && (
         <ActionDialog
+          danger
           title={a.retireTitle.replace('{tag}', tag)}
           hint={a.retireHint}
           submit={a.retire}
@@ -401,6 +417,7 @@ function ActionDialog(props: {
   title: string
   hint?: string
   submit: string
+  danger?: boolean
   choices?: { label: string; placeholder: string; options: { value: string; text: string; off?: boolean }[] }
   run: (choice: string, reason: string) => PromiseLike<{ error: { code?: string; message?: string } | null }>
   onClose: () => void
@@ -440,24 +457,17 @@ function ActionDialog(props: {
     void go()
   }
 
-  if (ai && confirming) {
-    return (
-      <ConfirmDialog
-        title={ai.title}
-        lines={ai.lines(choice, reason)}
-        busy={busy}
-        onConfirm={() => void go()}
-        onCancel={() => {
-          setConfirming(false)
-          ai.onCancel()
-        }}
-      />
-    )
+  const back = () => {
+    setConfirming(false)
+    ai?.onCancel()
   }
-
+  // One overlay for the form and its confirm step, so focus goes back to the opener at the end.
   return (
+    <Overlay onCancel={ai && confirming ? back : props.onClose}>
+    {ai && confirming ? (
+      <ConfirmCard title={ai.title} lines={ai.lines(choice, reason)} busy={busy} onConfirm={() => void go()} onCancel={back} />
+    ) : (
     <AiMarks.Provider value={{ keys: aiKeys, notes: note ? { choice: note } : {} }}>
-    <div className="overlay" onKeyDown={(ev) => ev.key === 'Escape' && props.onClose()}>
       <form className="card dialog" role="dialog" aria-modal="true" aria-labelledby="action-title" onSubmit={send} noValidate>
         <h2 id="action-title">{props.title}</h2>
         {props.hint && <p className="muted">{props.hint}</p>}
@@ -497,13 +507,118 @@ function ActionDialog(props: {
           <button className="btn" type="button" onClick={props.onClose}>
             {a.cancel}
           </button>
-          <button className="btn btn-main" type="submit" disabled={busy || (!!choices && !choice)}>
+          <button className={props.danger ? 'btn btn-danger' : 'btn btn-main'} type="submit" disabled={busy || (!!choices && !choice)}>
             {props.submit}
           </button>
         </div>
       </form>
-    </div>
     </AiMarks.Provider>
+    )}
+    </Overlay>
+  )
+}
+
+// 11.3: secondary actions behind one button. Closes on a pick, outside click or Esc; focus stays on the button.
+function More({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  const button = useRef<HTMLButtonElement>(null)
+  const id = useId()
+
+  useEffect(() => {
+    if (!open) return
+    const outside = (e: MouseEvent) => !box.current?.contains(e.target as globalThis.Node) && setOpen(false)
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setOpen(false)
+      button.current?.focus()
+    }
+    document.addEventListener('mousedown', outside)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('mousedown', outside)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [open])
+
+  return (
+    <div className="more" ref={box}>
+      <button ref={button} className="btn" type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+        {d.more} <Icon name="down" />
+      </button>
+      {open && (
+        // A pick opens a dialog: focus the button first so the dialog returns focus there, not to a removed item.
+        <div
+          className="more-menu card"
+          id={id}
+          onClick={() => {
+            button.current?.focus()
+            setOpen(false)
+          }}
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 11.3: next service, coverage state and last service, each only with the right to see it.
+function Summary({ assetId, can, tenant }: { assetId: string; can: Can; tenant?: Fmt }) {
+  const seeObligations = can('obligation', 'view')
+  const seeCoverage = can('coverage_contract', 'view')
+  const [data, setData] = useState<{ obligations: Obligation[]; lines: CoverageLine[] }>()
+  useEffect(() => {
+    let live = true
+    void Promise.all([
+      seeObligations ? supabase.from('obligation').select('*').eq('asset_id', assetId).is('deleted_at', null) : undefined,
+      seeCoverage ? supabase.rpc('asset_coverage', { p_asset_ids: [assetId] }) : undefined,
+    ]).then(([o, c]) => live && setData({ obligations: o?.data ?? [], lines: c?.data ?? [] }))
+    return () => {
+      live = false
+    }
+  }, [assetId, seeObligations, seeCoverage])
+
+  if (!data || !tenant || (!seeObligations && !seeCoverage)) return null
+  const s = d.summary
+  const { next, last, best } = summary(data.obligations, data.lines)
+  return (
+    <dl className="summary card">
+      {seeObligations && (
+        <div>
+          <dt>{s.nextService}</dt>
+          <dd>
+            {next ? (
+              <>
+                {showDate(next.next_due_date, tenant)} <StateTag state={next.due_state} />
+              </>
+            ) : (
+              s.none
+            )}
+          </dd>
+        </div>
+      )}
+      {seeCoverage && (
+        <div>
+          <dt>{s.coverage}</dt>
+          <dd>
+            {best ? (
+              <>
+                <CoverageState row={best} today={tenantToday(tenant.time_zone)} /> <span className="muted">{t.coverage.to.replace('{date}', showDate(best.end_date, tenant))}</span>
+              </>
+            ) : (
+              <span className="tag status neutral">{t.coverage.status.none}</span>
+            )}
+          </dd>
+        </div>
+      )}
+      {seeObligations && (
+        <div>
+          <dt>{s.lastService}</dt>
+          <dd>{last ? showDate(last, tenant) : s.never}</dd>
+        </div>
+      )}
+    </dl>
   )
 }
 

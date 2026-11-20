@@ -199,14 +199,26 @@ test('empty list shows the empty state', async () => {
   expect(button(t.assets.next).disabled).toBe(true)
 })
 
+// 11.3: answer the app dialog (Dialog.tsx).
+const inDialog = (text: string) => [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((b) => b.textContent === text)!
+async function typeInDialog(text: string) {
+  const input = document.querySelector<HTMLInputElement>('[role="dialog"] input')!
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, text)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+
 test('saved views: open applies filters and sort, save stores them, delete soft deletes', async () => {
   await render()
   await choose(t.assets.views.label, 'v1')
   expect(lastList()).toEqual({ p_status: 'in_stock', p_location_id: 'l1', p_sort: 'tag', p_limit: 51 })
 
-  vi.spyOn(window, 'prompt').mockReturnValue('  My spares ')
   db.results['saved_view:write'] = { data: [{ id: 'v2' }], error: null }
   await act(async () => button(t.assets.views.save).click())
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(t.assets.views.namePrompt)
+  await typeInDialog('  My spares ')
+  await act(async () => inDialog(t.assets.views.save).click())
   expect(db.writes.at(-1)).toEqual({
     tenant_id: 'ta',
     entity: 'asset',
@@ -216,8 +228,8 @@ test('saved views: open applies filters and sort, save stores them, delete soft 
   })
 
   await choose(t.assets.views.label, 'v1')
-  vi.spyOn(window, 'confirm').mockReturnValue(true)
   await act(async () => button(t.assets.views.delete).click())
+  await act(async () => inDialog(t.assets.views.delete).click())
   expect(db.writes.at(-1)).toHaveProperty('deleted_at')
 })
 

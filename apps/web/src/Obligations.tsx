@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import { addDays, showDate, tenantToday, terms, useTenant } from './Coverage'
+import { useDialog } from './Dialog'
 import { t } from './i18n'
 import { CompletionForm } from './Service'
 import { supabase } from './supabase'
@@ -88,6 +89,7 @@ type AssetDates = { in_service_date: string | null; purchase_date: string | null
 export function ObligationsTab({ tenantId, assetId, asset, can }: { tenantId: string; assetId: string; asset: AssetDates; can: Can }) {
   const tenant = useTenant()
   const [rows, setRows] = useState<Obligation[]>()
+  const { dialog, confirm } = useDialog()
   const [editing, setEditing] = useState<{ row?: Obligation }>()
   const [completing, setCompleting] = useState<Obligation>()
   const [error, setError] = useState<string>()
@@ -126,6 +128,7 @@ export function ObligationsTab({ tenantId, assetId, asset, can }: { tenantId: st
 
   return (
     <div className="stack detail">
+      {dialog}
       <div className="page-head">
         <div className="spacer" />
         {can('obligation', 'create') && (
@@ -222,7 +225,7 @@ export function ObligationsTab({ tenantId, assetId, asset, can }: { tenantId: st
                       <button
                         className="btn"
                         type="button"
-                        onClick={() => window.confirm(o.removeConfirm.replace('{name}', r.name)) && void update(r.id, { deleted_at: new Date().toISOString() })}
+                        onClick={() => void confirm({ title: o.removeConfirm.replace('{name}', r.name), ok: o.remove, danger: true }).then((yes) => yes && update(r.id, { deleted_at: new Date().toISOString() }))}
                       >
                         {o.remove}
                       </button>

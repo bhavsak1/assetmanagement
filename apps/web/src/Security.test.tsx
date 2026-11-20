@@ -178,17 +178,22 @@ test('draft: banner, Draft tag, the drafted set in the grid, and Revert sends th
   expect(db.rpc).toHaveBeenCalledWith('set_group_policies', { p_group_id: 'g1', p_operation_ids: ['o-view'] })
 })
 
+// 11.3: answer the app dialog (Dialog.tsx).
+const inDialog = (text: string) => [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((b) => b.textContent === text)!
+
 test('change sets: the diff, Activate and Discard, and the history', async () => {
   withDraft()
-  vi.spyOn(window, 'confirm').mockReturnValue(true)
   await render(true, true)
   await act(async () => button(s.changes.review)!.click())
   expect(container.textContent).toContain(`${s.changes.add} ${s.domains.asset_core} · ${s.ops.update}`)
   expect(container.textContent).toContain(s.changes.draftedBy.replace('{name}', 'Priya'))
   expect(container.textContent).toContain(s.changes.statuses.activated)
   await act(async () => button(s.changes.activate)!.click())
+  expect(db.rpc).not.toHaveBeenCalledWith('activate_change_set', expect.anything())
+  await act(async () => inDialog(s.changes.activate).click())
   expect(db.rpc).toHaveBeenCalledWith('activate_change_set', { p_change_set_id: 'cs2' })
   await act(async () => button(s.changes.discard)!.click())
+  await act(async () => inDialog(s.changes.discard).click())
   expect(db.rpc).toHaveBeenCalledWith('discard_change_set', { p_change_set_id: 'cs2' })
 })
 
@@ -296,8 +301,8 @@ test('integrations: lists users and keys, shows a new key once, revokes', async 
   await act(async () => button(s.integrations.done)!.click())
   expect(container.textContent).not.toContain(KEY)
 
-  vi.spyOn(window, 'confirm').mockReturnValue(true)
   await act(async () => button(s.integrations.revoke)!.click())
+  await act(async () => inDialog(s.integrations.revoke).click())
   expect(db.rpc).toHaveBeenCalledWith('revoke_api_key', { p_key_id: 'k1' })
 })
 

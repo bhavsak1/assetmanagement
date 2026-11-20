@@ -723,11 +723,17 @@
       "coverage": "Coverage",
       "obligations": "Obligations",
       "service": "Service history",
-      "bom": "BOM",
       "attachments": "Attachments",
       "audit": "Audit"
     },
-    "laterHint": "Arrives in a later release.",
+    "more": "More",
+    "summary": {
+      "nextService": "Next service",
+      "coverage": "Coverage",
+      "lastService": "Last service",
+      "none": "None",
+      "never": "Not yet"
+    },
     "makeModel": "Make / model",
     "purchase": "Purchase",
     "statusReason": "Status reason",
@@ -1732,5 +1738,6 @@
     "empty": "(empty)",
     "confirm": "Confirm",
     "cancel": "Cancel"
-  }
+  },
+  "dialog": { "cancel": "Cancel" }
 }

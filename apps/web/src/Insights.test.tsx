@@ -162,6 +162,16 @@ test('no access: the service says forbidden and the page says so', async () => {
   expect(container.querySelector('.understood')).toBeNull()
 })
 
+// 11.3: answer the app dialog (Dialog.tsx).
+const inDialog = (text: string) => [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((b) => b.textContent === text)!
+async function typeInDialog(text: string) {
+  const input = document.querySelector<HTMLInputElement>('[role="dialog"] input')!
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, text)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+
 test('saved widgets: save the current query, open one to re-run it, share and remove only your own', async () => {
   db.rows = [
     { id: 'w1', name: 'Pune AMC', query: pune, shared: false, created_by: 'me' },
@@ -171,8 +181,9 @@ test('saved widgets: save the current query, open one to re-run it, share and re
   await act(async () => root.render(<MemoryRouter><InsightsPage tenantId="t1" canSave canShare /></MemoryRouter>))
   replies['/ai/assist'] = [{ status: 200, body: { ai_call_id: 'c1', intent: 'search', query: pune, columns, rows, resolved: [] } }]
   await ask('Pune AMC')
-  vi.stubGlobal('prompt', () => ' Pune AMC 2 ')
   await act(async () => button(v.widgets.save).click())
+  await typeInDialog(' Pune AMC 2 ')
+  await act(async () => inDialog(v.widgets.save).click())
   expect(db.writes[0]).toEqual({ op: 'insert', body: { tenant_id: 't1', name: 'Pune AMC 2', query: pune } })
   expect(container.querySelector('[role="alert"]')!.textContent).toBe(v.messages.widget_saved)
 
@@ -192,8 +203,8 @@ test('saved widgets: save the current query, open one to re-run it, share and re
 
   await act(async () => button(v.widgets.share).click())
   expect(db.writes.at(-1)).toEqual({ op: 'update', body: { shared: true }, id: 'w1' })
-  vi.stubGlobal('confirm', () => true)
   await act(async () => button('Remove Pune AMC').click())
+  await act(async () => inDialog(v.widgets.remove).click())
   expect(db.writes.at(-1)).toMatchObject({ op: 'update', id: 'w1' })
   expect((db.writes.at(-1)!.body as { deleted_at: string }).deleted_at).toBeTruthy()
 })
