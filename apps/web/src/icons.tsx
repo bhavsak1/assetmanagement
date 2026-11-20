@@ -66,7 +66,16 @@ const paths: Record<string, ReactNode> = {
   settings: <path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4" />,
   // Menu toggle: the arrow points where the menu will go.
   collapse: <path d="m15 18-6-6 6-6" />,
-  expand: <path d="m9 18 6-6-6-6" />
+  expand: <path d="m9 18 6-6-6-6" />,
+  // 11.2 phone controls: search, close search, Record completion.
+  search: (
+    <>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </>
+  ),
+  back: <path d="m12 19-7-7 7-7M19 12H5" />,
+  check: <path d="M20 6 9 17l-5-5" />
 }
 
 // Decorative: the link or button next to it carries the name.

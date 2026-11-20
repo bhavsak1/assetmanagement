@@ -119,6 +119,15 @@ function Shell({ companies, tenantId, user, canImport, canAsk, canSearch }: { co
     }
   }, [tenantId])
   const aiOn = ai?.tenantId === tenantId && ai.on && canAsk
+  const switcher = companies.length > 1 && (
+    <select className="company-switch" aria-label={t.company.switch} value={tenantId} onChange={(e) => void openCompany(e.target.value)}>
+      {companies.map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.name}
+        </option>
+      ))}
+    </select>
+  )
 
   return (
     <div className={collapsed ? 'app collapsed' : 'app'}>
@@ -156,26 +165,19 @@ function Shell({ companies, tenantId, user, canImport, canAsk, canSearch }: { co
       <div className="main">
         <header className="topbar">
           {canSearch && <TopSearch />}
-          {aiOn && <button className="btn" type="button" onClick={() => void navigate('/insights')}>{t.topbar.askAssetly}</button>}
-          <div className="spacer" />
-          {companies.length > 1 ? (
-            <select
-              className="company-switch"
-              aria-label={t.company.switch}
-              value={tenantId}
-              onChange={(e) => void openCompany(e.target.value)}
-            >
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <span className="muted">{company}</span>
+          {aiOn && (
+            <button className="btn ask-btn" type="button" onClick={() => void navigate('/insights')}>
+              <Icon name="insights" />
+              <span className="btn-text">{t.topbar.askAssetly}</span>
+            </button>
           )}
+          <div className="spacer" />
+          {/* On a phone the company name and switcher live in the account menu only (11.2). */}
+          {switcher || <span className="muted top-company">{company}</span>}
           <NotificationBell tenantId={tenantId} />
-          <AccountMenu name={profile?.id === user.id ? profile.name : undefined} email={user.email} company={company} />
+          <AccountMenu name={profile?.id === user.id ? profile.name : undefined} email={user.email} company={company}>
+            {switcher}
+          </AccountMenu>
         </header>
         <main className="content">
           <TenantFmt.Provider value={tenant}>

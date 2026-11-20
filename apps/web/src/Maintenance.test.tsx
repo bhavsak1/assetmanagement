@@ -111,7 +111,7 @@ test('tabs with counts, tiles, the Overdue rows; value and cost columns hidden w
   expect(lastRpc('list_obligations')).toEqual({ p_bucket: 'overdue', p_limit: 51 })
   expect(lastRpc('count_assets')).toEqual(expect.objectContaining({ p_coverage: 'out' }))
   expect(container.querySelector('tbody')?.textContent).toContain('12 d overdue')
-  expect(container.querySelector('tbody')?.textContent).toContain('Plant 1 · Pune')
+  expect(container.querySelector('tbody')?.textContent).toContain('Pune · Plant 1')
   expect(heads()).not.toContain(m.col.value)
 })
 

@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { Icon } from './icons'
 import { Link, useSearchParams } from 'react-router'
 import { coverageValues, CoverageTag, TreeSelect, type Cursor } from './Assets'
 import { AttachmentsTab } from './Attachments'
@@ -8,6 +9,7 @@ import { t } from './i18n'
 import { obligationTypes, ruleText, stateTone } from './Obligations'
 import { CompletionForm } from './Service'
 import { supabase } from './supabase'
+import { placeName, placeTitle } from './tree'
 import type { Database } from './types/database'
 
 // Story 5.3: the Maintenance screen (data-model-goal5.md §13). Lists come from list_obligations and
@@ -73,10 +75,15 @@ export function ageText(from: string | null | undefined, today: string): string 
 }
 
 // "Plant 1 · Pune": the location and its parent, from the loaded tree.
-export function placeName(list: Option[], id: string | null): string {
-  const l = list.find((r) => r.id === id)
-  const parent = l && list.find((r) => r.id === l.parent_id)
-  return l ? (parent ? `${l.name} · ${parent.name}` : l.name) : '—'
+// 11.2: on a phone the button shrinks to a check icon so it stays in view; the name keeps the asset for screen readers.
+export function CompleteButton({ asset, main, onClick }: { asset: string | null; main?: boolean; onClick: () => void }) {
+  const label = t.obligations.recordCompletionFor.replace('{asset}', asset ?? '')
+  return (
+    <button className={main ? 'btn btn-main complete' : 'btn complete'} type="button" aria-label={label} title={label} onClick={onClick}>
+      <Icon name="check" />
+      <span className="btn-text">{t.obligations.recordCompletion}</span>
+    </button>
+  )
 }
 
 export function MaintenancePage({ tenantId, can }: { tenantId: string; can: Can }) {
@@ -196,7 +203,6 @@ export function MaintenancePage({ tenantId, can }: { tenantId: string; can: Can 
   const num = (n?: number) => (n === undefined ? '…' : n > 10000 ? t.assets.manyCount : showNumber(n, tenant))
   const today = tenant ? tenantToday(tenant.time_zone) : ''
   const nameOf = (list: Option[], id: string | null) => list.find((r) => r.id === id)
-  const place = (id: string | null) => placeName(locations, id)
   const types = t.obligations.types as Record<string, string>
   const chips = (
     [
@@ -224,7 +230,7 @@ export function MaintenancePage({ tenantId, can }: { tenantId: string; can: Can 
   )
   const assetCells = (r: Open | Done) => (
     <>
-      <td>{place(r.location_id)}</td>
+      <td title={placeTitle(locations, r.location_id)}>{placeName(locations, r.location_id)}</td>
       {canCoverage && <td>{today && <CoverageTag lines={lines.filter((l) => l.asset_id === r.asset_id)} today={today} />}</td>}
       <td>{today && ageText(r.in_service_date ?? r.purchase_date, today)}</td>
       {seeValue && <td>{showMoney(r.purchase_value, r.purchase_currency, tenant)}</td>}
@@ -423,7 +429,7 @@ export function MaintenancePage({ tenantId, can }: { tenantId: string; can: Can 
                 {canCoverage && <th>{m.col.coverage}</th>}
                 <th>{m.col.age}</th>
                 {seeValue && <th>{m.col.value}</th>}
-                {canComplete && <th aria-label={m.col.actions} />}
+                {canComplete && <th className="actions" aria-label={m.col.actions} />}
               </tr>
             </thead>
             <tbody>
@@ -438,9 +444,7 @@ export function MaintenancePage({ tenantId, can }: { tenantId: string; can: Can 
                   {assetCells(r)}
                   {canComplete && (
                     <td className="actions">
-                      <button className="btn btn-main" type="button" onClick={() => setCompleting(r)}>
-                        {t.obligations.recordCompletion}
-                      </button>
+                      <CompleteButton asset={r.asset_name} main onClick={() => setCompleting(r)} />
                     </td>
                   )}
                 </tr>

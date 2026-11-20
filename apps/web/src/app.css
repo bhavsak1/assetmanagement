@@ -1354,3 +1354,181 @@ tr.unread .row-link {
 .widgets li .btn-link {
   margin-right: auto;
 }
+
+/* 11.2 phone layout. Desktop first: the phone-only controls hide, icon buttons show their text only. */
+.nowrap {
+  white-space: nowrap;
+}
+
+.search-open,
+.search-close,
+.account-menu .company-switch,
+.complete .icon,
+.ask-btn .icon {
+  display: none;
+}
+
+.btn.icon-btn,
+.btn.complete,
+.btn.ask-btn {
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+/* The action column stays in view while a wide table scrolls (Maintenance, Dashboard). */
+th.actions,
+td.actions {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--color-surface);
+}
+
+/* Covers the card's right padding, where scrolled cells would show through. */
+th.actions::after,
+td.actions::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 100%;
+  width: var(--space-3);
+  background: var(--color-surface);
+}
+
+@media (max-width: 767px) {
+  .topbar {
+    gap: var(--space-3);
+  }
+
+  .top-company,
+  .topbar > .company-switch,
+  .top-search .search {
+    display: none;
+  }
+
+  .account-menu .company-switch {
+    display: block;
+  }
+
+  .top-search {
+    flex: none;
+  }
+
+  .search-open,
+  .btn.complete,
+  .btn.ask-btn,
+  .topbar .bell {
+    display: inline-flex;
+  }
+
+  .btn.icon-btn,
+  .btn.complete,
+  .btn.ask-btn,
+  .topbar .bell {
+    align-items: center;
+    min-height: var(--touch-target);
+  }
+
+  .btn.icon-btn,
+  .btn.complete,
+  .btn.ask-btn {
+    width: var(--touch-target);
+    height: var(--touch-target);
+    padding: 0;
+  }
+
+  .complete .icon,
+  .ask-btn .icon {
+    display: block;
+  }
+
+  /* Text stays for screen readers. */
+  .btn-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .avatar {
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+
+  /* Search opened: it takes the whole top bar. */
+  .topbar:has(.top-search.open) > :not(.top-search),
+  .top-search.open .search-open {
+    display: none;
+  }
+
+  .top-search.open {
+    flex: 1;
+    gap: var(--space-3);
+  }
+
+  .top-search.open .search,
+  .top-search.open .search-close {
+    display: inline-flex;
+  }
+
+  .top-search.open .search {
+    height: var(--touch-target);
+  }
+
+  /* Assets list as cards: name and status, then the tag, then the short place; the whole card opens the asset. */
+  .asset-list thead,
+  .asset-list .cell-extra {
+    display: none;
+  }
+
+  .asset-list table,
+  .asset-list tbody {
+    display: block;
+  }
+
+  .asset-list tr {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'name status' 'tag tag' 'place place';
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-4) var(--space-3);
+    border-bottom: 1px solid var(--color-divider);
+  }
+
+  .asset-list td {
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+
+  .asset-list .cell-name {
+    grid-area: name;
+    overflow-wrap: anywhere;
+  }
+
+  .asset-list .cell-name .row-link::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+
+  .asset-list .cell-status {
+    grid-area: status;
+    justify-self: end;
+  }
+
+  .asset-list .cell-tag {
+    grid-area: tag;
+  }
+
+  .asset-list .cell-place {
+    grid-area: place;
+    color: var(--color-text-muted);
+    overflow-wrap: anywhere;
+  }
+}

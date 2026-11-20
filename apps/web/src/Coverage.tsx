@@ -363,8 +363,8 @@ export function CoveragePage({ tenantId, can }: { tenantId: string; can: Can }) 
                     <td>{l[0] ? `${l[0].name}${l.length > 1 ? ` ${c.plus.replace('{n}', String(l.length - 1))}` : ''}` : '—'}</td>
                     <td>{l.length === 1 ? c.scopeOne : l.length ? c.scope.replace('{n}', String(l.length)) : c.noAssets}</td>
                     <td>{vendorName(r.vendor_id)}</td>
-                    <td>{showDate(r.start_date, tenant)}</td>
-                    <td>{showDate(r.end_date, tenant)}</td>
+                    <td className="nowrap">{showDate(r.start_date, tenant)}</td>
+                    <td className="nowrap">{showDate(r.end_date, tenant)}</td>
                     <td>{today && <StatusTag row={r} today={today} />}</td>
                   </tr>
                 )
@@ -820,8 +820,8 @@ export function CoverageTab({ assetId, can }: { assetId: string; can: Can }) {
                     </Link>
                     {r.reference && <span className="muted"> {r.reference}</span>}
                   </td>
-                  <td>{showDate(r.start_date, tenant)}</td>
-                  <td>{showDate(r.end_date, tenant)}</td>
+                  <td className="nowrap">{showDate(r.start_date, tenant)}</td>
+                  <td className="nowrap">{showDate(r.end_date, tenant)}</td>
                   <td>
                     <StatusTag row={r} today={today} />
                   </td>
