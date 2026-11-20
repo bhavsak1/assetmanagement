@@ -1,6 +1,7 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import { StatusTag } from './Assets'
+import { Icon } from './icons'
 import { t } from './i18n'
 import { supabase } from './supabase'
 
@@ -46,6 +47,17 @@ export function TopSearch() {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
   const [found, setFound] = useState<{ term: string; rows: Hit[] }>()
+  // Phone (11.2): the box hides behind a search icon; opened, it takes the whole top bar.
+  const [phoneOpen, setPhoneOpen] = useState(false)
+  const input = useRef<HTMLInputElement>(null)
+  const toggle = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (phoneOpen) input.current?.focus()
+  }, [phoneOpen])
+  const closePhone = () => {
+    setPhoneOpen(false)
+    toggle.current?.focus()
+  }
   const term = text.trim().slice(0, SEARCH_MAX)
   const ready = term.length >= SEARCH_MIN
 
@@ -70,6 +82,7 @@ export function TopSearch() {
     const hit = rows?.[i]
     setOpen(false)
     setActive(-1)
+    setPhoneOpen(false)
     void navigate(hit?.id ? `/assets/${hit.id}` : `/assets?q=${encodeURIComponent(term)}`)
   }
 
@@ -82,6 +95,7 @@ export function TopSearch() {
       e.preventDefault()
       go(active)
     } else if (e.key === 'Escape') {
+      if (!showList && phoneOpen) closePhone()
       setOpen(false)
       setActive(-1)
     }
@@ -89,8 +103,15 @@ export function TopSearch() {
 
   const optionId = (i: number) => `${id}-o${i}`
   return (
-    <div className="top-search">
+    <div className={phoneOpen ? 'top-search open' : 'top-search'}>
+      <button ref={toggle} className="btn icon-btn search-open" type="button" aria-label={b.openSearch} title={b.openSearch} aria-expanded={phoneOpen} onClick={() => setPhoneOpen(true)}>
+        <Icon name="search" />
+      </button>
+      <button className="btn icon-btn search-close" type="button" aria-label={b.closeSearch} title={b.closeSearch} onClick={closePhone}>
+        <Icon name="back" />
+      </button>
       <input
+        ref={input}
         className="search"
         type="search"
         role="combobox"
@@ -135,7 +156,7 @@ export function TopSearch() {
 }
 
 // Story 11.1 (c): a disclosure button, not an ARIA menu, so Tab and Enter work as usual. Esc or a click outside closes it.
-export function AccountMenu({ name, email, company }: { name?: string | null; email?: string | null; company?: string }) {
+export function AccountMenu({ name, email, company, children }: { name?: string | null; email?: string | null; company?: string; children?: ReactNode }) {
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
   const button = useRef<HTMLButtonElement>(null)
@@ -167,6 +188,7 @@ export function AccountMenu({ name, email, company }: { name?: string | null; em
           <strong>{name || email}</strong>
           {name && <span className="muted">{email}</span>}
           {company && <span className="muted">{company}</span>}
+          {children}
           <button className="btn" type="button" onClick={() => void supabase.auth.signOut()}>
             {b.signOut}
           </button>

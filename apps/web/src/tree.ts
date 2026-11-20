@@ -34,3 +34,17 @@ export function lineage<T extends Node>(rows: T[], id: string): string[] {
   for (let c = byId.get(id); c && !out.includes(c.id); c = c.parent_id ? byId.get(c.parent_id) : undefined) out.push(c.id)
   return out
 }
+
+// Story 11.2: a place as its full path ("Plant 2 › Block A › Utility Bay", for the hover title) and short
+// ("Plant 2 · Utility Bay": the top level and the place itself), so a list cell stays one short line.
+export function placePath<T extends Node>(rows: T[], id: string | null): string[] {
+  const byId = new Map(rows.map((r) => [r.id, r.name]))
+  return id ? lineage(rows, id).reverse().map((x) => byId.get(x) ?? '') : []
+}
+
+export const placeTitle = <T extends Node>(rows: T[], id: string | null) => placePath(rows, id).join(' › ') || undefined
+
+export function placeName<T extends Node>(rows: T[], id: string | null): string {
+  const p = placePath(rows, id)
+  return p.length > 1 ? `${p[0]} · ${p[p.length - 1]}` : (p[0] ?? '—')
+}

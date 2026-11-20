@@ -31,6 +31,8 @@
     "searchNone": "No assets match.",
     "searchAll": "All results for “{q}”",
     "askAssetly": "Ask Assetly · AI",
+    "openSearch": "Search assets",
+    "closeSearch": "Close search",
     "account": "Account",
     "signOut": "Sign out"
   },
@@ -809,6 +811,7 @@
     "edit": "Edit obligation",
     "none": "No obligations for this asset yet.",
     "recordCompletion": "Record completion",
+    "recordCompletionFor": "Record completion: {asset}",
     "loading": "Loading obligations…",
     "col": {
       "name": "Obligation",

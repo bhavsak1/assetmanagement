@@ -159,3 +159,19 @@ test('a click on a row opens it', async () => {
   act(() => container.querySelectorAll<HTMLLIElement>('[role=option]')[1]!.click())
   expect(where()).toBe('/assets/a2')
 })
+
+test('phone search (11.2): the icon opens the box with focus; Esc or the back arrow closes it and focus returns', () => {
+  render()
+  const open = container.querySelector<HTMLButtonElement>('.search-open')!
+  expect(open.getAttribute('aria-label')).toBe(t.topbar.openSearch)
+  act(() => open.click())
+  expect(container.querySelector('.top-search.open')).not.toBeNull()
+  expect(open.getAttribute('aria-expanded')).toBe('true')
+  expect(document.activeElement).toBe(input())
+  key('Escape')
+  expect(container.querySelector('.top-search.open')).toBeNull()
+  expect(document.activeElement).toBe(open)
+  act(() => open.click())
+  act(() => container.querySelector<HTMLButtonElement>('.search-close')!.click())
+  expect(container.querySelector('.top-search.open')).toBeNull()
+})

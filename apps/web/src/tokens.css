@@ -71,4 +71,5 @@
   --shadow-popover: 0 8px 24px rgb(16 24 40 / 0.12);
   --topbar-height: 60px;
   --control-height: 36px;
+  --touch-target: 44px;
 }

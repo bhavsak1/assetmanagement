@@ -4,7 +4,7 @@ import { daysBetween, groups, tenantToday, useTenant } from './Coverage'
 import { showNumber } from './format'
 import { t } from './i18n'
 import { supabase } from './supabase'
-import { buildTree } from './tree'
+import { buildTree, placeName, placeTitle } from './tree'
 import type { Database, Tables } from './types/database'
 
 type Asset = Tables<'asset_view'>
@@ -305,11 +305,6 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate, canCoverage }: {
   const next = rows && nextCursor(rows, sort)
   const first = pages.length * PAGE + 1
   const nameOf = (list: Option[], id: string | null) => list.find((r) => r.id === id)
-  const place = (id: string | null) => {
-    const l = nameOf(locations, id)
-    const parent = l && nameOf(locations, l.parent_id)
-    return l ? (parent ? `${l.name} · ${parent.name}` : l.name) : '—'
-  }
   const tenantStatuses = statusRows.filter((s) => s.code !== s.system_status && !s.deleted_at)
   const count = total === undefined ? '' : total > 10000 ? t.assets.manyCount : showNumber(total, tenant)
   const p = t.assets.panel
@@ -328,7 +323,31 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate, canCoverage }: {
     setViewId('')
     apply({ ...emptyFilters, q: typed })
   }
-  const sheet = open && isPhone()
+  // On a phone the filter row is the search box and one button; saved views move into the sheet (11.2).
+  const phone = isPhone()
+  const sheet = open && phone
+  const viewControls = (
+    <>
+      <select className="filter" aria-label={t.assets.views.label} value={viewId} onChange={(e) => openView(e.target.value)}>
+        <option value="">{t.assets.views.label}</option>
+        {views.map((v) => (
+          <option key={v.id} value={v.id}>
+            {v.name}
+          </option>
+        ))}
+      </select>
+      {canSaveViews && (
+        <button className="btn" type="button" onClick={() => void saveView()}>
+          {t.assets.views.save}
+        </button>
+      )}
+      {canSaveViews && viewId && (
+        <button className="btn" type="button" onClick={() => void deleteView()}>
+          {t.assets.views.delete}
+        </button>
+      )}
+    </>
+  )
 
   return (
     <>
@@ -361,24 +380,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate, canCoverage }: {
           {p.filters}
           {chips.length > 0 && ` · ${chips.length}`} <span aria-hidden="true">{open ? '▴' : '▾'}</span>
         </button>
-        <select className="filter" aria-label={t.assets.views.label} value={viewId} onChange={(e) => openView(e.target.value)}>
-          <option value="">{t.assets.views.label}</option>
-          {views.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name}
-            </option>
-          ))}
-        </select>
-        {canSaveViews && (
-          <button className="btn" type="button" onClick={() => void saveView()}>
-            {t.assets.views.save}
-          </button>
-        )}
-        {canSaveViews && viewId && (
-          <button className="btn" type="button" onClick={() => void deleteView()}>
-            {t.assets.views.delete}
-          </button>
-        )}
+        {!phone && viewControls}
       </div>
       {!open && chips.length > 0 && (
         <div className="chips filter-chips">
@@ -473,6 +475,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate, canCoverage }: {
               </option>
             ))}
           </select>
+          {sheet && viewControls}
           <div className="panel-actions">
             <button className="btn" type="button" onClick={clearAll} disabled={chips.length === 0}>
               {p.clearAll}
@@ -490,7 +493,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate, canCoverage }: {
           {error}
         </p>
       )}
-      <div className="card table-wrap list">
+      <div className="card table-wrap list asset-list">
         {rows === undefined ? (
           <p className="muted" role="status">
             {t.assets.loading}
@@ -511,19 +514,22 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate, canCoverage }: {
             </thead>
             <tbody>
               {shown.map((a) => (
+                // On a phone each row is a card (11.2): tag, name, status, location; category and coverage hide.
                 <tr key={a.id}>
-                  <td className="muted">{a.tag}</td>
-                  <td>
+                  <td className="muted cell-tag">{a.tag}</td>
+                  <td className="cell-name">
                     <Link className="row-link" to={`/assets/${a.id}`}>
                       {a.name}
                     </Link>
                   </td>
-                  <td>{nameOf(categories, a.category_id)?.name ?? '—'}</td>
-                  <td>{place(a.location_id)}</td>
-                  <td>
+                  <td className="cell-extra">{nameOf(categories, a.category_id)?.name ?? '—'}</td>
+                  <td className="cell-place" title={placeTitle(locations, a.location_id)}>
+                    {placeName(locations, a.location_id)}
+                  </td>
+                  <td className="cell-status">
                     <StatusTag statuses={statusRows} id={a.status_id} system={a.status} />
                   </td>
-                  {canCoverage && <td>{tenant && <CoverageTag lines={lines.filter((l) => l.asset_id === a.id)} today={tenantToday(tenant.time_zone)} />}</td>}
+                  {canCoverage && <td className="cell-extra">{tenant && <CoverageTag lines={lines.filter((l) => l.asset_id === a.id)} today={tenantToday(tenant.time_zone)} />}</td>}
                 </tr>
               ))}
             </tbody>

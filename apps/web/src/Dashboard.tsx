@@ -3,11 +3,11 @@ import { Link } from 'react-router'
 import { showDate, useTenant } from './Coverage'
 import { showNumber } from './format'
 import { t } from './i18n'
-import { placeName } from './Maintenance'
+import { CompleteButton } from './Maintenance'
 import { StateTag } from './Obligations'
 import { CompletionForm } from './Service'
 import { supabase } from './supabase'
-import { lineage } from './tree'
+import { lineage, placeName, placeTitle } from './tree'
 import type { Database } from './types/database'
 
 // Story 5.4: the Dashboard (data-model-goal5.md §14). Tiles reuse count_assets (3.2, 4.4) and
@@ -172,7 +172,7 @@ export function DashboardPage({ tenantId, can }: { tenantId: string; can: Can })
                     <th>{t.maintenance.col.location}</th>
                     <th>{t.maintenance.col.due}</th>
                     <th>{t.maintenance.col.status}</th>
-                    {canComplete && <th aria-label={t.maintenance.col.actions} />}
+                    {canComplete && <th className="actions" aria-label={t.maintenance.col.actions} />}
                   </tr>
                 </thead>
                 <tbody>
@@ -184,16 +184,16 @@ export function DashboardPage({ tenantId, can }: { tenantId: string; can: Can })
                         </Link>{' '}
                         <span className="muted">{r.name}</span>
                       </td>
-                      <td className="muted">{placeName(locations, r.location_id)}</td>
-                      <td>{showDate(r.next_due_date, tenant)}</td>
+                      <td className="muted" title={placeTitle(locations, r.location_id)}>
+                        {placeName(locations, r.location_id)}
+                      </td>
+                      <td className="nowrap">{showDate(r.next_due_date, tenant)}</td>
                       <td>
                         <StateTag state={r.due_state} />
                       </td>
                       {canComplete && (
                         <td className="actions">
-                          <button className="btn" type="button" onClick={() => setCompleting(r)}>
-                            {t.obligations.recordCompletion}
-                          </button>
+                          <CompleteButton asset={r.asset_name} onClick={() => setCompleting(r)} />
                         </td>
                       )}
                     </tr>

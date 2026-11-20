@@ -115,7 +115,7 @@ test('upcoming: overdue, then due soon, then scheduled, five at most; Record com
   )
   const rows = [...container.querySelectorAll('tbody tr')]
   expect(rows.map((r) => r.querySelector('a')?.textContent)).toEqual(['Lathe 1', 'Lathe 2', 'Lathe 3', 'Lathe 4', 'Lathe 5'])
-  expect(rows[2]?.textContent).toContain('Plant 1 · Pune')
+  expect(rows[2]?.textContent).toContain('Pune · Plant 1')
   expect(rows[2]?.querySelector('.tag')?.textContent).toBe('Due soon')
   const lists = db.rpc.filter((r) => r.fn === 'list_obligations').length
   await act(async () => button(t.obligations.recordCompletion).click())
@@ -136,7 +136,7 @@ test('empty states', async () => {
 test('by location: a lone root steps down to its children; counts roll up; links to the Assets filter', async () => {
   await render(all)
   const items = [...container.querySelectorAll('.bars li')]
-  expect(items.map((li) => li.textContent)).toEqual(['Plant 1 · Pune5 · 2 overdue', 'Warehouse · Pune2', `${d.noLocation}1`])
+  expect(items.map((li) => li.textContent)).toEqual(['Pune · Plant 15 · 2 overdue', 'Pune · Warehouse2', `${d.noLocation}1`])
   expect(items[0]?.querySelector('a')?.getAttribute('href')).toBe('/assets?location_id=l2')
   expect(items[2]?.querySelector('a')).toBeNull()
   expect((items[1]?.querySelector('.bar i') as HTMLElement).style.width).toBe('40%')

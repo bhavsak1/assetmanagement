@@ -150,7 +150,7 @@ test('the list shows rows, status tags, place and count; Next and Previous page 
   expect(container.textContent).toContain('1,284 assets')
   expect(container.querySelectorAll('tbody tr')).toHaveLength(50)
   expect(container.querySelector('.tag.status.neutral')?.textContent).toBe(t.assets.statuses.in_stock)
-  expect(container.textContent).toContain('Plant 1 · Pune')
+  expect(container.textContent).toContain('Pune · Plant 1')
   expect(container.textContent).toContain('Showing 1–50 of 1,284')
   await act(async () => button(t.assets.next).click())
   expect(lastList()).toMatchObject({ p_after_value: 'Asset 050', p_after_id: 'id50' })
