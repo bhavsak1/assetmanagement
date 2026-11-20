@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { actionError, AssetDetailPage, changes, historyTitle, moreCursor, type History } from './AssetDetail'
+import { actionError, AssetDetailPage, changes, historyTitle, moreCursor, summary, visibleTabs, type History } from './AssetDetail'
 import { t } from './i18n'
 
 const db = vi.hoisted(() => ({
@@ -137,8 +137,44 @@ test('overview: paths, status tag, masked money and custom field show as Hidden,
   expect(container.textContent).toContain('30')
   expect([...container.querySelectorAll('.kv .tag')].map((x) => x.textContent)).toEqual([t.assetDetail.hidden, t.assetDetail.hidden])
   expect(container.textContent).not.toContain(t.assetDetail.edit)
-  expect(button(t.assetDetail.tabs.coverage).disabled).toBe(true)
-  expect(button(t.assetDetail.tabs.attachments).disabled).toBe(true)
+  // 11.3: tabs the user cannot open are not drawn; BOM is gone until BL-2.
+  expect(button(t.assetDetail.tabs.coverage)).toBeUndefined()
+  expect(button(t.assetDetail.tabs.attachments)).toBeUndefined()
+  expect([...container.querySelectorAll('[role="tab"]')].map((b) => b.textContent)).toEqual([t.assetDetail.tabs.overview, t.assetDetail.tabs.audit])
+  expect(container.textContent).not.toContain('BOM')
+})
+
+test('11.3 visibleTabs: each tab needs view on its domain; Overview and Audit always', () => {
+  expect(visibleTabs(() => false)).toEqual(['overview', 'audit'])
+  expect(visibleTabs((d) => d === 'coverage_contract')).toEqual(['overview', 'coverage', 'audit'])
+  expect(visibleTabs((_d, op) => op === 'view')).toEqual(['overview', 'coverage', 'obligations', 'service', 'attachments', 'audit'])
+  expect(visibleTabs((_d, op) => op === 'update')).toEqual(['overview', 'audit'])
+})
+
+test('11.3 summary: next due among active obligations, latest done of any, best coverage line', () => {
+  const ob = (over: Record<string, unknown>) => ({ is_active: true, next_due_date: '2026-12-01', last_done_date: null, ...over }) as never
+  const s = summary(
+    [ob({ name: 'paused', is_active: false, next_due_date: '2026-11-01', last_done_date: '2026-10-30' }), ob({ name: 'b', next_due_date: '2026-12-05', last_done_date: '2026-09-01' }), ob({ name: 'a' })],
+    [{ status: 'expired', end_date: '2026-01-01' }, { status: 'active', end_date: '2027-01-01' }] as never,
+  )
+  expect((s.next as { name: string } | undefined)?.name).toBe('a')
+  expect(s.last).toBe('2026-10-30')
+  expect(s.best?.status).toBe('active')
+  expect(summary([], [])).toEqual({ next: undefined, last: undefined, best: undefined })
+})
+
+test('11.3 summary strip: shown with obligation or coverage view, not without', async () => {
+  db.results.obligation = { data: [{ id: 'o1', name: 'Quarterly service', is_active: true, next_due_date: '2026-12-01', last_done_date: '2026-09-01', due_state: 'overdue' }], error: null }
+  await render(['asset_core.view'])
+  expect(container.querySelector('.summary')).toBeNull()
+  act(() => root.unmount())
+  root = createRoot(container)
+  await render(['asset_core.view', 'obligation.view'])
+  const strip = container.querySelector('.summary')!.textContent
+  expect(strip).toContain(t.assetDetail.summary.nextService)
+  expect(strip).toContain(t.obligations.states.overdue)
+  expect(strip).toContain(t.assetDetail.summary.lastService)
+  expect(strip).not.toContain(t.assetDetail.summary.coverage)
 })
 
 test('attachments: tab opens with asset_attachment.view', async () => {
@@ -171,7 +207,20 @@ test('audit: rows with actor and hidden values; Load more asks after the last ro
 })
 
 const a = t.assetDetail.actions
-const buttons = () => [...container.querySelectorAll('.page-head button')].map((b) => b.textContent)
+const more = () => [...container.querySelectorAll<HTMLButtonElement>('.more > button')][0]
+// 11.3: the secondary actions sit in the More menu; this opens it and lists them.
+async function menu() {
+  const m = more()
+  if (!m) return []
+  if (m.getAttribute('aria-expanded') !== 'true') await act(async () => m.click())
+  return [...container.querySelectorAll('.more-menu .menu-item')].map((b) => b.textContent)
+}
+const buttons = menu
+async function pick(text: string) {
+  await menu()
+  const item = [...container.querySelectorAll<HTMLElement>('.more-menu .menu-item')].find((b) => b.textContent === text)!
+  await act(async () => item.click())
+}
 async function set(name: string, value: string) {
   const el = container.querySelector<HTMLSelectElement | HTMLTextAreaElement>(`[name="${name}"]`)!
   Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')!.set!.call(el, value)
@@ -189,34 +238,52 @@ const disposed = () => {
 test('QR label: shown with asset_core.view, links to the print view', async () => {
   const qr = () => [...container.querySelectorAll('a')].find((l) => l.textContent === t.assetDetail.label.button)
   await render([])
-  expect(qr()).toBeUndefined()
+  expect(more()).toBeUndefined()
   act(() => root.unmount())
   root = createRoot(container)
   await render(['asset_core.view'])
+  await menu()
   expect(qr()?.getAttribute('href')).toBe('/assets/a1/label')
 })
 
 test('actions: Transfer and Retire need asset_lifecycle; Change status shows when the database offers a move', async () => {
+  const qrLabel = t.assetDetail.label.button
   await render(['asset_core.view', 'asset_core.update'])
-  expect(buttons()).not.toContain(a.transfer)
-  expect(buttons()).not.toContain(a.retire)
-  expect(buttons()).not.toContain(a.changeStatus)
+  expect(await buttons()).toEqual([qrLabel])
+  // Edit stays the one main button, outside the menu.
+  expect(container.querySelector('.page-head a.btn-main')?.textContent).toBe(t.assetDetail.edit)
   act(() => root.unmount())
   root = createRoot(container)
   db.results.allowed_asset_statuses = { data: ['s2'], error: null }
   await render(['asset_core.view', 'asset_lifecycle.execute'])
-  expect(buttons()).toEqual([a.transfer, a.retire, a.changeStatus])
+  expect(await buttons()).toEqual([qrLabel, a.transfer, a.changeStatus, a.retire])
+  expect(container.querySelector('.menu-item.danger')?.textContent).toBe(a.retire)
   act(() => root.unmount())
   root = createRoot(container)
   disposed()
   db.results.allowed_asset_statuses = { data: [], error: null }
   await render(['asset_core.view', 'asset_lifecycle.execute'])
-  expect(buttons()).toEqual([])
+  expect(await buttons()).toEqual([qrLabel])
   act(() => root.unmount())
   root = createRoot(container)
   db.results.allowed_asset_statuses = { data: ['s2'], error: null }
   await render(['asset_core.view', 'asset_lifecycle.reopen'])
-  expect(buttons()).toEqual([a.changeStatus])
+  expect(await buttons()).toEqual([qrLabel, a.changeStatus])
+})
+
+test('11.3 More menu: Esc closes it and keeps focus on the button; a pick closes it', async () => {
+  await render(['asset_core.view', 'asset_lifecycle.execute'])
+  await menu()
+  await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+  expect(container.querySelector('.more-menu')).toBeNull()
+  expect(document.activeElement).toBe(more())
+  await pick(a.retire)
+  expect(container.querySelector('.more-menu')).toBeNull()
+  expect(container.querySelector('.dialog .btn-danger')?.textContent).toBe(a.retire)
+  // Esc in the dialog closes it and focus goes back to More.
+  await act(async () => container.querySelector('.dialog textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+  expect(container.querySelector('.dialog')).toBeNull()
+  expect(document.activeElement).toBe(more())
 })
 
 test('transfer: picker excludes the current and inactive locations; a database error shows as a message', async () => {
@@ -231,7 +298,7 @@ test('transfer: picker excludes the current and inactive locations; a database e
   }
   db.results.transfer_asset = { data: null, error: { code: '23514', message: 'location is inactive or deleted' } }
   await render(['asset_core.view', 'asset_lifecycle.execute'])
-  await act(async () => button(a.transfer).click())
+  await pick(a.transfer)
   const open = [...container.querySelectorAll<HTMLOptionElement>('[name="choice"] option')].filter((o) => o.value && !o.disabled).map((o) => o.value)
   expect(open).toEqual(['l1', 'l4'])
   await set('choice', 'l4')
@@ -244,7 +311,7 @@ test('transfer: picker excludes the current and inactive locations; a database e
 test('retire: sends disposed with the reason, closes and reloads on success; a missing reason maps', async () => {
   db.results.change_asset_status = (args: { p_reason: string }) => ({ data: null, error: args.p_reason ? null : { code: '23502', message: 'a reason is required for this status change' } })
   await render(['asset_core.view', 'asset_lifecycle.execute'])
-  await act(async () => button(a.retire).click())
+  await pick(a.retire)
   await submit()
   expect(container.querySelector('.dialog [role="alert"]')?.textContent).toBe(a.errors.reasonRequired)
   await set('reason', 'Scrapped')
@@ -269,7 +336,7 @@ test('change status: offers the tenant statuses the database allows, in its orde
   db.results.allowed_asset_statuses = { data: ['s3', 's2'], error: null }
   await render(['asset_core.view', 'asset_lifecycle.execute'])
   expect(container.querySelector('h1 .tag.status.ok')?.textContent).toBe('Running')
-  await act(async () => button(a.changeStatus).click())
+  await pick(a.changeStatus)
   const options = [...container.querySelectorAll<HTMLOptionElement>('[name="choice"] option')].filter((o) => o.value)
   expect(options.map((o) => [o.value, o.textContent])).toEqual([['s3', 'Breakdown'], ['s2', 'Standby']])
   await set('choice', 's2')

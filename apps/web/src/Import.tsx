@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { showDateTime, useFmt } from './format'
+import { useDialog } from './Dialog'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import type { Json, Tables } from './types/database'
@@ -487,6 +488,7 @@ function CommitCard({ batch, canUndo, onDone }: { batch: Batch; canUndo: boolean
   const [blocked, setBlocked] = useState<{ row_number: number; undo_blocked: string | null }[]>()
   const k = t.import.commit
   const o = batch.outcome as Outcome | null
+  const { dialog, confirm } = useDialog()
   const fmt = useFmt()
   const when = (iso: string) => showDateTime(iso, fmt)
 
@@ -508,7 +510,7 @@ function CommitCard({ batch, canUndo, onDone }: { batch: Batch; canUndo: boolean
   }, [batch.id, o?.blocked])
 
   async function undo() {
-    if (!window.confirm(k.undoConfirm)) return
+    if (!(await confirm({ title: k.undoConfirm, ok: k.undo, danger: true }))) return
     setBusy(true)
     setError(undefined)
     const r = await act(batch.id, 'undo')
@@ -520,6 +522,7 @@ function CommitCard({ batch, canUndo, onDone }: { batch: Batch; canUndo: boolean
   if (!o) return null
   return (
     <div className="card stack">
+      {dialog}
       <div className="page-head">
         <div>
           <h2>{batch.status === 'undone' ? k.undoneTitle : k.title}</h2>

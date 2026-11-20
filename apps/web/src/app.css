@@ -363,6 +363,78 @@ h2 {
   color: var(--color-surface);
 }
 
+/* 11.3: destructive actions (Retire, delete, revoke). */
+.btn-danger {
+  background: var(--tag-error-text);
+  border-color: var(--tag-error-text);
+  color: var(--color-surface);
+}
+
+/* 11.3 asset page: More menu and the summary strip. */
+.more {
+  position: relative;
+}
+
+.more > .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.more-menu {
+  right: 0;
+  min-width: var(--menu-width);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2);
+}
+
+.menu-item {
+  display: block;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--color-primary-soft);
+}
+
+.menu-item.danger {
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--color-divider);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  color: var(--tag-error-text);
+}
+
+.menu-item.danger:hover,
+.menu-item.danger:focus-visible {
+  background: var(--tag-error-bg);
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6) var(--space-9);
+  margin: 0 0 var(--space-6);
+}
+
+.summary dt {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.summary dd {
+  margin: var(--space-1) 0 0;
+}
+
 fieldset.card {
   margin: 0;
   min-width: 0;
@@ -619,7 +691,8 @@ fieldset.set .check {
 }
 
 .search-list,
-.account-menu {
+.account-menu,
+.more-menu {
   position: absolute;
   top: calc(100% + var(--space-2));
   z-index: 40;

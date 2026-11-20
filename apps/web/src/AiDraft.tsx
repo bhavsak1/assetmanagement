@@ -3,6 +3,7 @@
 // and only Confirm runs today's save path (owner, 10 Nov 2026). Forms opened by hand never see any of this.
 import { createContext, useContext, useEffect, useState, type RefObject } from 'react'
 import { useLocation } from 'react-router'
+import { Overlay } from './Dialog'
 import { t } from './i18n'
 import { supabase } from './supabase'
 
@@ -80,36 +81,45 @@ export function AiMark({ name }: { name: string }) {
 export type Line = { label: string; from?: string; to: string }
 
 // The confirm step: the action, then each value to be written (old → new on a change). Confirm runs the save.
-export function ConfirmDialog(props: { title: string; lines: Line[]; busy: boolean; error?: string; onConfirm: () => void; onCancel: () => void }) {
+type ConfirmProps = { title: string; lines: Line[]; busy: boolean; error?: string; onConfirm: () => void; onCancel: () => void }
+
+export function ConfirmDialog(props: ConfirmProps) {
   return (
-    <div className="overlay" onKeyDown={(ev) => ev.key === 'Escape' && props.onCancel()}>
-      <div className="card dialog" role="dialog" aria-modal="true" aria-labelledby="ai-confirm-title">
-        <h2 id="ai-confirm-title">{props.title}</h2>
-        <p className="muted">{c.check}</p>
-        {props.error && (
-          <p className="login-error" role="alert">
-            {props.error}
-          </p>
-        )}
-        <table>
-          <tbody>
-            {props.lines.map((l) => (
-              <tr key={l.label}>
-                <th scope="row">{l.label}</th>
-                <td>{l.from === undefined ? l.to : fill(c.change, { from: l.from || c.empty, to: l.to || c.empty })}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="page-head">
-          <div className="spacer" />
-          <button className="btn" type="button" onClick={props.onCancel}>
-            {c.cancel}
-          </button>
-          <button className="btn btn-main" type="button" autoFocus disabled={props.busy} onClick={props.onConfirm}>
-            {c.confirm}
-          </button>
-        </div>
+    <Overlay onCancel={props.onCancel}>
+      <ConfirmCard {...props} />
+    </Overlay>
+  )
+}
+
+// The card alone, for a dialog that swaps its form for this step inside one overlay (AssetDetail).
+export function ConfirmCard(props: ConfirmProps) {
+  return (
+    <div className="card dialog" role="dialog" aria-modal="true" aria-labelledby="ai-confirm-title">
+      <h2 id="ai-confirm-title">{props.title}</h2>
+      <p className="muted">{c.check}</p>
+      {props.error && (
+        <p className="login-error" role="alert">
+          {props.error}
+        </p>
+      )}
+      <table>
+        <tbody>
+          {props.lines.map((l) => (
+            <tr key={l.label}>
+              <th scope="row">{l.label}</th>
+              <td>{l.from === undefined ? l.to : fill(c.change, { from: l.from || c.empty, to: l.to || c.empty })}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="page-head">
+        <div className="spacer" />
+        <button className="btn" type="button" onClick={props.onCancel}>
+          {c.cancel}
+        </button>
+        <button className="btn btn-main" type="button" autoFocus disabled={props.busy} onClick={props.onConfirm}>
+          {c.confirm}
+        </button>
       </div>
     </div>
   )

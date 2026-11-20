@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { showDate, tenantToday } from './format'
+import { useDialog } from './Dialog'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import type { Database, Tables } from './types/database'
@@ -402,6 +403,7 @@ function CoveragePanel(props: {
   onClose: () => void
 }) {
   const { row, renew, tenant, can } = props
+  const { dialog, confirm } = useDialog()
   const base = row ?? renew
   const editable = row ? can('coverage_contract', 'update') : can('coverage_contract', 'create')
   // C5: a renewal starts the day after the old end and runs as long.
@@ -471,7 +473,7 @@ function CoveragePanel(props: {
   }
 
   async function remove() {
-    if (!row?.id || !window.confirm(c.deleteConfirm)) return
+    if (!row?.id || !(await confirm({ title: c.deleteConfirm, ok: c.delete, danger: true }))) return
     const { data, error } = await supabase.from('coverage').update({ deleted_at: new Date().toISOString() }).eq('id', row.id).select('id')
     if (error || !data?.length) return setError(coverageError(error ?? { code: '42501' }))
     props.onDeleted()
@@ -480,6 +482,7 @@ function CoveragePanel(props: {
   const vendorOk = (v: Vendor) => v.is_active || v.id === base?.vendor_id
   return (
     <div className="card">
+      {dialog}
       <form onSubmit={(e) => void submit(e)} noValidate>
         <div className="page-head">
           <h2>{renew ? c.renewTitle : row ? (editable ? c.edit : c.view) : c.add}</h2>

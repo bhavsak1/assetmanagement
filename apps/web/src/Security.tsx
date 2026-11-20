@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { TreeSelect } from './Assets'
 import { showDay, useFmt } from './format'
+import { useDialog } from './Dialog'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import type { Database, Tables } from './types/database'
@@ -192,6 +193,7 @@ type Run = (write: Write, needRow?: boolean) => Promise<boolean>
 
 function Groups({ tenantId, groups, domains, items, canManage, run, reload }: { tenantId: string; groups: Group[]; domains: Domain[]; items: Item[]; canManage: boolean; run: Run; reload: number }) {
   const g = s.groups
+  const { dialog, confirm } = useDialog()
   const [selected, setSelected] = useState<string>()
   const [creating, setCreating] = useState(false)
   const [renaming, setRenaming] = useState(false)
@@ -266,6 +268,7 @@ function Groups({ tenantId, groups, domains, items, canManage, run, reload }: { 
 
   return (
     <div className="split">
+      {dialog}
       <div className="card tree" role="list" aria-label={g.title}>
         {groups.map((row) => (
           <button
@@ -351,8 +354,8 @@ function Groups({ tenantId, groups, domains, items, canManage, run, reload }: { 
                     className="btn"
                     type="button"
                     onClick={() => {
-                      if (window.confirm(g.confirmDelete.replace('{group}', current.name)))
-                        void run(supabase.from('security_group').update({ deleted_at: now() }).eq('id', current.id).select('id')).then((ok) => ok && setSelected(undefined))
+                      void confirm({ title: g.confirmDelete.replace('{group}', current.name), ok: g.delete, danger: true }).then((yes) => yes &&
+                        run(supabase.from('security_group').update({ deleted_at: now() }).eq('id', current.id).select('id')).then((ok) => ok && setSelected(undefined)))
                     }}
                   >
                     {g.delete}
@@ -592,6 +595,7 @@ function Assignments({ tenantId, rows, members, groups, profiles, canManage, run
 }
 
 function Profiles({ tenantId, profiles, rules, assignments, locations, categories, canManage, run }: { tenantId: string; profiles: Profile[]; rules: Rule[]; assignments: Assignment[]; locations: Node[]; categories: Node[]; canManage: boolean; run: Run }) {
+  const { dialog, confirm } = useDialog()
   const p = s.profiles
   const [selected, setSelected] = useState<string>()
   const [editing, setEditing] = useState<{ row?: Profile }>()
@@ -649,6 +653,7 @@ function Profiles({ tenantId, profiles, rules, assignments, locations, categorie
 
   return (
     <div className="split">
+      {dialog}
       <div className="card tree" role="list" aria-label={p.title}>
         {profiles.length === 0 && <p className="muted">{p.none}</p>}
         {profiles.map((row) => (
@@ -704,8 +709,8 @@ function Profiles({ tenantId, profiles, rules, assignments, locations, categorie
                     className="btn"
                     type="button"
                     onClick={() => {
-                      if (window.confirm(p.confirmDelete.replace('{profile}', current.name)))
-                        void run(supabase.from('scope_profile').update({ deleted_at: now() }).eq('id', current.id).select('id')).then((ok) => ok && setSelected(undefined))
+                      void confirm({ title: p.confirmDelete.replace('{profile}', current.name), ok: p.delete, danger: true }).then((yes) => yes &&
+                        run(supabase.from('scope_profile').update({ deleted_at: now() }).eq('id', current.id).select('id')).then((ok) => ok && setSelected(undefined)))
                     }}
                   >
                     {p.delete}
@@ -730,6 +735,7 @@ function Profiles({ tenantId, profiles, rules, assignments, locations, categorie
 function ChangeSets({ draft, sets, diff, members, canManage, run }: { draft?: ChangeSet; sets: ChangeSet[]; diff: Diff[]; members: Member[]; canManage: boolean; run: Run }) {
   const day = useDay()
   const c = s.changes
+  const { dialog, confirm } = useDialog()
   const [open, setOpen] = useState<Record<string, Diff[]>>({})
   const who = (id: string | null) => members.find((m) => m.user_id === id)?.display_name ?? '—'
   const history = sets.filter((x) => x.status !== 'draft')
@@ -747,6 +753,7 @@ function ChangeSets({ draft, sets, diff, members, canManage, run }: { draft?: Ch
 
   return (
     <div className="stack">
+      {dialog}
       <div className="card">
         <div className="page-head">
           <h2>{c.draftTitle}</h2>
@@ -757,14 +764,14 @@ function ChangeSets({ draft, sets, diff, members, canManage, run }: { draft?: Ch
         {canManage && draft && (
           <div className="page-head">
             <div className="spacer" />
-            <button className="btn" type="button" onClick={() => window.confirm(c.confirmDiscard) && void run(supabase.rpc('discard_change_set', { p_change_set_id: draft.id }), false)}>
+            <button className="btn" type="button" onClick={() => void confirm({ title: c.confirmDiscard, ok: c.discard, danger: true }).then((yes) => yes && run(supabase.rpc('discard_change_set', { p_change_set_id: draft.id }), false))}>
               {c.discard}
             </button>
             <button
               className="btn btn-main"
               type="button"
               disabled={!diff.length}
-              onClick={() => window.confirm(c.confirmActivate.replace('{n}', String(diff.length))) && void run(supabase.rpc('activate_change_set', { p_change_set_id: draft.id }), false)}
+              onClick={() => void confirm({ title: c.confirmActivate.replace('{n}', String(diff.length)), ok: c.activate }).then((yes) => yes && run(supabase.rpc('activate_change_set', { p_change_set_id: draft.id }), false))}
             >
               {c.activate}
             </button>
@@ -1132,6 +1139,7 @@ function AccessReview({ rows, members, groups, profiles, domains }: { rows: Assi
 function Integrations({ members, assignments, groups, canManageUsers, canManageKeys, run, reload }: { members: Member[]; assignments: Assignment[]; groups: Group[]; canManageUsers: boolean; canManageKeys: boolean; run: Run; reload: number }) {
   const day = useDay()
   const i = s.integrations
+  const { dialog, confirm } = useDialog()
   const [keys, setKeys] = useState<ApiKey[]>([])
   const [adding, setAdding] = useState(false)
   const [keyFor, setKeyFor] = useState<string>()
@@ -1176,6 +1184,7 @@ function Integrations({ members, assignments, groups, canManageUsers, canManageK
 
   return (
     <div className="card list detail">
+      {dialog}
       <div className="page-head">
         <span className="muted">{i.intro}</span>
         <div className="spacer" />
@@ -1347,7 +1356,7 @@ function Integrations({ members, assignments, groups, canManageUsers, canManageK
                 {canManageKeys && (
                   <td className="actions">
                     {live(k) && (
-                      <button className="btn" type="button" onClick={() => window.confirm(i.revokeConfirm) && void run(supabase.rpc('revoke_api_key', { p_key_id: k.id }), false)}>
+                      <button className="btn" type="button" onClick={() => void confirm({ title: i.revokeConfirm, ok: i.revoke, danger: true }).then((yes) => yes && run(supabase.rpc('revoke_api_key', { p_key_id: k.id }), false))}>
                         {i.revoke}
                       </button>
                     )}

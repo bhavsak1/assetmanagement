@@ -128,19 +128,22 @@ test('service history: cost masked and no actions without the operations', async
   expect(button(s.edit)).toBeUndefined()
 })
 
+// 11.3: answer the app dialog (Dialog.tsx).
+const inDialog = (text: string) => [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((b) => b.textContent === text)!
+
 test('service history: cost shown; undo asks, then calls the action; correction keeps the date', async () => {
   db.results['rpc:service_history'] = { data: [row], error: null }
   db.results.obligation = { data: [{ id: 'o1', obligation_type: 'service' }], error: null }
   await act(async () => root.render(<ServiceHistoryTab tenantId="ta" assetId="a1" can={only('service_record.view', 'service_record.update', 'service_values.view')} />))
   expect(container.textContent).toContain('₹1,250')
 
-  const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
   await act(async () => button(s.undo)!.click())
+  await act(async () => inDialog(t.dialog.cancel).click())
   expect(db.calls.filter((c) => c.fn === 'undo_completion')).toHaveLength(0)
   await act(async () => button(s.undo)!.click())
+  await act(async () => inDialog(s.undo).click())
   expect(db.calls.filter((c) => c.fn === 'undo_completion')).toEqual([{ fn: 'undo_completion', args: { p_service_record_id: 'r1' } }])
   expect(db.calls.at(-1)?.fn).toBe('service_history')
-  confirm.mockRestore()
 
   await act(async () => button(s.edit)!.click())
   expect(container.querySelector<HTMLInputElement>('input[name="done_on"]')!.disabled).toBe(true)

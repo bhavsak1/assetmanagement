@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { draftPath, type Draft } from './AiDraft'
 import { showDate, showMoney, showNumber, useFmt, type Fmt } from './format'
+import { useDialog } from './Dialog'
 import { t } from './i18n'
 import { toCsv } from './Security'
 import { supabase } from './supabase'
@@ -196,6 +197,7 @@ function FilterEditor({ subject, fields, filter, onApply, onCancel }: { subject:
 export function InsightsPage({ tenantId = '', canSave = false, canShare = false }: { tenantId?: string; canSave?: boolean; canShare?: boolean }) {
   const location = useLocation()
   const box = useRef<HTMLTextAreaElement>(null)
+  const { dialog, confirm, ask: askText } = useDialog()
   const fmt = useFmt()
   const [catalog, setCatalog] = useState<Subject[]>()
   const [question, setQuestion] = useState('')
@@ -303,7 +305,7 @@ export function InsightsPage({ tenantId = '', canSave = false, canShare = false 
   }
 
   async function saveWidget() {
-    const name = window.prompt(v.widgets.namePrompt)?.trim()
+    const name = await askText({ title: v.widgets.save, label: v.widgets.namePrompt, ok: v.widgets.save })
     if (!name || !query) return
     const { error } = await supabase.from('insight_widget').insert({ tenant_id: tenantId, name, query: query as unknown as NonNullable<Json> })
     setMsg(error ? (error.code === '23505' ? 'widget_name_taken' : error.code === '54000' ? 'widget_limit' : 'failed') : 'widget_saved')
@@ -311,7 +313,7 @@ export function InsightsPage({ tenantId = '', canSave = false, canShare = false 
   }
 
   async function changeWidget(w: Widget, change: { shared?: boolean; deleted_at?: string }) {
-    if (change.deleted_at && !window.confirm(fill(v.widgets.removeConfirm, { name: w.name }))) return
+    if (change.deleted_at && !(await confirm({ title: fill(v.widgets.removeConfirm, { name: w.name }), ok: v.widgets.remove, danger: true }))) return
     const { data, error } = await supabase.from('insight_widget').update(change).eq('id', w.id).select('id')
     if (error || !data?.length) setMsg('failed')
     void loadWidgets()
@@ -346,6 +348,7 @@ export function InsightsPage({ tenantId = '', canSave = false, canShare = false 
   return (
     <>
       <title>{`${t.pages.insights} · ${t.app.name}`}</title>
+      {dialog}
       <div className="page-head">
         <div>
           <h1>{t.pages.insights}</h1>
