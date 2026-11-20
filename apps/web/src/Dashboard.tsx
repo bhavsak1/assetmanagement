@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { showDate, useTenant } from './Coverage'
+import { showNumber } from './format'
 import { t } from './i18n'
 import { placeName } from './Maintenance'
 import { StateTag } from './Obligations'
@@ -97,7 +98,7 @@ export function DashboardPage({ tenantId, can }: { tenantId: string; can: Can })
   }, [reload, seeAssets, seeDue, seeCoverage])
 
   const now = loaded?.key === reload ? loaded : undefined
-  const num = (n?: number) => (n === undefined ? '…' : n > 10000 ? t.assets.manyCount : n.toLocaleString())
+  const num = (n?: number) => (n === undefined ? '…' : n > 10000 ? t.assets.manyCount : showNumber(n, tenant))
   const tiles = [
     seeAssets && { label: d.tiles.total, value: now?.total, to: '/assets', tone: '' },
     seeDue && { label: d.tiles.due30, value: now?.counts?.next_30, to: '/maintenance?tab=due_soon', tone: '' },
@@ -220,8 +221,8 @@ export function DashboardPage({ tenantId, can }: { tenantId: string; can: Can })
                       <i style={{ width: `${(b.assets / most) * 100}%` }} />
                     </span>
                     <span className="muted">
-                      {b.assets.toLocaleString()}
-                      {seeDue && b.overdue > 0 && <span className="error"> · {d.barOverdue.replace('{n}', b.overdue.toLocaleString())}</span>}
+                      {showNumber(b.assets, tenant)}
+                      {seeDue && b.overdue > 0 && <span className="error"> · {d.barOverdue.replace('{n}', showNumber(b.overdue, tenant))}</span>}
                     </span>
                   </li>
                 ))}

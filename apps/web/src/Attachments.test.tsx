@@ -94,7 +94,7 @@ afterEach(() => {
 
 async function render(grants: string[], entity: Entity = 'asset', entityId = 'a1') {
   const can = (domain: string, op: string) => grants.includes(`${domain}.${op}`)
-  await act(async () => root.render(<AttachmentsTab tenantId="ta" entity={entity} entityId={entityId} can={can} timeZone="Asia/Kolkata" />))
+  await act(async () => root.render(<AttachmentsTab tenantId="ta" entity={entity} entityId={entityId} can={can} tenant={{ time_zone: 'Asia/Kolkata', date_format: 'dd-MM-yyyy', locale: 'en-IN' }} />))
 }
 const buttons = () => [...container.querySelectorAll('button')].map((b) => b.textContent)
 

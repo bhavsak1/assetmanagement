@@ -23,6 +23,7 @@ const auth = vi.hoisted(() => ({
   permissions: [] as { domain: string; operation: string }[],
   // What RLS lets the user see in asset_view: an unknown id and another tenant's id both give no rows.
   assets: [] as { id: string; name: string }[],
+  profile: [] as { display_name: string }[],
 }))
 
 vi.mock('./supabase', () => ({
@@ -45,7 +46,7 @@ vi.mock('./supabase', () => ({
     from: (table: string) => {
       const q: Record<string, unknown> = {}
       for (const m of ['select', 'eq', 'is', 'lte', 'or', 'order', 'limit']) q[m] = () => q
-      const data = table === 'tenant_membership' ? auth.memberships : table === 'tenant_entitlement' ? auth.entitlements : table === 'asset_view' ? auth.assets : table === 'my_permission' ? auth.permissions : []
+      const data = table === 'tenant_membership' ? auth.memberships : table === 'tenant_entitlement' ? auth.entitlements : table === 'asset_view' ? auth.assets : table === 'my_permission' ? auth.permissions : table === 'user_profile' ? auth.profile : []
       q.then = (resolve: (v: unknown) => void) => resolve({ data, error: null })
       return q
     },
@@ -80,6 +81,8 @@ beforeEach(() => {
   auth.entitlements = []
   auth.permissions = []
   auth.assets = []
+  auth.profile = []
+  localStorage.clear()
   auth.rpc.mockResolvedValue({ error: null })
   auth.refreshSession.mockResolvedValue({ error: null })
 })
@@ -284,4 +287,63 @@ test('scan of an unknown or other-tenant id: the same not found', async () => {
   root = createRoot(container)
   await render('/q/not-a-uuid', session({ tenant_id: 'ta' }))
   expect(container.querySelector('main')?.innerHTML).toBe(unknown)
+})
+
+test('11.1: the avatar shows the signed-in user initials; the account menu has name, email, company and Sign out', async () => {
+  auth.memberships = [membership('ta', 'Tenant A')]
+  auth.profile = [{ display_name: 'Asha Rao Kulkarni' }]
+  await render('/dashboard', { ...session({ tenant_id: 'ta' }), user: { id: 'u1', email: 'asha@example.com' } })
+  const avatar = container.querySelector<HTMLButtonElement>('.avatar')!
+  expect(avatar.textContent).toBe('AK')
+  expect(avatar.getAttribute('aria-expanded')).toBe('false')
+  act(() => avatar.click())
+  const menu = container.querySelector('.account-menu')!
+  expect(menu.textContent).toContain('Asha Rao Kulkarni')
+  expect(menu.textContent).toContain('asha@example.com')
+  expect(menu.textContent).toContain('Tenant A')
+  auth.signOut.mockResolvedValue({ error: null })
+  act(() => menu.querySelector('button')!.click())
+  expect(auth.signOut).toHaveBeenCalled()
+  // Esc closes it and gives focus back to the avatar.
+  act(() => avatar.click())
+  act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+  expect(container.querySelector('.account-menu')).toBeNull()
+})
+
+test('11.1: the menu collapses to icons, keeps link names, and remembers the choice per user', async () => {
+  auth.memberships = [membership('ta', 'Tenant A')]
+  await render('/dashboard', session({ tenant_id: 'ta' }))
+  const toggle = () => container.querySelector<HTMLButtonElement>('.nav-toggle')!
+  expect(toggle().getAttribute('aria-expanded')).toBe('true')
+  expect(toggle().getAttribute('aria-label')).toBe(t.nav.collapse)
+  // Real icons now, one per link.
+  expect(container.querySelectorAll('.sidebar a svg.icon').length).toBe(container.querySelectorAll('.sidebar a').length)
+  act(() => toggle().click())
+  expect(container.querySelector('.app')!.classList.contains('collapsed')).toBe(true)
+  expect(toggle().getAttribute('aria-expanded')).toBe('false')
+  expect(toggle().getAttribute('aria-label')).toBe(t.nav.expand)
+  const assets = [...container.querySelectorAll<HTMLAnchorElement>('.sidebar a')].find((a) => a.getAttribute('href') === '/assets')!
+  expect(assets.textContent).toBe(t.nav.assets) // the label stays for screen readers
+  expect(assets.title).toBe(t.nav.assets) // and shows as a tooltip
+  expect(localStorage.getItem('assetly.nav.collapsed.u1')).toBe('1')
+  // A new load opens collapsed for this user only.
+  act(() => root.unmount())
+  root = createRoot(container)
+  await render('/dashboard', session({ tenant_id: 'ta' }))
+  expect(container.querySelector('.app')!.classList.contains('collapsed')).toBe(true)
+  act(() => root.unmount())
+  root = createRoot(container)
+  await render('/dashboard', { ...session({ tenant_id: 'ta' }), user: { id: 'u2' } })
+  expect(container.querySelector('.app')!.classList.contains('collapsed')).toBe(false)
+})
+
+test('11.1: the top-bar search shows only with asset_core.view', async () => {
+  auth.memberships = [membership('ta', 'Tenant A')]
+  await render('/dashboard', session({ tenant_id: 'ta' }))
+  expect(container.querySelector('[role=combobox]')).toBeNull()
+  act(() => root.unmount())
+  root = createRoot(container)
+  auth.permissions = [{ domain: 'asset_core', operation: 'view' }]
+  await render('/dashboard', session({ tenant_id: 'ta' }))
+  expect(container.querySelector('[role=combobox]')?.getAttribute('placeholder')).toBe(t.topbar.search)
 })

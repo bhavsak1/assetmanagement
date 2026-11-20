@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import { AttachmentsTab, checkFile, TYPES, uploadAttachment } from './Attachments'
 import { addDays, showDate, tenantToday, useTenant } from './Coverage'
+import { showMoney } from './format'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import type { Database, Tables } from './types/database'
@@ -274,7 +275,7 @@ export function ServiceHistoryTab({ tenantId, assetId, can }: { tenantId: string
                   </td>
                   <td>{r.outcome ? <span className={`tag status ${r.outcome === 'pass' ? 'ok' : 'error'}`}>{s.outcomes[r.outcome as (typeof outcomes)[number]]}</span> : '—'}</td>
                   <td>{r.vendor_name ?? r.done_by_name ?? (r.vendor_id ? s.contractorHidden : '—')}</td>
-                  <td>{!seeCost ? <span className="tag">{t.coverage.hidden}</span> : r.cost_amount == null ? '—' : `${Number(r.cost_amount).toLocaleString()} ${r.cost_currency ?? ''}`}</td>
+                  <td>{!seeCost ? <span className="tag">{t.coverage.hidden}</span> : showMoney(r.cost_amount, r.cost_currency, tenant)}</td>
                   <td>{r.notes ?? ''}</td>
                   <td className="actions">
                     <button className="btn" type="button" aria-expanded={files === r.id} onClick={() => setFiles(files === r.id ? undefined : (r.id ?? undefined))}>
@@ -295,7 +296,7 @@ export function ServiceHistoryTab({ tenantId, assetId, can }: { tenantId: string
                 {files === r.id && (
                   <tr>
                     <td colSpan={7}>
-                      <AttachmentsTab tenantId={tenantId} entity="service_record" entityId={r.id ?? ''} can={can} timeZone={tenant.time_zone} />
+                      <AttachmentsTab tenantId={tenantId} entity="service_record" entityId={r.id ?? ''} can={can} tenant={tenant} />
                     </td>
                   </tr>
                 )}

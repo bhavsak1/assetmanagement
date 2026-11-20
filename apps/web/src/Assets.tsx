@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { daysBetween, groups, tenantToday, useTenant } from './Coverage'
+import { showNumber } from './format'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import { buildTree } from './tree'
@@ -310,7 +311,7 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate, canCoverage }: {
     return l ? (parent ? `${l.name} · ${parent.name}` : l.name) : '—'
   }
   const tenantStatuses = statusRows.filter((s) => s.code !== s.system_status && !s.deleted_at)
-  const count = total === undefined ? '' : total > 10000 ? t.assets.manyCount : total.toLocaleString()
+  const count = total === undefined ? '' : total > 10000 ? t.assets.manyCount : showNumber(total, tenant)
   const p = t.assets.panel
   // The active filters (all but the search box, which stays visible), as removable chips.
   const chips = (
@@ -533,8 +534,8 @@ export function AssetsPage({ tenantId, canSaveViews, canCreate, canCoverage }: {
         {shown.length > 0 && (
           <span>
             {t.assets.showing
-              .replace('{from}', first.toLocaleString())
-              .replace('{to}', (first + shown.length - 1).toLocaleString())
+              .replace('{from}', showNumber(first, tenant))
+              .replace('{to}', showNumber(first + shown.length - 1, tenant))
               .replace('{count}', count)}
           </span>
         )}

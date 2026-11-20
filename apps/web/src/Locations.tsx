@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
 import { statuses } from './Assets'
+import { showNumber, useFmt } from './format'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import { buildTree, lineage } from './tree'
@@ -31,7 +32,6 @@ export function rollUp(rows: Location[], counts: (Omit<StatusCount, 'location_id
   return out
 }
 
-const num = (n?: number) => (n === undefined ? '…' : n > 10000 ? t.assets.manyCount : n.toLocaleString())
 
 // Where a location may move, in tree order: not under itself or its own descendants (the database
 // also refuses a cycle), and an active location not under an inactive one (2.3 rule L2).
@@ -65,6 +65,8 @@ type Editing = { kind: 'add'; parentId: string | null } | { kind: 'edit' } | { k
 
 export function LocationsPage({ tenantId, canManage, can }: { tenantId: string; canManage: boolean; can: Can }) {
   const [rows, setRows] = useState<Location[]>([])
+  const fmt = useFmt()
+  const num = (n?: number) => (n === undefined ? '…' : n > 10000 ? t.assets.manyCount : showNumber(n, fmt))
   const [counts, setCounts] = useState<StatusCount[]>()
   // Counts read asset_view, so they need asset_core.view; overdue also obligation.view.
   const seeAssets = can('asset_core', 'view')

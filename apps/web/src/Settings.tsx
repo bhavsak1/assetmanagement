@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { formatDate, showDateTime, showNumber, type Fmt } from './format'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import type { Tables } from './types/database'
@@ -12,16 +13,6 @@ type DbError = { code?: string; message?: string }
 // Same lists as the checks in migration 2_5_tenant_settings_columns.
 const dateFormats = ['dd-MM-yyyy', 'dd/MM/yyyy', 'MM/dd/yyyy', 'yyyy-MM-dd', 'dd MMM yyyy'] as const
 const optionalAssetFields = ['serial_number', 'manufacturer', 'model', 'location', 'purchase_date', 'purchase_value', 'in_service_date'] as const
-
-// A date in one of the tenant date formats. Month names follow the tenant locale.
-export function formatDate(date: Date, format: string, locale: string): string {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return format
-    .replace('yyyy', String(date.getFullYear()))
-    .replace('MMM', new Intl.DateTimeFormat(locale, { month: 'short' }).format(date))
-    .replace('MM', pad(date.getMonth() + 1))
-    .replace('dd', pad(date.getDate()))
-}
 
 function errorMessage(error: DbError): string {
   const e = t.settings.errors
@@ -214,10 +205,11 @@ const usd = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD
 export const microUsd = (micro: number) => usd.format(micro / 1e6)
 const statusTone: Record<string, string> = { ok: 'ok', started: 'warn', error: 'error', lost: 'error' }
 
-function AiUsageTab({ usage, timeZone }: { usage: AiUsage; timeZone?: string }) {
+function AiUsageTab({ usage, tenant }: { usage: AiUsage; tenant?: Fmt }) {
   const a = t.settings.ai
   const label = (map: Record<string, string>, key: string) => map[key] ?? key
-  const when = (iso: string) => new Date(iso).toLocaleString(undefined, { timeZone, dateStyle: 'medium', timeStyle: 'short' })
+  const when = (iso: string) => showDateTime(iso, tenant)
+  const num = (n: number) => showNumber(n, tenant)
   const share = Math.min(1, usage.spent_micro_usd / usage.cap_micro_usd)
   return (
     <div className="stack">
@@ -248,7 +240,7 @@ function AiUsageTab({ usage, timeZone }: { usage: AiUsage; timeZone?: string }) 
               {usage.features.map((f) => (
                 <tr key={f.feature}>
                   <td>{label(a.features, f.feature)}</td>
-                  <td>{f.calls.toLocaleString()}</td>
+                  <td>{num(f.calls)}</td>
                   <td>{microUsd(f.spent_micro_usd)}</td>
                 </tr>
               ))}
@@ -281,7 +273,7 @@ function AiUsageTab({ usage, timeZone }: { usage: AiUsage; timeZone?: string }) 
                   <td>
                     <span className={`tag ${statusTone[c.status] ?? ''}`}>{label(a.statuses, c.status)}</span>
                   </td>
-                  <td>{c.input_tokens == null ? '—' : `${c.input_tokens.toLocaleString()} / ${(c.output_tokens ?? 0).toLocaleString()}`}</td>
+                  <td>{c.input_tokens == null ? '—' : `${num(c.input_tokens)} / ${num(c.output_tokens ?? 0)}`}</td>
                   <td>{microUsd(c.cost_micro_usd)}</td>
                 </tr>
               ))}
@@ -392,7 +384,7 @@ export function SettingsPage({ tenantId, canView, canManage, canViewAi = false }
           ))}
         </div>
       )}
-      {shown === 'ai' && usage && <AiUsageTab usage={usage} timeZone={settings?.time_zone} />}
+      {shown === 'ai' && usage && <AiUsageTab usage={usage} tenant={settings} />}
       {shown === 'general' && !canView && <p className="muted">{t.settings.noAccess}</p>}
       {error && (
         <p className="login-error" role="alert">

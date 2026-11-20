@@ -107,7 +107,7 @@ test('tabs with counts, tiles, the Overdue rows; value and cost columns hidden w
   db.results['list_obligations:overdue'] = { data: [open(1, day(-12))], error: null }
   await render(all)
   expect([...container.querySelectorAll('[role=tab]')].map((b) => b.textContent)).toEqual(['Overdue · 9', 'Due soon · 14', 'Scheduled · 10,000+', 'Completed · 3'])
-  expect([...container.querySelectorAll('.kpi')].map((k) => k.textContent)).toEqual(['Overdue9', 'Next 7 days4', 'Next 30 days20', 'Out of coverage23'])
+  expect([...container.querySelectorAll('.kpi')].map((k) => k.textContent)).toEqual(['Overdue services9', 'Services due in 7 days4', 'Services due in 30 days20', 'Assets out of coverage23'])
   expect(lastRpc('list_obligations')).toEqual({ p_bucket: 'overdue', p_limit: 51 })
   expect(lastRpc('count_assets')).toEqual(expect.objectContaining({ p_coverage: 'out' }))
   expect(container.querySelector('tbody')?.textContent).toContain('12 d overdue')
@@ -122,7 +122,7 @@ test('purchase value shows with asset_financials.view; Completed shows cost only
     location_id: 'l2', category_id: 'c1', in_service_date: null, purchase_date: null, purchase_value: null, purchase_currency: null }], error: null }
   await render([...all, 'asset_financials.view'])
   expect(heads()).toContain(m.col.value)
-  expect(container.querySelector('tbody')?.textContent).toContain('1,000 INR')
+  expect(container.querySelector('tbody')?.textContent).toContain('₹1,000')
   await act(async () => button(m.tabs.completed).click())
   expect(lastRpc('list_completions')).toEqual({ p_limit: 51 })
   expect(heads()).not.toContain(m.col.cost)

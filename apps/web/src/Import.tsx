@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { showDateTime, useFmt } from './format'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import type { Json, Tables } from './types/database'
@@ -486,7 +487,8 @@ function CommitCard({ batch, canUndo, onDone }: { batch: Batch; canUndo: boolean
   const [blocked, setBlocked] = useState<{ row_number: number; undo_blocked: string | null }[]>()
   const k = t.import.commit
   const o = batch.outcome as Outcome | null
-  const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+  const fmt = useFmt()
+  const when = (iso: string) => showDateTime(iso, fmt)
 
   useEffect(() => {
     if (!o?.blocked) return
@@ -572,6 +574,7 @@ function ReviewCard({ batch, catalog, canRun, canCommit, onChecked, onRemap }: {
   onRemap?: () => void
 }) {
   const [show, setShow] = useState<Show>('attention')
+  const fmt = useFmt()
   const [code, setCode] = useState('')
   const [page, setPage] = useState(0)
   const [rows, setRows] = useState<{ key: string; list: ReviewRow[]; count: number }>()
@@ -680,7 +683,7 @@ function ReviewCard({ batch, catalog, canRun, canCommit, onChecked, onRemap }: {
               .replace('{skip}', String(s.skip))}{' '}
             {r.noUpdates}
           </p>
-          <p className="hint">{c.asOf.replace('{when}', new Date(s.validated_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }))}</p>
+          <p className="hint">{c.asOf.replace('{when}', showDateTime(s.validated_at, fmt))}</p>
           <div className="filters">
             <label className="field">
               <span>{r.show}</span>
