@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { showDateTime, type Fmt } from './format'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import type { Database, TablesInsert } from './types/database'
@@ -68,7 +69,7 @@ export async function uploadAttachment(tenantId: string, entity: Entity, entityI
   return !error
 }
 
-export function AttachmentsTab({ tenantId, entity = 'asset', entityId, can, timeZone }: { tenantId: string; entity?: Entity; entityId: string; can: Can; timeZone?: string }) {
+export function AttachmentsTab({ tenantId, entity = 'asset', entityId, can, tenant }: { tenantId: string; entity?: Entity; entityId: string; can: Can; tenant?: Fmt }) {
   const [rows, setRows] = useState<Attachment[]>()
   const [error, setError] = useState<string>()
   const [progress, setProgress] = useState<number>()
@@ -129,7 +130,7 @@ export function AttachmentsTab({ tenantId, entity = 'asset', entityId, can, time
   }
 
   if (rows === undefined) return <p className="muted" role="status">{t.assetDetail.loading}</p>
-  const when = (iso: string) => new Date(iso).toLocaleString(undefined, { timeZone, dateStyle: 'medium', timeStyle: 'short' })
+  const when = (iso: string) => showDateTime(iso, tenant)
   return (
     <div className="stack detail">
       {error && (

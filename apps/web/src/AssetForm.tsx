@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { AiMark, AiMarks, ConfirmDialog, fill, outcome, useDiscardOnLeave, useDraft, type Line } from './AiDraft'
+import { showDate, useFmt } from './format'
 import { t } from './i18n'
 import { loadStatuses, statusName, type Status } from './Assets'
 import { addDays, termDates, termStep, TermFields, WarrantyLine, type TermChange } from './Coverage'
@@ -143,6 +144,7 @@ export function validateLines(lines: WarrantyLineIn[]): Errors {
 
 export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can }) {
   const { assetId } = useParams()
+  const fmt = useFmt()
   const editing = !!assetId
   const navigate = useNavigate()
   const [asset, setAsset] = useState<Asset>()
@@ -412,6 +414,7 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
       const f = line.find((x) => `custom.${x.key}` === k)
       if (f?.type === 'boolean') return v === 'true' ? t.categories.yes : t.categories.no
       if (f?.type === 'list') return (Array.isArray(f.options) ? (f.options as Option[]) : []).find((o) => o.code === v)?.label ?? v
+      if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return showDate(v, fmt)
       return v.trim()
     }
     const out = Object.entries(names).flatMap(([k, label]): Line[] => {
@@ -420,7 +423,7 @@ export function AssetFormPage({ tenantId, can }: { tenantId: string; can: Can })
       const from = shown(k, loaded.current[k])
       return from === to ? [] : [{ label, from, to }]
     })
-    for (const l of lines) out.push({ label: l.coverage_type === 'warranty' ? t.assetForm.warranty : t.assetForm.extended, to: `${l.start_date} – ${l.end_date}` })
+    for (const l of lines) out.push({ label: l.coverage_type === 'warranty' ? t.assetForm.warranty : t.assetForm.extended, to: `${showDate(l.start_date, fmt)} – ${showDate(l.end_date, fmt)}` })
     return out
   }
 

@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { SettingsPage, formatDate, tagErrorMessage } from './Settings'
+import { SettingsPage, tagErrorMessage } from './Settings'
 import { t } from './i18n'
 
 const db = vi.hoisted(() => ({
@@ -55,14 +55,6 @@ async function render(canView: boolean, canManage: boolean) {
   await act(async () => root.render(<SettingsPage tenantId="ta" canView={canView} canManage={canManage} />))
 }
 const field = <T extends Element>(name: string) => container.querySelector<T>(`[name="${name}"]`)!
-
-test('formatDate follows each tenant date format', () => {
-  const d = new Date(2026, 2, 5)
-  expect(formatDate(d, 'dd-MM-yyyy', 'en-IN')).toBe('05-03-2026')
-  expect(formatDate(d, 'MM/dd/yyyy', 'en-US')).toBe('03/05/2026')
-  expect(formatDate(d, 'yyyy-MM-dd', 'en-IN')).toBe('2026-03-05')
-  expect(formatDate(d, 'dd MMM yyyy', 'en-GB')).toBe('05 Mar 2026')
-})
 
 test('without view: no settings shown', async () => {
   await render(false, false)

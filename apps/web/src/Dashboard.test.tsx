@@ -82,9 +82,9 @@ test('tiles: values, the 10,000+ cap, links with filters, the tenant expiring da
   await render(all)
   expect(tiles()).toEqual([
     ['Total assets: 10,000+', '/assets'],
-    ['Due in 30 days: 42', '/maintenance?tab=due_soon'],
-    ['Overdue service: 9', '/maintenance?tab=overdue'],
-    ['Coverage expiring (45d): 17', '/assets?coverage=expiring'],
+    ['Services due in 30 days: 42', '/maintenance?tab=due_soon'],
+    ['Overdue services: 9', '/maintenance?tab=overdue'],
+    ['Assets with coverage expiring (45 d): 17', '/assets?coverage=expiring'],
   ])
   expect(db.rpc.filter((r) => r.fn === 'count_assets').map((r) => r.args)).toEqual([{}, { p_coverage: 'expiring' }])
 })

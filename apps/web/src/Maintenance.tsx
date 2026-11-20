@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router'
 import { coverageValues, CoverageTag, TreeSelect, type Cursor } from './Assets'
 import { AttachmentsTab } from './Attachments'
 import { daysBetween, showDate, tenantToday, useTenant } from './Coverage'
+import { showMoney, showNumber } from './format'
 import { t } from './i18n'
 import { obligationTypes, ruleText, stateTone } from './Obligations'
 import { CompletionForm } from './Service'
@@ -77,8 +78,6 @@ export function placeName(list: Option[], id: string | null): string {
   const parent = l && list.find((r) => r.id === l.parent_id)
   return l ? (parent ? `${l.name} · ${parent.name}` : l.name) : '—'
 }
-
-const money = (v: number | null, c: string | null) => (v == null ? '—' : `${Number(v).toLocaleString()} ${c ?? ''}`)
 
 export function MaintenancePage({ tenantId, can }: { tenantId: string; can: Can }) {
   const tenant = useTenant()
@@ -194,7 +193,7 @@ export function MaintenancePage({ tenantId, can }: { tenantId: string; can: Can 
   const shown = rows?.slice(0, PAGE) ?? []
   const next = rows && nextCursor(rows)
   const c = counts?.key === countKey ? counts : undefined
-  const num = (n?: number) => (n === undefined ? '…' : n > 10000 ? t.assets.manyCount : n.toLocaleString())
+  const num = (n?: number) => (n === undefined ? '…' : n > 10000 ? t.assets.manyCount : showNumber(n, tenant))
   const today = tenant ? tenantToday(tenant.time_zone) : ''
   const nameOf = (list: Option[], id: string | null) => list.find((r) => r.id === id)
   const place = (id: string | null) => placeName(locations, id)
@@ -228,7 +227,7 @@ export function MaintenancePage({ tenantId, can }: { tenantId: string; can: Can 
       <td>{place(r.location_id)}</td>
       {canCoverage && <td>{today && <CoverageTag lines={lines.filter((l) => l.asset_id === r.asset_id)} today={today} />}</td>}
       <td>{today && ageText(r.in_service_date ?? r.purchase_date, today)}</td>
-      {seeValue && <td>{money(r.purchase_value, r.purchase_currency)}</td>}
+      {seeValue && <td>{showMoney(r.purchase_value, r.purchase_currency, tenant)}</td>}
     </>
   )
 
@@ -393,7 +392,7 @@ export function MaintenancePage({ tenantId, can }: { tenantId: string; can: Can 
                     <td>{showDate(r.done_on, tenant)}</td>
                     <td>{r.outcome ? t.service.outcomes[r.outcome as 'pass' | 'fail'] : '—'}</td>
                     <td>{r.vendor_name ?? r.done_by_name ?? '—'}</td>
-                    {seeCost && <td>{money(r.cost_amount, r.cost_currency)}</td>}
+                    {seeCost && <td>{showMoney(r.cost_amount, r.cost_currency, tenant)}</td>}
                     {assetCells(r)}
                     <td>
                       <button className="btn" type="button" aria-expanded={files === r.id} onClick={() => setFiles(files === r.id ? undefined : r.id)}>
@@ -404,7 +403,7 @@ export function MaintenancePage({ tenantId, can }: { tenantId: string; can: Can 
                   {files === r.id && tenant && (
                     <tr>
                       <td colSpan={11}>
-                        <AttachmentsTab tenantId={tenantId} entity="service_record" entityId={r.id} can={can} timeZone={tenant.time_zone} />
+                        <AttachmentsTab tenantId={tenantId} entity="service_record" entityId={r.id} can={can} tenant={tenant} />
                       </td>
                     </tr>
                   )}
@@ -451,7 +450,7 @@ export function MaintenancePage({ tenantId, can }: { tenantId: string; can: Can 
         )}
       </div>
       <div className="page-head muted">
-        {shown.length > 0 && <span>{m.showing.replace('{from}', first.toLocaleString()).replace('{to}', (first + shown.length - 1).toLocaleString())}</span>}
+        {shown.length > 0 && <span>{m.showing.replace('{from}', showNumber(first, tenant)).replace('{to}', showNumber(first + shown.length - 1, tenant))}</span>}
         <div className="spacer" />
         <button
           className="btn"

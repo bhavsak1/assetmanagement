@@ -6,7 +6,7 @@ import { AssetFormPage } from './AssetForm'
 import { AssetLabelPage, ScanPage } from './AssetLabel'
 import { AssetsPage } from './Assets'
 import { CategoriesPage } from './Categories'
-import { CoveragePage } from './Coverage'
+import { CoveragePage, useTenant } from './Coverage'
 import { DashboardPage } from './Dashboard'
 import { ImportPage } from './Import'
 import { InsightsPage } from './Insights'
@@ -15,7 +15,10 @@ import { MaintenancePage } from './Maintenance'
 import { NotificationBell, NotificationsPage } from './Notifications'
 import { SettingsPage } from './Settings'
 import { SecurityPage } from './Security'
+import { AccountMenu, readCollapsed, TopSearch, writeCollapsed } from './TopBar'
 import { VendorsPage } from './Vendors'
+import { TenantFmt } from './format'
+import { Icon } from './icons'
 import { t } from './i18n'
 import { supabase } from './supabase'
 
@@ -85,8 +88,27 @@ const navGroups = [
   { group: 'admin', items: ['security', 'settings'] },
 ] as const
 
-function Shell({ companies, tenantId, canImport, canAsk }: { companies: Company[]; tenantId: string; canImport: boolean; canAsk: boolean }) {
+type User = { id: string; email?: string }
+
+function Shell({ companies, tenantId, user, canImport, canAsk, canSearch }: { companies: Company[]; tenantId: string; user: User; canImport: boolean; canAsk: boolean; canSearch: boolean }) {
   const navigate = useNavigate()
+  // One tenant settings read for the formatters (11.1 d), again after a company switch.
+  const tenant = useTenant(tenantId)
+  const [collapsed, setCollapsed] = useState(() => readCollapsed(user.id))
+  const toggle = () => {
+    writeCollapsed(user.id, !collapsed)
+    setCollapsed(!collapsed)
+  }
+  // The user's own display name (user_profile_select_own, 1.1); other members' names are 1.11.
+  const [profile, setProfile] = useState<{ id: string; name: string }>()
+  useEffect(() => {
+    let live = true
+    void supabase.from('user_profile').select('display_name').eq('id', user.id).then(({ data }) => live && setProfile({ id: user.id, name: data?.[0]?.display_name ?? '' }))
+    return () => {
+      live = false
+    }
+  }, [user.id])
+  const company = companies.find((c) => c.id === tenantId)?.name
   // Ask Assetly and the Intelligence group show only with the AI add-on (CLAUDE.md §11) and, from 10.7, insights_query.ask.
   const [ai, setAi] = useState<{ tenantId: string; on: boolean }>()
   useEffect(() => {
@@ -99,18 +121,33 @@ function Shell({ companies, tenantId, canImport, canAsk }: { companies: Company[
   const aiOn = ai?.tenantId === tenantId && ai.on && canAsk
 
   return (
-    <div className="app">
-      <nav className="sidebar" aria-label={t.nav.label}>
+    <div className={collapsed ? 'app collapsed' : 'app'}>
+      <nav className="sidebar" id="main-nav" aria-label={t.nav.label}>
         <div className="logo">
           <i aria-hidden="true" />
-          {t.app.name}
+          <span className="nav-label">{t.app.name}</span>
+          <button
+            className="nav-toggle"
+            type="button"
+            aria-controls="main-nav"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? t.nav.expand : t.nav.collapse}
+            title={collapsed ? t.nav.expand : t.nav.collapse}
+            onClick={toggle}
+          >
+            <Icon name="panel" />
+          </button>
         </div>
         {navGroups.filter(({ group }) => aiOn || group !== 'intelligence').map(({ group, items }) => (
           <div key={group} className="nav-group">
-            <div className="nav-heading">{t.nav.groups[group]}</div>
+            <div className="nav-heading">
+              <span className="nav-label">{t.nav.groups[group]}</span>
+            </div>
             {items.filter((key) => canImport || key !== 'import').map((key) => (
-              <NavLink key={key} to={`/${key}`}>
-                {t.nav[key]}
+              // Collapsed, the label stays in the link for screen readers and shows as a tooltip.
+              <NavLink key={key} to={`/${key}`} title={collapsed ? t.nav[key] : undefined}>
+                <Icon name={key} />
+                <span className="nav-label">{t.nav[key]}</span>
               </NavLink>
             ))}
           </div>
@@ -118,7 +155,7 @@ function Shell({ companies, tenantId, canImport, canAsk }: { companies: Company[
       </nav>
       <div className="main">
         <header className="topbar">
-          <input className="search" type="search" placeholder={t.topbar.search} aria-label={t.topbar.search} />
+          {canSearch && <TopSearch />}
           {aiOn && <button className="btn" type="button" onClick={() => void navigate('/insights')}>{t.topbar.askAssetly}</button>}
           <div className="spacer" />
           {companies.length > 1 ? (
@@ -135,18 +172,15 @@ function Shell({ companies, tenantId, canImport, canAsk }: { companies: Company[
               ))}
             </select>
           ) : (
-            <span className="muted">{companies.find((c) => c.id === tenantId)?.name}</span>
+            <span className="muted">{company}</span>
           )}
           <NotificationBell tenantId={tenantId} />
-          <div className="avatar" role="img" aria-label={t.topbar.account}>
-            {t.topbar.initials}
-          </div>
-          <button className="btn" type="button" onClick={() => void supabase.auth.signOut()}>
-            {t.topbar.signOut}
-          </button>
+          <AccountMenu name={profile?.id === user.id ? profile.name : undefined} email={user.email} company={company} />
         </header>
         <main className="content">
-          <Outlet />
+          <TenantFmt.Provider value={tenant}>
+            <Outlet />
+          </TenantFmt.Provider>
         </main>
       </div>
     </div>
@@ -427,7 +461,7 @@ export function App() {
 
   let signedIn = null
   if (session && companies) {
-    if (tenantId) signedIn = <Shell companies={companies} tenantId={tenantId} canImport={can('excel_import', 'run') || can('excel_import', 'review')} canAsk={can('insights_query', 'ask')} />
+    if (tenantId) signedIn = <Shell companies={companies} tenantId={tenantId} user={session.user} canSearch={can('asset_core', 'view')} canImport={can('excel_import', 'run') || can('excel_import', 'review')} canAsk={can('insights_query', 'ask')} />
     else if (companies.length === 0) signedIn = <NoAccess />
     else signedIn = <ChooseCompany companies={companies} failed={pickFailed} onPick={pick} />
   }
@@ -446,6 +480,8 @@ export function App() {
           path="/assets"
           element={
             <AssetsPage
+              // Filters come from the link once on load; a new top-bar search on this page needs a fresh list.
+              key={location.search}
               tenantId={tenantId ?? ''}
               canSaveViews={can('asset_core', 'view') && writable}
               canCreate={can('asset_core', 'create')}

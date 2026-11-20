@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { draftPath, type Draft } from './AiDraft'
+import { showDate, showMoney, showNumber, useFmt, type Fmt } from './format'
 import { t } from './i18n'
 import { toCsv } from './Security'
 import { supabase } from './supabase'
@@ -101,11 +102,14 @@ export function columnLabel(q: Query, c: Column, catalog?: Subject[]): string {
   return m && (q.measures?.length || q.group_by?.length) ? measureLabel(q.subject, m, catalog) : fieldLabel(q.subject, c.key, catalog)
 }
 
-export function cell(c: Column, x: unknown): string {
+// With the tenant, on screen: numbers, dates and money in its format. Without (CSV), plain numbers.
+export function cell(c: Column, x: unknown, tn?: Fmt, currency?: unknown): string {
   if (x === null || x === undefined) return '—'
   if (typeof x === 'boolean') return x ? v.yes : v.no
   if (Array.isArray(x)) return x.map((y) => optionLabel(String(y))).join(', ')
-  if (c.type === 'number' || c.type === 'money') return Number(x).toLocaleString()
+  if (c.type === 'money' && tn && typeof currency === 'string') return showMoney(Number(x), currency, tn)
+  if (c.type === 'number' || c.type === 'money') return tn ? showNumber(Number(x), tn) : Number(x).toLocaleString()
+  if (c.type === 'date' && tn && typeof x === 'string') return showDate(x, tn)
   if (c.type === 'enum') return optionLabel(String(x))
   return String(x)
 }
@@ -192,6 +196,7 @@ function FilterEditor({ subject, fields, filter, onApply, onCancel }: { subject:
 export function InsightsPage({ tenantId = '', canSave = false, canShare = false }: { tenantId?: string; canSave?: boolean; canShare?: boolean }) {
   const location = useLocation()
   const box = useRef<HTMLTextAreaElement>(null)
+  const fmt = useFmt()
   const [catalog, setCatalog] = useState<Subject[]>()
   const [question, setQuestion] = useState('')
   const [busy, setBusy] = useState(false)
@@ -473,7 +478,7 @@ export function InsightsPage({ tenantId = '', canSave = false, canShare = false 
             return (
               <div key={i} className="card kpi">
                 <span>{columnLabel(query, result.columns[m]!, catalog)}</span>
-                <b>{cur >= 0 ? `${String(r[cur] ?? '')} ` : ''}{cell(result.columns[m]!, r[m])}</b>
+                <b>{cell(result.columns[m]!, r[m], fmt, cur >= 0 ? r[cur] : undefined)}</b>
               </div>
             )
           })}
@@ -497,7 +502,7 @@ export function InsightsPage({ tenantId = '', canSave = false, canShare = false 
               </thead>
               <tbody>
                 {result.rows.map((r, i) => (
-                  <tr key={i}>{result.columns.map((c, j) => (c.key === 'id' ? null : <td key={c.key}>{cell(c, r[j])}</td>))}</tr>
+                  <tr key={i}>{result.columns.map((c, j) => (c.key === 'id' ? null : <td key={c.key}>{cell(c, r[j], fmt)}</td>))}</tr>
                 ))}
               </tbody>
             </table>

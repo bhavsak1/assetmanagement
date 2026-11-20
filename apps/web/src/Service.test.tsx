@@ -132,7 +132,7 @@ test('service history: cost shown; undo asks, then calls the action; correction 
   db.results['rpc:service_history'] = { data: [row], error: null }
   db.results.obligation = { data: [{ id: 'o1', obligation_type: 'service' }], error: null }
   await act(async () => root.render(<ServiceHistoryTab tenantId="ta" assetId="a1" can={only('service_record.view', 'service_record.update', 'service_values.view')} />))
-  expect(container.textContent).toContain('1,250 INR')
+  expect(container.textContent).toContain('₹1,250')
 
   const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
   await act(async () => button(s.undo)!.click())

@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { TreeSelect } from './Assets'
+import { showDay, useFmt } from './format'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import type { Database, Tables } from './types/database'
@@ -28,8 +29,11 @@ const domainOrder = Object.keys(s.domains)
 const rank = (code: string) => (domainOrder.includes(code) ? domainOrder.indexOf(code) : domainOrder.length)
 const now = () => new Date().toISOString()
 const daysFromNow = (n: number) => new Date(Date.now() + n * 864e5)
-// shortcut: UTC calendar date, not the tenant's format and zone; switch to Settings.formatDate when the shell holds the tenant.
-const day = (iso: string | null) => (iso ? iso.slice(0, 10) : s.assignments.open)
+// A timestamp's day in the tenant zone and format; open-ended when null.
+const useDay = () => {
+  const fmt = useFmt()
+  return (iso: string | null) => (iso ? showDay(iso, fmt) : s.assignments.open)
+}
 // 9.2: an integration user's email is a placeholder, so it shows its tag instead.
 const memberLabel = (m: Member) => `${m.display_name} (${m.kind === 'integration' ? s.integrations.tag : m.email})`
 
@@ -414,6 +418,7 @@ function Groups({ tenantId, groups, domains, items, canManage, run, reload }: { 
 }
 
 function Assignments({ tenantId, rows, members, groups, profiles, canManage, run }: { tenantId: string; rows: Assignment[]; members: Member[]; groups: Group[]; profiles: Profile[]; canManage: boolean; run: Run }) {
+  const day = useDay()
   const a = s.assignments
   const [adding, setAdding] = useState(false)
   const name = <T extends { id: string; name: string }>(list: T[], id: string | null) => list.find((x) => x.id === id)?.name ?? '—'
@@ -723,6 +728,7 @@ function Profiles({ tenantId, profiles, rules, assignments, locations, categorie
 }
 
 function ChangeSets({ draft, sets, diff, members, canManage, run }: { draft?: ChangeSet; sets: ChangeSet[]; diff: Diff[]; members: Member[]; canManage: boolean; run: Run }) {
+  const day = useDay()
   const c = s.changes
   const [open, setOpen] = useState<Record<string, Diff[]>>({})
   const who = (id: string | null) => members.find((m) => m.user_id === id)?.display_name ?? '—'
@@ -839,6 +845,7 @@ function DiffList({ rows }: { rows: Diff[] }) {
 function Explain({ members, domains, onClose }: { members: Member[]; domains: Domain[]; onClose: () => void }) {
   const x = s.explain
   const [domain, setDomain] = useState(domains[0]?.code ?? '')
+  const day = useDay()
   const [rows, setRows] = useState<Explained[]>()
   const [asked, setAsked] = useState<{ name: string; op: string; domain: string; tag: string }>()
   const [error, setError] = useState<string>()
@@ -989,6 +996,7 @@ export function toCsv(rows: string[][]): string {
 // Access review [6.5 E5, E7, E8]: joined in the browser from what the screen reads (RLS: users_security.view)
 // plus the live grants of every group. The CSV is built in the browser from the filtered rows.
 function AccessReview({ rows, members, groups, profiles, domains }: { rows: Assignment[]; members: Member[]; groups: Group[]; profiles: Profile[]; domains: Domain[] }) {
+  const day = useDay()
   const v = s.review
   const [grants, setGrants] = useState<{ security_group_id: string; domain_operation_id: string }[]>([])
   const [domain, setDomain] = useState('')
@@ -1122,6 +1130,7 @@ function AccessReview({ rows, members, groups, profiles, domains }: { rows: Assi
 // Story 9.2 (data-model-goal9.md §17 A13): integration users and their API keys. Groups and scope are given on
 // the Assignments tab, like a person's. A new key is shown once, here, and never again.
 function Integrations({ members, assignments, groups, canManageUsers, canManageKeys, run, reload }: { members: Member[]; assignments: Assignment[]; groups: Group[]; canManageUsers: boolean; canManageKeys: boolean; run: Run; reload: number }) {
+  const day = useDay()
   const i = s.integrations
   const [keys, setKeys] = useState<ApiKey[]>([])
   const [adding, setAdding] = useState(false)

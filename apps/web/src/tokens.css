@@ -64,6 +64,11 @@
 
   /* Layout */
   --sidebar-width: 232px;
+  --sidebar-width-collapsed: 64px;
+  --icon-size: 18px;
+  --popover-width: 420px;
+  --menu-width: 220px;
+  --shadow-popover: 0 8px 24px rgb(16 24 40 / 0.12);
   --topbar-height: 60px;
   --control-height: 36px;
 }

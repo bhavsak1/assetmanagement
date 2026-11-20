@@ -20,12 +20,17 @@
     "import": "Import",
     "insights": "Insights",
     "security": "Security",
-    "settings": "Settings"
+    "settings": "Settings",
+    "collapse": "Collapse menu",
+    "expand": "Expand menu"
   },
   "topbar": {
-    "search": "Search assets, tags, vendors…",
+    "search": "Search assets by tag, name or serial",
+    "searchResults": "Matching assets",
+    "searching": "Searching…",
+    "searchNone": "No assets match.",
+    "searchAll": "All results for “{q}”",
     "askAssetly": "Ask Assetly · AI",
-    "initials": "KR",
     "account": "Account",
     "signOut": "Sign out"
   },
@@ -476,9 +481,9 @@
     "hidden": "Hidden",
     "formerVendor": "Former vendor",
     "cards": {
-      "active": "Active",
-      "expiring": "Expiring in {n} days",
-      "expired": "Expired"
+      "active": "Active contracts",
+      "expiring": "Contracts expiring in {n} days",
+      "expired": "Expired contracts"
     },
     "tabs": {
       "all": "All",
@@ -931,10 +936,10 @@
       "completed": "Completed"
     },
     "tiles": {
-      "overdue": "Overdue",
-      "next7": "Next 7 days",
-      "next30": "Next 30 days",
-      "out": "Out of coverage"
+      "overdue": "Overdue services",
+      "next7": "Services due in 7 days",
+      "next30": "Services due in 30 days",
+      "out": "Assets out of coverage"
     },
     "filter": "Search asset tag or name",
     "allTypes": "All types",
@@ -974,9 +979,9 @@
     "subtitle": "All locations",
     "tiles": {
       "total": "Total assets",
-      "due30": "Due in 30 days",
-      "overdue": "Overdue service",
-      "expiring": "Coverage expiring ({n}d)"
+      "due30": "Services due in 30 days",
+      "overdue": "Overdue services",
+      "expiring": "Assets with coverage expiring ({n} d)"
     },
     "tileLink": "{label}: {value}",
     "upcoming": "Upcoming and overdue service",

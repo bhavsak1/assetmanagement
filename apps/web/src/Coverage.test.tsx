@@ -106,7 +106,7 @@ const writes = (table: string, m: string) => db.calls.filter((c) => c.table === 
 test('cards count by status, the table shows first asset +n, scope, vendor and status', async () => {
   await render(admin)
   const cards = [...container.querySelectorAll('.kpi')].map((k) => k.textContent)
-  expect(cards).toEqual(['Active318', 'Expiring in 30 days17', 'Expired41'])
+  expect(cards).toEqual(['Active contracts318', 'Contracts expiring in 30 days17', 'Expired contracts41'])
   const tr = container.querySelector('tbody tr')!
   expect(tr.textContent).toContain('CNC Lathe 04 +1')
   expect(tr.textContent).toContain('2 assets')

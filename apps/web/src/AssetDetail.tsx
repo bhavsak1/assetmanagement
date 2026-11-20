@@ -7,6 +7,7 @@ import { ObligationsCard, ObligationsTab } from './Obligations'
 import { ServiceHistoryTab } from './Service'
 import { loadStatuses, statusName, StatusTag, type Status } from './Assets'
 import { AiMark, AiMarks, ConfirmDialog, fill, outcome, useDiscardOnLeave, useDraft, type Draft, type Line } from './AiDraft'
+import { showDate, showDateTime, showMoney, showNumber, type Fmt } from './format'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import { buildTree, lineage } from './tree'
@@ -100,7 +101,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
   const [places, setPlaces] = useState<Place[]>([])
   const [fields, setFields] = useState<Field[]>([])
   const [domains, setDomains] = useState<Record<string, string>>({})
-  const [timeZone, setTimeZone] = useState<string>()
+  const [tenant, setTenant] = useState<Fmt>()
   const [statuses, setStatuses] = useState<Status[]>([])
   const [vendors, setVendors] = useState<{ id: string; name: string; is_active: boolean }[]>([])
   // Change status offers what the database allows now (allowed_asset_statuses, 3.7).
@@ -124,7 +125,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
       supabase.from('location').select('id, parent_id, name, active').is('deleted_at', null),
       supabase.from('field_definition').select('*').eq('entity', 'asset').is('deleted_at', null),
       supabase.rpc('field_domains', { p_entity: 'asset' }),
-      supabase.from('tenant').select('time_zone'),
+      supabase.from('tenant').select('time_zone, date_format, locale'),
       loadStatuses(),
       supabase.rpc('allowed_asset_statuses', { p_asset_id: assetId }),
       supabase.from('vendor_view').select('id, name, is_active'),
@@ -138,7 +139,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
       setPlaces(l.data ?? [])
       setFields(f.data ?? [])
       setDomains(Object.fromEntries((dm.data ?? []).map((x) => [x.id, x.code])))
-      setTimeZone(tn.data?.[0]?.time_zone)
+      setTenant(tn.data?.[0])
       setStatuses(st.data ?? [])
       setTargets(al.data ?? [])
       setVendors((vn.data ?? []).map((x) => ({ id: x.id ?? '', name: x.name ?? '', is_active: x.is_active ?? false })))
@@ -173,6 +174,9 @@ export function AssetDetailPage({ can }: { can: Can }) {
     if (key === 'parent_asset_id') return tags[s] ?? '—'
     if (key === 'status') return statusLabel(s)
     if (key === 'status_id') return statusName(statuses, s)
+    if (key === 'purchase_value' && typeof v === 'number') return showNumber(v, tenant)
+    // Plain dates (purchase, in service, custom date fields) in the tenant format.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return showDate(s, tenant)
     // A merged (soft-deleted) vendor is not in vendor_view.
     if (key === 'oem_vendor_id' || key === 'om_vendor_id') return vendors.find((x) => x.id === s)?.name ?? (can('vendor_core', 'view') ? d.formerVendor : d.hidden)
     if (typeof v === 'boolean') return v ? t.categories.yes : t.categories.no
@@ -181,7 +185,7 @@ export function AssetDetailPage({ can }: { can: Can }) {
     return option?.label ?? s
   }
   const label = (key: string) => (key.startsWith('custom.') ? (fieldOf(key.slice(7))?.label ?? key.slice(7)) : (labels[key] ?? key))
-  const money = !seeMoney ? <Hidden /> : asset.purchase_value == null ? '—' : `${Number(asset.purchase_value).toLocaleString()} ${asset.purchase_currency ?? ''}`
+  const money = !seeMoney ? <Hidden /> : asset.purchase_value == null ? '—' : showMoney(asset.purchase_value, asset.purchase_currency, tenant)
   const parentTag = asset.parent_asset_id ? tags[asset.parent_asset_id] : undefined
   const tabs = ['overview', 'coverage', 'obligations', 'service', 'bom', 'attachments', 'audit'] as const
   const live = asset.status !== 'disposed'
@@ -281,9 +285,9 @@ export function AssetDetailPage({ can }: { can: Can }) {
               <Row k={d.makeModel}>{[asset.manufacturer, asset.model].filter(Boolean).join(' ') || '—'}</Row>
               <Row k={t.settings.assetFields.serial_number}>{asset.serial_number ?? '—'}</Row>
               <Row k={d.purchase}>
-                {asset.purchase_date ?? '—'} · {money}
+                {showDate(asset.purchase_date, tenant)} · {money}
               </Row>
-              <Row k={t.settings.assetFields.in_service_date}>{asset.in_service_date ?? '—'}</Row>
+              <Row k={t.settings.assetFields.in_service_date}>{showDate(asset.in_service_date, tenant)}</Row>
               <Row k={t.assetForm.criticality}>{asset.criticality ?? '—'}</Row>
               <Row k={t.assetForm.quantity}>{asset.quantity}</Row>
               {asset.status_reason && <Row k={d.statusReason}>{asset.status_reason}</Row>}
@@ -348,9 +352,9 @@ export function AssetDetailPage({ can }: { can: Can }) {
       ) : tab === 'service' ? (
         <ServiceHistoryTab tenantId={asset.tenant_id ?? ''} assetId={id} can={can} />
       ) : tab === 'attachments' ? (
-        <AttachmentsTab tenantId={asset.tenant_id ?? ''} entityId={id} can={can} timeZone={timeZone} />
+        <AttachmentsTab tenantId={asset.tenant_id ?? ''} entityId={id} can={can} tenant={tenant} />
       ) : (
-        <AuditTab key={`${asset.id}-${version}`} assetId={asset.id ?? assetId} timeZone={timeZone} label={label} show={show} onTags={(m) => setTags((x) => ({ ...x, ...m }))} known={tags} />
+        <AuditTab key={`${asset.id}-${version}`} assetId={asset.id ?? assetId} tenant={tenant} label={label} show={show} onTags={(m) => setTags((x) => ({ ...x, ...m }))} known={tags} />
       )}
       {dialog === 'transfer' && live && can('asset_lifecycle', 'execute') && (
         <ActionDialog
@@ -505,7 +509,7 @@ function ActionDialog(props: {
 
 function AuditTab(props: {
   assetId: string
-  timeZone?: string
+  tenant?: Fmt
   label: (key: string) => string
   show: (key: string, v: Json | undefined) => string
   known: Record<string, string>
@@ -544,7 +548,7 @@ function AuditTab(props: {
   }, [assetId])
 
   if (rows === undefined) return <p className="muted" role="status">{d.loading}</p>
-  const when = (iso: string) => new Date(iso).toLocaleString(undefined, { timeZone: props.timeZone, dateStyle: 'medium', timeStyle: 'short' })
+  const when = (iso: string) => showDateTime(iso, props.tenant)
   return (
     <div className="stack detail">
       {error && (

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { formatDate } from './Settings'
+import { showDate, tenantToday } from './format'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import type { Database, Tables } from './types/database'
@@ -25,9 +25,8 @@ const tone: Record<string, string> = { active: 'ok', expiring: 'warn', expired: 
 const rank = ['active', 'expiring', 'future', 'expired']
 const typeLabel = (s: string | null) => (c.types as Record<string, string>)[s ?? ''] ?? s ?? ''
 
-// Plain dates as YYYY-MM-DD. "Today" is the tenant's (C7), so the day counts match the status the view computed.
-export const tenantToday = (timeZone: string, now = new Date()) =>
-  new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+// Plain dates as YYYY-MM-DD. The formatters moved to format.ts (11.1); pages still import them from here.
+export { showDate, tenantToday }
 const utc = (d: string) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10)))
 export const daysBetween = (from: string, to: string) => Math.round((utc(to) - utc(from)) / 86400000)
 export const addDays = (d: string, n: number) => new Date(utc(d) + n * 86400000).toISOString().slice(0, 10)
@@ -143,7 +142,7 @@ async function loadLinks(coverageIds: string[]): Promise<Record<string, Linked[]
   return out
 }
 
-export function useTenant() {
+export function useTenant(key?: string) {
   const [tenant, setTenant] = useState<Tenant>()
   useEffect(() => {
     let live = true
@@ -151,12 +150,9 @@ export function useTenant() {
     return () => {
       live = false
     }
-  }, [])
+  }, [key])
   return tenant
 }
-
-export const showDate = (d: string | null | undefined, tn?: Tenant) =>
-  !d ? '—' : tn ? formatDate(new Date(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))), tn.date_format, tn.locale) : d
 
 export function StatusTag({ row, today }: { row: { status: string | null; start_date: string | null; end_date: string | null }; today: string }) {
   return <span className={`tag status ${tone[row.status ?? ''] ?? 'neutral'}`}>{statusText(row.status, row.start_date, row.end_date, today)}</span>
