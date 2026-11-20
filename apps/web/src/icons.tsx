@@ -64,12 +64,9 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   settings: <path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4" />,
-  panel: (
-    <>
-      <rect width="18" height="18" x="3" y="3" rx="2" />
-      <path d="M9 3v18" />
-    </>
-  ),
+  // Menu toggle: the arrow points where the menu will go.
+  collapse: <path d="m15 18-6-6 6-6" />,
+  expand: <path d="m9 18 6-6-6-6" />
 }
 
 // Decorative: the link or button next to it carries the name.

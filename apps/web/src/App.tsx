@@ -135,7 +135,7 @@ function Shell({ companies, tenantId, user, canImport, canAsk, canSearch }: { co
             title={collapsed ? t.nav.expand : t.nav.collapse}
             onClick={toggle}
           >
-            <Icon name="panel" />
+            <Icon name={collapsed ? 'expand' : 'collapse'} />
           </button>
         </div>
         {navGroups.filter(({ group }) => aiOn || group !== 'intelligence').map(({ group, items }) => (
