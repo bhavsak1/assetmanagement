@@ -2,6 +2,7 @@
 // 11.5: the web manifest is valid, matches the tokens and i18n, and the QR scan link opens inside the app's scope.
 import { expect, test, vi } from 'vitest'
 import manifestText from '../public/manifest.webmanifest?raw'
+import sw from '../public/sw.js?raw'
 import indexHtml from '../index.html?raw'
 import icon192 from '../public/icon-192.png?inline'
 import icon512 from '../public/icon-512.png?inline'
@@ -62,4 +63,10 @@ test('the QR scan link falls inside the installed app scope', () => {
   const scan = new URL(scanUrl('6f1c2d3e-0000-4000-8000-000000000001'))
   expect(scan.origin).toBe(scope.origin)
   expect(scan.pathname.startsWith(scope.pathname)).toBe(true)
+})
+
+test('the service worker caches nothing and only passes page loads through', () => {
+  expect(sw).not.toMatch(/caches\.|indexedDB|localStorage/)
+  expect(sw).toContain("event.request.mode === 'navigate'")
+  expect(sw).toContain('respondWith(fetch(event.request))')
 })
