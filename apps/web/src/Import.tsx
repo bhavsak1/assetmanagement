@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { showDateTime, useFmt } from './format'
+import { showDateTime, showDay, showNumber, useFmt } from './format'
 import { useDialog } from './Dialog'
 import { t } from './i18n'
 import { supabase } from './supabase'
 import type { Json, Tables } from './types/database'
 import { sheetXlsx, type XlsxCell } from './xlsx'
 
-type Batch = Pick<Tables<'import_batch'>, 'id' | 'file_name' | 'sheet_name' | 'sheet_names' | 'header_row' | 'columns' | 'row_count' | 'warnings' | 'status' | 'created_at' | 'mapping' | 'mapping_template_id' | 'summary' | 'outcome' | 'value_suggestions'>
+type Batch = Pick<Tables<'import_batch'>, 'id' | 'file_name' | 'sheet_name' | 'sheet_names' | 'header_row' | 'columns' | 'row_count' | 'warnings' | 'status' | 'created_at' | 'mapping' | 'mapping_template_id' | 'summary' | 'outcome' | 'value_suggestions' | 'expires_at'>
 export type Target = { target: string; label: string; kind: string; required: boolean; category_id: string | null }
 type Template = Pick<Tables<'import_mapping_template'>, 'id' | 'name' | 'headers' | 'targets'>
 // source: how the target was chosen; 'user' once the person changes it here. confidence: AI entries only (10.3).
@@ -107,10 +107,19 @@ function send(file: File, token: string, opts: { sheet?: string; headerRow?: num
   })
 }
 
+// 11.4 (DECIDE 7): the page opens on a fresh upload. A batch not yet committed and not past its expiry can be
+// continued; the expiry job may lag, so a past expires_at counts as expired here too.
+export function batchState(b: Pick<Batch, 'status' | 'expires_at'>, now = new Date()): { state: keyof typeof t.import.history.states; resume: boolean } {
+  const open = b.status === 'staged' || b.status === 'mapped' || b.status === 'validated'
+  if (open && new Date(b.expires_at) <= now) return { state: 'expired', resume: false }
+  const state = b.status in t.import.history.states ? (b.status as keyof typeof t.import.history.states) : 'expired'
+  return { state, resume: open }
+}
+
 async function loadBatches(): Promise<Batch[]> {
   const { data } = await supabase
     .from('import_batch')
-    .select('id, file_name, sheet_name, sheet_names, header_row, columns, row_count, warnings, status, created_at, mapping, mapping_template_id, summary, outcome, value_suggestions')
+    .select('id, file_name, sheet_name, sheet_names, header_row, columns, row_count, warnings, status, created_at, mapping, mapping_template_id, summary, outcome, value_suggestions, expires_at')
     .order('created_at', { ascending: false })
     .limit(10)
   return data ?? []
@@ -282,7 +291,7 @@ function MappingStep({ tenantId, batch, catalog, sample, canRun, onSaved, onHead
       <h2>{m.title}</h2>
       <p className="muted">{batch.status === 'mapped' ? m.savedNote : m.subtitle}</p>
       {editable && (
-        <div className="filters">
+        <div className="actions-row">
           {onHeaderRow && (
             <label className="field">
               <span>{m.headerRow}</span>
@@ -373,7 +382,7 @@ function MappingStep({ tenantId, batch, catalog, sample, canRun, onSaved, onHead
         </p>
       )}
       {editable && (
-        <div className="filters">
+        <div className="actions-row">
           <button type="button" className="btn btn-primary" disabled={missing.length > 0} onClick={() => void save()}>
             {m.save}
           </button>
@@ -635,7 +644,7 @@ function ReviewCard({ batch, catalog, canRun, canCommit, onChecked, onRemap }: {
           <h2>{r.title}</h2>
           <p className="muted">{r.subtitle.replace('{file}', batch.file_name)}</p>
         </div>
-        <div className="filters">
+        <div className="actions-row">
           {canRun && onRemap && (
             <button type="button" className="btn" onClick={onRemap}>
               {r.backToMapping}
@@ -687,7 +696,7 @@ function ReviewCard({ batch, catalog, canRun, canCommit, onChecked, onRemap }: {
             {r.noUpdates}
           </p>
           <p className="hint">{c.asOf.replace('{when}', showDateTime(s.validated_at, fmt))}</p>
-          <div className="filters">
+          <div className="actions-row">
             <label className="field">
               <span>{r.show}</span>
               <select
@@ -763,7 +772,7 @@ function ReviewCard({ batch, catalog, canRun, canCommit, onChecked, onRemap }: {
             </div>
           )}
           {!!shown?.count && (
-            <div className="filters">
+            <div className="actions-row">
               <span className="muted">
                 {r.range
                   .replace('{from}', String(page * PAGE + 1))
@@ -1040,6 +1049,7 @@ export function ImportPage({ tenantId, canRun, canCommit = false, canUndo = fals
   const [batches, setBatches] = useState<{ tenantId: string; list: Batch[] }>()
   const [selected, setSelected] = useState<string>()
   const [catalog, setCatalog] = useState<{ tenantId: string; list: Target[] }>()
+  const fmt = useFmt()
 
   const refresh = () => loadBatches().then((list) => setBatches({ tenantId, list }))
   useEffect(() => {
@@ -1062,7 +1072,7 @@ export function ImportPage({ tenantId, canRun, canCommit = false, canUndo = fals
   }
 
   const list = batches?.tenantId === tenantId ? batches.list : undefined
-  const current = list?.find((b) => b.id === selected) ?? list?.[0]
+  const current = list?.find((b) => b.id === selected)
   const busy = upload.state === 'sending' || upload.state === 'reading'
   const fields = catalog?.tenantId === tenantId ? catalog.list : undefined
   // The browser still holds the file, so a new header row is a re-upload (M10; the service keeps no file, I6).
@@ -1079,21 +1089,27 @@ export function ImportPage({ tenantId, canRun, canCommit = false, canUndo = fals
       </div>
       {canRun && (
         <div className="card stack">
-          <label className="field">
-            <span>{t.import.file}</span>
-            <input
-              type="file"
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              disabled={busy}
-              onChange={(e) => {
-                const f = e.target.files?.[0]
-                setFile(f)
-                setSheet(undefined)
-                if (f) void start(f)
-              }}
-            />
-          </label>
-          <p className="hint">{t.import.limits}</p>
+          <span className="builder-label">{t.import.file}</span>
+          <div className="file-pick">
+            <label className={`btn btn-main${busy ? ' disabled' : ''}`}>
+              <input
+                className="sr-only"
+                type="file"
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                disabled={busy}
+                aria-describedby="import-file-name import-limits"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  setFile(f)
+                  setSheet(undefined)
+                  if (f) void start(f)
+                }}
+              />
+              {t.import.choose}
+            </label>
+            <span id="import-file-name" className="muted">{file?.name ?? t.import.noFile}</span>
+          </div>
+          <p id="import-limits" className="hint">{t.import.limits}</p>
           {upload.state === 'sending' && (
             <progress max={100} value={upload.percent} aria-label={t.import.sending}>
               {upload.percent}%
@@ -1138,18 +1154,42 @@ export function ImportPage({ tenantId, canRun, canCommit = false, canUndo = fals
         />
       )}
       {canRun && fields && current && <FieldList catalog={fields} />}
-      {list && list.length > 1 && (
-        <div className="card">
-          <h2>{t.import.recent}</h2>
-          <ul className="list">
-            {list.map((b) => (
-              <li key={b.id}>
-                <button type="button" className="row-link" onClick={() => setSelected(b.id)} aria-current={b.id === current?.id}>
-                  {t.import.recentRow.replace('{file}', b.file_name).replace('{sheet}', b.sheet_name).replace('{n}', String(b.row_count))}
-                </button>
-              </li>
-            ))}
-          </ul>
+      {list && list.length > 0 && (
+        <div className="card table-wrap list">
+          <h2>{t.import.history.title}</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>{t.import.history.file}</th>
+                <th>{t.import.history.sheet}</th>
+                <th>{t.import.history.rows}</th>
+                <th>{t.import.history.state}</th>
+                <th>{t.import.history.date}</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((b) => {
+                const { state, resume } = batchState(b)
+                const action = resume ? t.import.history.continue : t.import.history.open
+                return (
+                  <tr key={b.id} aria-current={b.id === current?.id || undefined}>
+                    <td>{b.file_name}</td>
+                    <td>{b.sheet_name}</td>
+                    <td>{showNumber(b.row_count, fmt)}</td>
+                    <td><span className={`tag status ${resume ? 'warn' : state === 'committed' ? 'ok' : ''}`}>{t.import.history.states[state]}</span></td>
+                    <td className="nowrap">{showDay(b.created_at, fmt)}</td>
+                    <td>
+                      <button type="button" className={resume ? 'btn btn-main' : 'btn'} disabled={b.id === current?.id}
+                        aria-label={t.import.history.openLabel.replace('{action}', action).replace('{file}', b.file_name)} onClick={() => setSelected(b.id)}>
+                        {action}
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
       {list && !list.length && <p className="muted">{t.import.none}</p>}

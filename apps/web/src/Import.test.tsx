@@ -1,11 +1,22 @@
 import { describe, expect, it, vi } from 'vitest'
-import { actError, aiError, decision, applyTemplate, mergeAi, codeName, columnLetter, commitWill, errorRows, messageText, normalise, saveError, templateOf, uploadError, type Target } from './Import'
+import { actError, aiError, batchState, decision, applyTemplate, mergeAi, codeName, columnLetter, commitWill, errorRows, messageText, normalise, saveError, templateOf, uploadError, type Target } from './Import'
 import { t } from './i18n'
 import { crc32, sheetXlsx } from './xlsx'
 
 vi.mock('./supabase', () => ({ supabase: {} }))
 
 describe('import page helpers', () => {
+  it('11.4: only an open batch before its expiry can be continued', () => {
+    const now = new Date('2026-11-22T00:00:00Z')
+    const later = '2026-12-09T00:00:00Z'
+    expect(batchState({ status: 'validated', expires_at: later }, now)).toEqual({ state: 'validated', resume: true })
+    expect(batchState({ status: 'staged', expires_at: later }, now)).toEqual({ state: 'staged', resume: true })
+    expect(batchState({ status: 'mapped', expires_at: '2026-11-21T00:00:00Z' }, now)).toEqual({ state: 'expired', resume: false })
+    expect(batchState({ status: 'committed', expires_at: '2026-11-21T00:00:00Z' }, now)).toEqual({ state: 'committed', resume: false })
+    expect(batchState({ status: 'undone', expires_at: later }, now)).toEqual({ state: 'undone', resume: false })
+    expect(batchState({ status: 'expired', expires_at: later }, now)).toEqual({ state: 'expired', resume: false })
+  })
+
   it('names columns like Excel', () => {
     expect([0, 25, 26, 199].map(columnLetter)).toEqual(['A', 'Z', 'AA', 'GR'])
   })

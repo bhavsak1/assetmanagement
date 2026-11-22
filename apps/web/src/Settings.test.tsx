@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { SettingsPage, tagErrorMessage } from './Settings'
+import { LOCALES, SettingsPage, tagErrorMessage } from './Settings'
 import { t } from './i18n'
 
 const db = vi.hoisted(() => ({
@@ -69,6 +69,15 @@ test('view only: values shown, inputs disabled, no save', async () => {
   expect(field<HTMLInputElement>('model').checked).toBe(true)
   expect([...container.querySelectorAll('fieldset')].every((f) => f.disabled)).toBe(true)
   expect(container.querySelector('button[type="submit"]')).toBeNull()
+})
+
+test('11.4: locale is a drop-down of the offered locales', async () => {
+  await render(true, true)
+  const locale = field<HTMLSelectElement>('locale')
+  expect(locale.tagName).toBe('SELECT')
+  expect(locale.value).toBe('en-IN')
+  expect([...locale.options].map((o) => o.value)).toEqual(LOCALES)
+  expect(locale.options[0]!.textContent).toBe('English (India) (en-IN)')
 })
 
 test('manage: save sends every setting to update_tenant_settings', async () => {

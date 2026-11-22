@@ -1358,6 +1358,26 @@ tr.unread .row-link {
   font-weight: var(--weight-semibold);
 }
 
+/* 11.4: unread alerts carry a dot; the word "Unread" is for screen readers. */
+tr.unread td:first-child::before {
+  content: '';
+  display: inline-block;
+  width: var(--space-3);
+  height: var(--space-3);
+  margin-right: var(--space-3);
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* Insights (10.7): question box, "I understood this as" chips, inline filter editor. Screens: Insights. */
 .ask {
   display: flex;
@@ -1402,6 +1422,36 @@ tr.unread .row-link {
 
 .choice {
   margin-top: var(--space-5);
+}
+
+/* 11.4: labelled query builder rows and the example questions. */
+.builder-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+}
+
+.builder-label {
+  min-width: 96px;
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-secondary);
+}
+
+.starters {
+  margin-top: var(--space-6);
+}
+
+.starters h2 + .chips,
+.starters h2 + .recent {
+  margin-top: var(--space-4);
+}
+
+.starters .recent {
+  list-style: none;
+  padding: 0;
+  margin: 0;
 }
 
 /* 10.8: saved widgets list on Insights */
@@ -1604,4 +1654,38 @@ td.actions::after {
     color: var(--color-text-muted);
     overflow-wrap: anywhere;
   }
+}
+
+/* 11.4 Import: one row of actions (wraps on a phone), the styled file picker. */
+.actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-end;
+}
+
+.actions-row .field {
+  margin-bottom: 0;
+}
+
+.file-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.file-pick label.btn {
+  display: inline-flex;
+  align-items: center;
+}
+
+.file-pick label.btn:focus-within {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.file-pick label.btn.disabled {
+  opacity: 0.6;
+  cursor: default;
 }
