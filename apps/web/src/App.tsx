@@ -476,7 +476,7 @@ export function App() {
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       {/* The target page survives sign-in, and the company pick too (it renders in place) [3.6b]. */}
       <Route element={session ? signedIn : <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />}>
-        <Route path="/insights" element={<InsightsPage tenantId={tenantId ?? ''} canSave={can('insights_widget', 'save') && writable} canShare={can('insights_widget', 'share') && writable} />} />
+        <Route path="/insights" element={<InsightsPage tenantId={tenantId ?? ''} userId={userId ?? ''} canSave={can('insights_widget', 'save') && writable} canShare={can('insights_widget', 'share') && writable} />} />
         <Route path="/dashboard" element={<DashboardPage tenantId={tenantId ?? ''} can={can} />} />
         <Route
           path="/assets"

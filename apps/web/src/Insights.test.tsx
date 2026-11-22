@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { t } from './i18n'
-import { cell, columnLabel, filterText, InsightsPage, message, parseValue, type Query } from './Insights'
+import { cell, columnLabel, EXAMPLES, examplesFor, filterText, InsightsPage, message, parseValue, remember, type Query } from './Insights'
 
 // 10.8: insight_widget reads and writes go to Supabase under RLS; this fake records them.
 const db = vi.hoisted(() => ({ rows: [] as Record<string, unknown>[], writes: [] as { op: string; body: unknown; id?: unknown }[] }))
@@ -241,4 +241,42 @@ test('10.9 an action opens the form; several assets are picked first; none says 
   await act(async () => button('PNE-0412 · Lathe').click())
   expect(container.textContent).toBe('/assets/a2/edit {"id":"a2","label":"PNE-0412 · Lathe"}')
   expect(calls.some((c) => c.path === '/insights/run')).toBe(false)
+})
+
+// 11.4
+test('examplesFor: only examples whose subject and every field the user can see', () => {
+  const asset = { key: 'asset', label: '', fields: [{ key: 'category', label: '', type: 'ref', ops: ['eq'] }, { key: 'coverage_state', label: '', type: 'enum', ops: ['eq'] }] }
+  const service = { key: 'service_record', label: '', fields: [{ key: 'done_on', label: '', type: 'date', ops: ['within_last_days'] }] } // no cost: no service_values
+  expect(examplesFor([asset, service]).map(([k]) => k)).toEqual(['noCoverage', 'byCategory'])
+  expect(examplesFor([])).toEqual([])
+})
+
+test('remember: newest first, no repeats, at most 5', () => {
+  expect(remember(['a', 'b'], ' b ')).toEqual(['b', 'a'])
+  expect(remember(['1', '2', '3', '4', '5'], '6')).toEqual(['6', '1', '2', '3', '4'])
+})
+
+test('an example question runs its fixed query with no model call; asked questions show as recent', async () => {
+  localStorage.clear()
+  const withState = [{ ...catalog[0]!, fields: [...catalog[0]!.fields, { key: 'coverage_state', label: 'Coverage', type: 'enum', ops: ['eq'] }] }]
+  replies['/insights/catalog'] = [0, 1, 2].map(() => ({ status: 200, body: { subjects: withState } }))
+  await open()
+  await act(async () => {})
+  const example = button(v.examples.noCoverage)
+  replies['/insights/run'] = [{ status: 200, body: { columns, rows, resolved: [] } }]
+  await act(async () => example.click())
+  expect(calls.at(-1)).toEqual({ path: '/insights/run', body: EXAMPLES.noCoverage })
+  expect(calls.some((c) => c.path === '/ai/assist')).toBe(false)
+
+  act(() => root.unmount())
+  root = createRoot(container)
+  await open()
+  await act(async () => {})
+  replies['/ai/assist'] = [{ status: 429, body: { error: 'ai_cap_reached' } }]
+  await ask('What is overdue?')
+  act(() => root.unmount())
+  root = createRoot(container)
+  await open()
+  await act(async () => {})
+  expect(container.querySelector('.recent')!.textContent).toBe('What is overdue?')
 })

@@ -137,6 +137,45 @@ export function parseValue(f: Field, op: string, a: string, b: string): unknown 
   return one(a)
 }
 
+// 11.4 (DECIDE 4): fixed example queries. They run through /insights/run, so no model call. An example shows
+// only when every field it uses is in this user's catalog.
+export const EXAMPLES: Record<keyof typeof v.examples, Query> = {
+  overdue: { subject: 'obligation', filters: [{ field: 'due_state', op: 'eq', value: 'overdue' }] },
+  due30: { subject: 'obligation', filters: [{ field: 'next_due', op: 'within_next_days', value: 30 }] },
+  coverage60: { subject: 'coverage', filters: [{ field: 'end_date', op: 'within_next_days', value: 60 }] },
+  noCoverage: { subject: 'asset', filters: [{ field: 'coverage_state', op: 'eq', value: 'none' }] },
+  byCategory: { subject: 'asset', group_by: [{ field: 'category' }], measures: [{ fn: 'count' }] },
+  costByMonth: {
+    subject: 'service_record',
+    filters: [{ field: 'done_on', op: 'within_last_days', value: 365 }],
+    group_by: [{ field: 'done_on', bucket: 'month' }],
+    measures: [{ fn: 'sum', field: 'cost' }],
+  },
+}
+
+export function examplesFor(catalog: Subject[]) {
+  return (Object.entries(EXAMPLES) as [keyof typeof EXAMPLES, Query][]).filter(([, q]) => {
+    const keys = catalog.find((s) => s.key === q.subject)?.fields.map((f) => f.key)
+    const used = [...(q.filters ?? []), ...(q.group_by ?? []), ...(q.measures ?? [])].flatMap((x) => (x.field ? [x.field] : []))
+    return !!keys && used.every((k) => keys.includes(k))
+  })
+}
+
+// 11.4 (DECIDE 5): the last 5 questions, newest first, kept in this browser per user and tenant (no migration).
+export function remember(list: string[], question: string): string[] {
+  const q = question.trim()
+  return [q, ...list.filter((x) => x !== q)].slice(0, 5)
+}
+const recentKey = (tenantId: string, userId: string) => `assetly.recentQuestions.${tenantId}.${userId}`
+function loadRecent(key: string): string[] {
+  try {
+    const x: unknown = JSON.parse(localStorage.getItem(key) ?? '[]')
+    return Array.isArray(x) ? x.filter((y): y is string => typeof y === 'string').slice(0, 5) : []
+  } catch {
+    return []
+  }
+}
+
 function FilterEditor({ subject, fields, filter, onApply, onCancel }: { subject: string; fields: Field[]; filter?: Filter; onApply: (f: Filter) => void; onCancel: () => void }) {
   const [key, setKey] = useState(filter?.field ?? fields[0]?.key ?? '')
   const f = fields.find((x) => x.key === key)
@@ -194,7 +233,7 @@ function FilterEditor({ subject, fields, filter, onApply, onCancel }: { subject:
   )
 }
 
-export function InsightsPage({ tenantId = '', canSave = false, canShare = false }: { tenantId?: string; canSave?: boolean; canShare?: boolean }) {
+export function InsightsPage({ tenantId = '', userId = '', canSave = false, canShare = false }: { tenantId?: string; userId?: string; canSave?: boolean; canShare?: boolean }) {
   const location = useLocation()
   const box = useRef<HTMLTextAreaElement>(null)
   const { dialog, confirm, ask: askText } = useDialog()
@@ -214,6 +253,9 @@ export function InsightsPage({ tenantId = '', canSave = false, canShare = false 
   // 10.9: a draft whose asset matched none or several; the user picks one, then its form opens.
   const [picks, setPicks] = useState<Draft>()
   const navigate = useNavigate()
+  const key = recentKey(tenantId, userId)
+  const [saved, setRecent] = useState<{ key: string; list: string[] }>()
+  const recent = saved?.key === key ? saved.list : loadRecent(key)
 
   useEffect(() => {
     let live = true
@@ -244,6 +286,13 @@ export function InsightsPage({ tenantId = '', canSave = false, canShare = false 
     setMsg(undefined)
     setEditing(null)
     setPicks(undefined)
+    const next = remember(recent, question)
+    setRecent({ key, list: next })
+    try {
+      localStorage.setItem(key, JSON.stringify(next))
+    } catch {
+      // Storage off or full: recent questions only last this visit.
+    }
     // 10.9 (A6): one box for questions and actions. A search answers here; an action opens the user's own form.
     const r = await api('/ai/assist', { message: question })
     setBusy(false)
@@ -319,7 +368,7 @@ export function InsightsPage({ tenantId = '', canSave = false, canShare = false 
     void loadWidgets()
   }
 
-  function openWidget(w: Widget) {
+  function openWidget(w: Pick<Widget, 'query'>) {
     setFromAi(false)
     setCall(undefined)
     void run(w.query)
@@ -394,6 +443,28 @@ export function InsightsPage({ tenantId = '', canSave = false, canShare = false 
       </form>
 
       {msg && <p className="banner" role="alert">{message(msg)}</p>}
+      {catalog && !query && (
+        <section className="card starters" aria-label={v.examplesTitle}>
+          <h2>{v.examplesTitle}</h2>
+          <div className="chips">
+            {examplesFor(catalog).map(([k, q]) => (
+              <button key={k} type="button" className="btn" disabled={busy} onClick={() => openWidget({ query: q })}>{v.examples[k]}</button>
+            ))}
+          </div>
+          {recent.length > 0 && (
+            <>
+              <h2>{v.recentTitle}</h2>
+              <ul className="recent">
+                {recent.map((x) => (
+                  <li key={x}>
+                    <button type="button" className="btn-link" onClick={() => { setQuestion(x); box.current?.focus() }}>{x}</button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
       {picks && (
         <div className="card choice" role="group" aria-label={fill(v.messages.pickAsset, { text: picks.asset_text ?? '' })}>
           <p role={picks.asset_choices?.length ? undefined : 'alert'}>
@@ -413,15 +484,19 @@ export function InsightsPage({ tenantId = '', canSave = false, canShare = false 
             <h2>{fromAi && query ? v.understood : v.manual}</h2>
             {fromAi && query && <span className="muted">{v.editHint}</span>}
           </div>
-          <div className="chips filter-chips">
-            <label className="field inline">
-              {v.subject}
-              <select value={query?.subject ?? ''} onChange={(e) => void run({ subject: e.target.value }, 'edited')}>
-                {!query && <option value="" />}
-                {catalog.map((s) => <option key={s.key} value={s.key}>{(v.subjects as Record<string, string>)[s.key] ?? s.label}</option>)}
-              </select>
-            </label>
-            {query?.filters?.map((f, i) => {
+          {/* 11.4 (DECIDE 6): three labelled rows in place of the bare "Show" drop-down. */}
+          <div className="builder-row">
+            <label htmlFor="insights-subject" className="builder-label">{v.subject}</label>
+            <select id="insights-subject" value={query?.subject ?? ''} onChange={(e) => void run({ subject: e.target.value }, 'edited')}>
+              {!query && <option value="" />}
+              {catalog.map((s) => <option key={s.key} value={s.key}>{(v.subjects as Record<string, string>)[s.key] ?? s.label}</option>)}
+            </select>
+          </div>
+          {query && (
+          <div className="builder-row" role="group" aria-labelledby="insights-filters">
+            <span id="insights-filters" className="builder-label">{v.filtersRow}</span>
+            <div className="chips">
+            {query.filters?.map((f, i) => {
               const text = filterText(query.subject, f, labels, catalog)
               return (
                 <span key={i} className="chip">
@@ -430,18 +505,28 @@ export function InsightsPage({ tenantId = '', canSave = false, canShare = false 
                 </span>
               )
             })}
-            {query?.group_by?.map((g, i) => {
+            {subject && (
+              <button type="button" className="btn" onClick={() => setEditing('new')}>{v.addFilter}</button>
+            )}
+            </div>
+          </div>
+          )}
+          {query && (
+          <div className="builder-row" role="group" aria-labelledby="insights-grouped">
+            <span id="insights-grouped" className="builder-label">{v.groupedRow}</span>
+            <div className="chips">
+            {!query.group_by?.length && !query.measures?.length && <span className="muted">{v.noneYet}</span>}
+            {query.group_by?.map((g, i) => {
               const text = `${fill(v.groupBy, { label: fieldLabel(query.subject, g.field, catalog) })}${g.bucket ? ` ${v.bucket[g.bucket]}` : ''}`
               return <span key={`g${i}`} className="chip">{text}<button type="button" aria-label={fill(v.remove, { label: text })} onClick={() => drop('group_by', i)}>×</button></span>
             })}
-            {query?.measures?.map((m, i) => {
+            {query.measures?.map((m, i) => {
               const text = measureLabel(query.subject, m, catalog)
               return <span key={`m${i}`} className="chip">{text}<button type="button" aria-label={fill(v.remove, { label: text })} onClick={() => drop('measures', i)}>×</button></span>
             })}
-            {query && subject && (
-              <button type="button" className="btn" onClick={() => setEditing('new')}>{v.addFilter}</button>
-            )}
+            </div>
           </div>
+          )}
           {choices.map((c) => (
             <div key={`${c.filter}:${c.value}`} className="choice" role="group" aria-label={fill(v.choose, { value: c.value })}>
               <p>{c.options.length ? fill(v.choose, { value: c.value }) : fill(v.noMatch, { value: c.value })}</p>

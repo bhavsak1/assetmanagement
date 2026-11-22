@@ -287,6 +287,15 @@ function AiUsageTab({ usage, tenant }: { usage: AiUsage; tenant?: Fmt }) {
 
 // The current value stays pickable even if this browser's list does not have it.
 const withValue = (list: string[], value: string) => (list.includes(value) ? list : [value, ...list])
+// 11.4 (DECIDE 8): the locales offered; a tenant's other saved value stays as an extra option.
+export const LOCALES = ['en-IN', 'en-US', 'en-GB', 'en-AU', 'en-SG', 'en-AE', 'en-CA', 'en-ZA']
+const localeName = (l: string) => {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'language' }).of(l) ?? l
+  } catch {
+    return l
+  }
+}
 
 export function SettingsPage({ tenantId, canView, canManage, canViewAi = false }: { tenantId: string; canView: boolean; canManage: boolean; canViewAi?: boolean }) {
   const [settings, setSettings] = useState<Settings>()
@@ -334,7 +343,7 @@ export function SettingsPage({ tenantId, canView, canManage, canViewAi = false }
     const form = new FormData(e.currentTarget)
     const values: Settings = {
       currency_code: String(form.get('currency')),
-      locale: String(form.get('locale')).trim(),
+      locale: String(form.get('locale')),
       time_zone: String(form.get('timeZone')),
       date_format: String(form.get('dateFormat')),
       fiscal_year_start_month: Number(form.get('fiscalMonth')),
@@ -407,7 +416,11 @@ export function SettingsPage({ tenantId, canView, canManage, canViewAi = false }
             </label>
             <label className="field">
               {t.settings.locale}
-              <input name="locale" defaultValue={s.locale} required pattern="[a-z]{2,3}(-[A-Z]{2})?" aria-describedby="locale-hint" />
+              <select name="locale" defaultValue={s.locale} aria-describedby="locale-hint">
+                {withValue(LOCALES, s.locale).map((l) => (
+                  <option key={l} value={l}>{`${localeName(l)} (${l})`}</option>
+                ))}
+              </select>
               <span id="locale-hint" className="muted hint">
                 {t.settings.localeHint}
               </span>
